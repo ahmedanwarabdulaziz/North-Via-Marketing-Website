@@ -1,0 +1,1159 @@
+# NORTH VIA MARKETING WEBSITE - MASTER CONTENT DOCUMENT
+# Last Updated: January 2025
+# This document contains all content and structure for the website pages
+
+================================================================================
+BRAND INFORMATION
+================================================================================
+Brand Colors:
+- Orange: #f27921 (Accents & buttons)
+- Blue: #274290 (Headlines & primary elements)  
+- Gray: #e6e7e8 (Dividers & frames)
+
+Typography:
+- Headers/Brand Titles: Playfair Display (serif)
+- Body/Supporting Text: Source Sans Pro (sans-serif)
+
+================================================================================
+GLOBAL LAYOUT STRUCTURE
+================================================================================
+
+## HEADER COMPONENT (Global/Sticky)
+Navigation Links:
+- Home: /
+- Services: /services (3-column dropdown)
+  - All Services: /services
+  - Be Seen. Be Remembered.:
+    - Social Media Management: /services/social-media-management
+    - Google & Social Media Ads: /services/google-social-media-ads
+    - SEO Services: /services/seo-services
+    - Custom Design Services: /services/custom-design-services
+  - Keep Everything Running Smoothly.:
+    - Website Updates & Maintenance: /services/website-updates-maintenance
+    - CRM Setup & Automation: /services/crm-setup-automation
+    - Monthly Report & Strategy Call: /services/monthly-report-strategy-call
+    - Email Support: /services/email-support
+    - Priority Support: /services/priority-support
+  - Work With a Partner Who Thinks Beyond Ads.:
+    - Basic Business Process Review: /services/basic-business-process-review
+    - Customer Experience Suggestions: /services/customer-experience-suggestions
+    - Bi-Weekly Strategy Calls: /services/bi-weekly-strategy-calls
+    - Staff Onboarding Support: /services/staff-onboarding-support
+    - Unlimited Marketing Consulting: /services/unlimited-marketing-consulting
+    - Full Business Process Audit: /services/full-business-process-audit
+    - Quarterly Business Health Deep-Dive: /services/quarterly-business-health-deep-dive
+  - Our SEO Approach: /seo-approach
+- Success Library: /success-library
+- About: #about
+- Contact: #contact
+
+## FOOTER COMPONENT (Global)
+Company Info: North Via Marketing
+Links: Home, Services, About, Contact
+Social Media: [Links to social platforms]
+
+================================================================================
+PAGE 1: HOMEPAGE (/)
+================================================================================
+
+## HERO SECTION
+Background Images:
+- Desktop: Hero-01.png
+- Mobile: Hero-02.png
+
+Title: "Faster, Smarter, Stronger"
+Subtitle: "From vision to measurable results, we work shoulder-to-shoulder with you to grow faster, smarter, and stronger."
+CTA Buttons:
+- Primary: "Get Started" (links to contact)
+- Secondary: "Learn More" (scrolls to services)
+
+## EMPATHY INTRO SECTION
+Title: "We Get It"
+Content: "Running a business is hard enough without marketing feeling like a mystery. That's why we don't just create campaigns—we build partnerships that grow with you."
+
+## SERVICES SECTION
+Title: "What We Do"
+Service Bundles:
+1. Essential Growth ($200 CAD/month)
+   - Social Media Management
+   - Monthly Reports & Strategy Calls
+   - Email Support
+   - Basic Business Guidance
+
+2. Performance Partner ($400 CAD/month)
+   - Everything in Essential Growth
+   - Google & Social Media Ads
+   - SEO Services
+   - Website Maintenance
+   - Business Process Review
+
+3. Strategic Partner ($800 CAD/month)
+   - Everything in Performance Partner
+   - CRM Setup & Automation
+   - Customer Experience Suggestions
+   - Bi-Weekly Strategy Calls
+   - Staff Onboarding Support
+   - Unlimited Marketing Consulting
+   - Full Business Process Audit
+   - Priority Support
+   - Quarterly Business Health Deep-Dive
+
+## HOW IT WORKS SECTION
+Title: "Our Partnership Path to Growth"
+Subtitle: "Every successful project follows a clear, collaborative process. Here's how we work with you from the first conversation to measurable results."
+
+Steps:
+1. Discover - We start with a deep dive into your business
+2. Strategize - We build a tailored marketing & business growth plan
+3. Execute - We put the plan into action
+4. Optimize - We track results, review performance, and adjust strategies
+5. Expand - When you're ready, we scale into new markets, services, or platforms
+
+## PORTFOLIO SECTION (Proven Growth for Our Partners)
+Title: "Proven Growth for Our Partners"
+Subtitle: "Real results from real businesses. Here's how we've helped our partners achieve measurable success."
+
+Insight Cards (7 total):
+1. "Targeted Google Ads Driving High Local Engagement" - Gardenias Health Care Clinic
+2. "High-Performing Ad for Acupuncture & Massage Services" - Gardenias Health Care
+3. "Strong Competitive Positioning in Google Ads" - Gardenias Health Care Clinic
+4. "Cost-Effective Ad Campaign Driving Targeted Clicks" - JL Upholstery
+5. "Expanding Website Reach Across Multiple Countries" - JL Upholstery
+6. "Diversified Traffic Sources Driving Consistent Website Visits" - JL Upholstery
+7. "High On-Site Engagement Driving Customer Interactions" - JL Upholstery
+
+## WHY CHOOSE US SECTION
+Title: "Why Choose North Via Marketing"
+Points:
+1. Data-Driven Approach - We make decisions based on real numbers, not guesswork
+2. Partnership Mindset - We work alongside you, not just for you
+3. Proven Results - Our track record speaks for itself
+4. Transparent Communication - You'll always know what's happening and why
+
+## ABOUT SECTION
+Title: "About North Via Marketing"
+Content: "We're a team of marketing professionals who believe that great marketing should be measurable, transparent, and results-focused. We work with businesses of all sizes to create marketing strategies that drive real growth."
+
+## CONTACT SECTION
+Title: "Ready to Start Growing?"
+Contact Form Fields:
+- Name
+- Email
+- Phone
+- Business Name
+- Message
+CTA: "Send Message"
+
+================================================================================
+PAGE 2: SUCCESS LIBRARY (/success-library)
+================================================================================
+
+## HERO SECTION
+Background Image: pic-002.png
+Title: "Real Results. Real Businesses. Real Growth."
+Subtitle: "Explore how North Via Marketing and North Via Tech have helped businesses in healthcare, automotive, retail, and more achieve measurable success. Browse by category to find the wins most relevant to your business."
+CTA Buttons:
+- Primary: "Browse All Success Stories"
+- Secondary: "Work With Us"
+
+## STATISTICS BAR
+Stats:
+- 50+ successful campaigns
+- 7 industries served
+- 300% ROI for clients
+
+## PROJECT SNAPSHOTS SECTION
+Title: "Project Snapshots"
+Description: "A glimpse into the diverse range of businesses we've helped grow."
+6 Project Tiles with categories and hover effects.
+
+## SUCCESS STORIES SECTION
+Title: "Success Stories"
+Category Filters: All, Social Media & Ads, Analytics & Insights, Lead Generation & Conversions, Competitive Analysis, Website Performance, Customer Acquisition, Growth Performance
+
+25 Insight Cards with detailed campaign data:
+1. "Targeted Google Ads Driving High Local Engagement" - scr001.png
+2. "High-Performing Ad for Acupuncture & Massage Services" - scr002.png
+3. "Strong Competitive Positioning in Google Ads" - scr003.png
+4. "Cost-Effective Ad Campaign Driving Targeted Clicks" - scr004.png
+5. "Expanding Website Reach Across Multiple Countries" - scr005.png
+6. "Diversified Traffic Sources Driving Consistent Website Visits" - scr006.png
+7. "High On-Site Engagement Driving Customer Interactions" - scr007.png
+8. "Steady Flow of New Customers with Repeat Visitor Retention" - scr008.png
+9. "Strong New Customer Acquisition with Steady Returning Visits" - scr009.png
+10. "Massive 293% Growth in Active Users Over 60 Days" - scr010.png
+11. "Gardenias Health Care Clinic – Digital Growth & Engagement Success" - scr011.png
+12. "Gardenias Health Care Clinic – 60-Day Digital Growth Surge" - scr012.png
+13. "Gardenias Facebook & Instagram Ads – Campaign Insights" - scr013.png
+14. "Boosted Instagram Media Post – Engagement Analysis" - scr014.png
+15. "Boosted Facebook Post – Reach & Conversion Results" - scr015.png
+16. "Boosted Instagram Reel – Video Performance Metrics" - scr016.png
+17. "Instagram Ads Website Impact Analysis" - scr017.png
+18. "Instagram Boost Campaign – Local Business Growth" - scr018.png
+19. "Facebook & Instagram Ads – Multi-Platform Strategy" - scr019.png
+20. "Boosted Instagram Media Post – Brand Awareness Campaign" - scr020.png
+21. "Boosted Facebook Post – Lead Generation Success" - scr021.png
+22. "Boosted Instagram Reel – Customer Engagement Drive" - scr022.png
+23. "JL Upholstery – Boosted Instagram Reel Campaign" - scr023.png
+24. "Instagram Ads Website Impact Analysis" - scr024.png
+25. "Instagram Boost Campaign" - scr025.png
+
+================================================================================
+PAGE 3: OUR SEO APPROACH (/seo-approach)
+================================================================================
+
+## HERO SECTION
+Background Image: Hero-03.png
+Title: "Our SEO Approach"
+Subtitle: "Technical expertise meets strategic thinking"
+Description: "We don't just optimize for search engines—we optimize for your business goals. Our SEO approach combines technical excellence with strategic thinking to deliver sustainable, long-term growth."
+
+## OUR SIX NON-NEGOTIABLES FOR SEO EXCELLENCE SECTION
+Title: "Our Six Non-Negotiables for SEO Excellence"
+Banner: x005.png
+
+6 Standards with images (s1.png to s6.png):
+
+1. Technical SEO Foundation
+   - What: Core technical optimization
+   - Why it Matters: Ensures search engines can find and understand your site
+   - How We Do It: Site audits, speed optimization, mobile-first indexing
+
+2. Content Strategy & Optimization
+   - What: Strategic content creation and optimization
+   - Why it Matters: Provides value to users while ranking for relevant terms
+   - How We Do It: Keyword research, content planning, on-page optimization
+
+3. Local SEO & Google My Business
+   - What: Local search visibility optimization
+   - Why it Matters: Drives local customers to your business
+   - How We Do It: GMB optimization, local citations, review management
+
+4. Link Building & Authority
+   - What: Building quality backlinks and domain authority
+   - Why it Matters: Signals trust and relevance to search engines
+   - How We Do It: Strategic outreach, content marketing, relationship building
+
+5. User Experience Optimization
+   - What: Improving site usability and engagement
+   - Why it Matters: Better UX leads to higher rankings and conversions
+   - How We Do It: UX audits, conversion optimization, mobile optimization
+
+6. Analytics & Performance Tracking
+   - What: Comprehensive performance monitoring
+   - Why it Matters: Data-driven optimization and ROI measurement
+   - How We Do It: Google Analytics setup, regular reporting, performance analysis
+
+## GRADUAL, ONGOING OPTIMIZATION SECTION
+Title: "Gradual, Ongoing Optimization"
+Banner: x001.png
+Subtitle: "SEO is a marathon, not a sprint. Here's our proven process for sustainable growth."
+
+3 Phases:
+1. Foundation Phase (Months 1-3)
+   - Technical SEO audit and fixes
+   - Content strategy development
+   - Local SEO setup and optimization
+
+2. Growth Phase (Months 4-6)
+   - Content creation and optimization
+   - Link building campaigns
+   - Performance monitoring and adjustments
+
+3. Scale Phase (Months 7+)
+   - Advanced optimization strategies
+   - Authority building
+   - Continuous improvement and expansion
+
+## PROMISE SECTION
+Title: "Our Promise"
+Content: "We promise to be transparent about our SEO work, provide regular updates on your progress, and focus on strategies that drive real business results—not just vanity metrics."
+
+CTA: "Ready to improve your search rankings?"
+
+================================================================================
+PAGE 4: OUR SERVICES (/services)
+================================================================================
+
+## HERO SECTION
+Background Image: Hero-03.png
+Title: "Our Services"
+Subtitle: "We Manage Your Marketing, So You Can Run Your Business."
+Description: "From campaigns to systems, we handle marketing and business growth strategy for small and medium businesses"
+CTA Button: "Talk to a Growth Partner"
+
+## SERVICES GROUPS SECTION
+Title: "Services That Drive Results"
+Description: "Our services are organized by what matters most: getting you seen, keeping things running smoothly, and growing strategically."
+
+3 Service Groups:
+
+1. Be Seen. Be Remembered. (4 services)
+   - Social Media Management
+   - Google & Social Media Ads
+   - SEO Services
+   - Custom Design Services
+
+2. Keep Everything Running Smoothly. (5 services)
+   - Website Updates & Maintenance
+   - CRM Setup & Automation
+   - Monthly Report & Strategy Call
+   - Email Support
+   - Priority Support
+
+3. Work With a Partner Who Thinks Beyond Ads. (7 services)
+   - Basic Business Process Review
+   - Customer Experience Suggestions
+   - Bi-Weekly Strategy Calls
+   - Staff Onboarding Support
+   - Unlimited Marketing Consulting
+   - Full Business Process Audit
+   - Quarterly Business Health Deep-Dive
+
+## BUNDLE COMPARISON SECTION
+Title: "Choose Your Partnership Level"
+Description: "Three flexible bundles designed to scale with your business needs and budget."
+
+3 Bundles:
+- Essential Growth ($200 CAD/month)
+- Performance Partner ($400 CAD/month) - Highlighted
+- Strategic Partner ($800 CAD/month)
+
+## CTA SECTION
+Title: "Let's grow your business together."
+Description: "Ready to start growing? Let's discuss which services and bundle level will best accelerate your business growth."
+CTA Buttons:
+- Primary: "Book a Discovery Call"
+- Secondary: "Get Started Today"
+
+================================================================================
+INDIVIDUAL SERVICE PAGES
+================================================================================
+
+## PAGE 5: SOCIAL MEDIA MANAGEMENT (/services/social-media-management)
+================================================================================
+
+## HERO SECTION
+Background Image: Hero-05.png
+Title: "Social Media: More Than Just Pictures and Text"
+Subtitle: "Where your brand's story meets strategy, creativity, and measurable growth."
+Description: "You deserve social media that goes beyond random posts and robotic captions. We blend creativity, data, and brand understanding—so every post reflects your business's personality, speaks your customers' language, and sparks real results."
+CTA Buttons:
+- Primary: "Start a Conversation"
+- Secondary: "See Real Results"
+
+## WHY SOCIAL MEDIA FEELS HARD SECTION
+Title: "Why Social Media Feels Hard — And How We Make It Work"
+Banner: x003.png
+
+## OUR PROVEN SOCIAL MEDIA WORKFLOW SECTION
+Title: "Our Proven Social Media Workflow"
+Subtitle: "We turn your social media into a reliable engine for growth using a streamlined, results-focused process:"
+
+5 Steps:
+1. Plan - We analyze your market and business goals, then build a content calendar matched to your audience and brand
+2. Create - Custom visuals, engaging copy, and branded assets are crafted for each post, ready to grab attention and encourage interaction
+3. Publish - Your content is scheduled for optimal times across the most relevant platforms, ensuring consistent brand visibility
+4. Converse - We monitor engagement—responding to comments, messages, and interactions to strengthen customer loyalty and community
+5. Measure - Detailed analytics track what's working, revealing opportunities to fine-tune your strategy and maximize results every month
+
+## WHAT YOU GET SECTION
+Title: "What You Get with Social Media Management"
+5 Categories:
+1. Strategic Content Planning
+2. Professional Content Creation
+3. Consistent Publishing & Community Engagement
+4. Social Media Ads Management
+5. Performance Tracking & Reporting
+
+## INCLUDED IN SECTION
+Title: "Included In"
+Bundles:
+- Essential Growth
+- Performance Partner
+- Strategic Partner
+
+## RESULTS SECTION
+Title: "Results You Can Expect"
+4 Expected Outcomes:
+- Stronger brand recognition and trust
+- Steady inbound leads and inquiries
+- Higher engagement rates over time
+- Clear view of what's working (and why)
+
+## SAMPLE SOCIAL POST DESIGNS SECTION
+Title: "Sample Social Post Designs"
+9 Design Concepts with images (s7.png to s15.png)
+
+## HOW WE MEASURE SUCCESS SECTION
+Title: "How We Measure Success"
+3 Metrics:
+1. Reach & Profile Visits
+2. Engagement Metrics
+3. Business Impact
+
+## READY TO GROW SECTION
+Title: "Ready to Grow Your Brand with Consistent, Engaging Social Media?"
+CTA Buttons:
+- Primary: "Let's start the conversation."
+- Secondary: "See More Examples"
+
+================================================================================
+## PAGE 6: GOOGLE & SOCIAL MEDIA ADS (/services/google-social-media-ads)
+================================================================================
+
+## HERO SECTION
+Background Image: Hero-05.png
+Title: "Smarter Ads. Real Results."
+Subtitle: "We manage your Google and social media ads end-to-end—so you can focus on running your business while we focus on bringing in customers."
+Description: "From campaign strategy to budget management and performance tracking, we turn every dollar into data-driven growth."
+CTA Buttons:
+- Primary: "Let's Plan Your Next Campaign."
+- Secondary: "See Case Studies"
+
+## WHY ONLINE ADS OFTEN FAIL SECTION
+Title: "Why Online Ads Often Fail"
+Banner: x004.png
+
+## OUR PROVEN AD MANAGEMENT PROCESS SECTION
+Title: "Our Proven Ad Management Process"
+
+## WHAT YOU GET SECTION
+Title: "What You Get"
+
+## EXPECTED RESULTS SECTION
+Title: "Results You Can Expect"
+
+## HOW WE MEASURE SUCCESS SECTION
+Title: "How We Measure Success"
+
+## INCLUDED IN SECTION
+Title: "Included In"
+Bundles:
+- Performance Partner
+- Strategic Partner
+
+## READY TO GROW SECTION
+Title: "Ready to Turn Your Ad Spend Into Real Growth?"
+
+================================================================================
+## PAGE 7: CUSTOM DESIGN SERVICES (/services/custom-design-services)
+================================================================================
+
+## HERO SECTION
+Background Image: Hero-05.png
+Title: "Design That Works as Hard as You Do."
+Subtitle: "We create on-brand visuals that don't just look good—they move your audience to act."
+Description: "From social media graphics and print materials to full brand identities, every design we deliver supports measurable business goals."
+CTA Buttons:
+- Primary: "Start Your Next Design Project."
+- Secondary: "See Our Work"
+
+## WHY DESIGNS FAIL SECTION
+Title: "Why Most Designs Fail to Drive Results"
+
+## OUR CX REVIEW PROCESS SECTION
+Title: "Our CX Review Process"
+Banner: x002.png
+
+## WHAT YOU GET SECTION
+Title: "What You Get"
+Banner: x005.png
+
+## EXPECTED RESULTS SECTION
+Title: "Results You Can Expect"
+
+## HOW WE MEASURE SUCCESS SECTION
+Title: "How We Measure Success"
+
+## INCLUDED IN SECTION
+Title: "Included In"
+Bundles:
+- Performance Partner
+- Strategic Partner
+
+## READY TO GROW SECTION
+Title: "Ready to Make Your Brand Visually Irresistible?"
+
+================================================================================
+## PAGE 8: WEBSITE UPDATES & MAINTENANCE (/services/website-updates-maintenance)
+================================================================================
+
+## HERO SECTION
+Background Image: Hero-05.png
+Title: "Your Website, Always Fast, Secure, and Up to Date."
+Subtitle: "We keep your site running smoothly—so it's one less thing for you to worry about."
+Description: "From updates and backups to performance monitoring and security checks, we maintain your online foundation while you focus on running your business."
+CTA Buttons:
+- Primary: "Request a Site Checkup."
+- Secondary: "Get a Free Site Audit"
+
+## WHY WEBSITES FALL BEHIND SECTION
+Title: "Why Websites Fall Behind"
+
+## OUR MAINTENANCE PROCESS SECTION
+Title: "Our Maintenance Process"
+
+## WHAT YOU GET SECTION
+Title: "What You Get"
+Banner: x001.png
+
+## EXPECTED RESULTS SECTION
+Title: "Results You Can Expect"
+
+## HOW WE MEASURE SUCCESS SECTION
+Title: "How We Measure Success"
+
+## INCLUDED IN SECTION
+Title: "Included In"
+Bundles:
+- Performance Partner
+- Strategic Partner
+
+## READY TO GROW SECTION
+Title: "Ready to Keep Your Website Running Like Clockwork?"
+
+================================================================================
+## PAGE 9: MONTHLY REPORT & STRATEGY CALL (/services/monthly-report-strategy-call)
+================================================================================
+
+## HERO SECTION
+Background Image: Hero-05.png
+Title: "Clear Numbers. Smarter Decisions."
+Subtitle: "We turn your marketing data into plain-language insights and help you plan what comes next."
+Description: "Every month, you'll know exactly what's working, what isn't, and where to focus for the biggest impact. No confusing dashboards. No guesswork."
+CTA Buttons:
+- Primary: "Schedule Your Next Strategy Call."
+- Secondary: "See a Sample Report"
+
+## WHY REPORTS ALONE AREN'T ENOUGH SECTION
+Title: "Why Reports Alone Aren't Enough"
+
+## OUR REPORTING AND STRATEGY PROCESS SECTION
+Title: "Our Reporting and Strategy Process"
+
+## WHAT YOU GET SECTION
+Title: "What You Get"
+Banner: x003.png
+
+## EXPECTED RESULTS SECTION
+Title: "Results You Can Expect"
+
+## HOW WE MEASURE SUCCESS SECTION
+Title: "How We Measure Success"
+
+## INCLUDED IN SECTION
+Title: "Included In"
+Bundles:
+- Essential Growth
+- Performance Partner
+- Strategic Partner
+
+## READY TO GROW SECTION
+Title: "Ready to Turn Data Into Actionable Growth Strategy?"
+
+================================================================================
+## PAGE 10: BASIC BUSINESS PROCESS REVIEW (/services/basic-business-process-review)
+================================================================================
+
+## HERO SECTION
+Background Image: Hero-05.png
+Title: "Find the Bottlenecks. Fix the Flow."
+Subtitle: "We analyze how your marketing, sales, and operations connect—then identify small process improvements that create big business gains."
+Description: "Simple, actionable insights that make your day-to-day run smoother and more profitably."
+CTA Button: "Book a Business Review."
+
+## WHY BUSINESSES PLATEAU SECTION
+Title: "Why Businesses Plateau"
+
+## OUR REVIEW PROCESS SECTION
+Title: "Our Review Process"
+Banner: x002.png
+
+## WHAT YOU GET SECTION
+Title: "What You Get"
+Banner: x004.png
+
+## EXPECTED RESULTS SECTION
+Title: "Results You Can Expect"
+
+## HOW WE MEASURE SUCCESS SECTION
+Title: "How We Measure Success"
+
+## INCLUDED IN SECTION
+Title: "Included In"
+Bundles:
+- Performance Partner
+- Strategic Partner
+
+## READY TO GROW SECTION
+Title: "Ready to Streamline Your Business Operations?"
+
+================================================================================
+## PAGE 11: EMAIL SUPPORT (/services/email-support)
+================================================================================
+
+## HERO SECTION
+Background Image: Hero-05.png
+Title: "Fast, Reliable Support—Without the Inbox Chaos."
+Subtitle: "We manage your marketing and technical email requests through a structured ticket system—so you always get quick, accountable answers."
+Description: "No lost messages, no long waits. Every question and fix is tracked, prioritized, and handled with care."
+CTA Button: "Send a Support Request."
+
+## WHY TRADITIONAL EMAIL SUPPORT FAILS SECTION
+Title: "Why Traditional Email Support Fails"
+
+## OUR SUPPORT PROCESS SECTION
+Title: "Our Support Process"
+Banner: x001.png
+
+## WHAT YOU GET SECTION
+Title: "What You Get"
+
+## EXPECTED RESULTS SECTION
+Title: "Results You Can Expect"
+
+## HOW WE MEASURE SUCCESS SECTION
+Title: "How We Measure Success"
+
+## INCLUDED IN SECTION
+Title: "Included In"
+Bundles:
+- Essential Growth
+- Performance Partner
+- Strategic Partner
+
+## READY TO GROW SECTION
+Title: "Ready to Get Reliable Support When You Need It?"
+
+================================================================================
+## PAGE 12: CUSTOMER EXPERIENCE SUGGESTIONS (/services/customer-experience-suggestions)
+================================================================================
+
+## HERO SECTION
+Background Image: Hero-05.png
+Title: "Small Tweaks. Big Impact."
+Subtitle: "We help you refine every step of your customer journey—from the first click to repeat purchase—so clients stay longer and buy more."
+Description: "Clear, actionable ideas based on data and real behavior—not guesses."
+CTA Button: "Request a CX Review."
+
+## WHY CUSTOMER EXPERIENCE GETS OVERLOOKED SECTION
+Title: "Why Customer Experience Gets Overlooked"
+
+## OUR CX REVIEW PROCESS SECTION
+Title: "Our CX Review Process"
+Banner: x003.png
+
+## WHAT YOU GET SECTION
+Title: "What You Get"
+Banner: x005.png
+
+## EXPECTED RESULTS SECTION
+Title: "Results You Can Expect"
+
+## HOW WE MEASURE SUCCESS SECTION
+Title: "How We Measure Success"
+
+## INCLUDED IN SECTION
+Title: "Included In"
+Bundles:
+- Performance Partner
+- Strategic Partner
+
+## READY TO GROW SECTION
+Title: "Ready to Turn Every Customer Interaction Into Growth?"
+
+================================================================================
+## PAGE 13: BI-WEEKLY STRATEGY CALLS (/services/bi-weekly-strategy-calls)
+================================================================================
+
+## HERO SECTION
+Background Image: Hero-05.png
+Title: "Stay Aligned. Move Faster."
+Subtitle: "We meet every two weeks to review progress, make quick adjustments, and keep your marketing aligned with your business goals."
+Description: "Short, focused sessions that turn insights into immediate action."
+CTA Buttons:
+- Primary: "Book Your First Strategy Call."
+- Secondary: "See How It Works"
+
+## WHY WAITING A MONTH IS TOO LONG SECTION
+Title: "Why Waiting a Month Is Too Long"
+
+## OUR BI-WEEKLY CALL FRAMEWORK SECTION
+Title: "Our Bi-Weekly Call Framework"
+Banner: x002.png
+
+## WHAT YOU GET SECTION
+Title: "What You Get"
+Banner: x004.png
+
+## EXPECTED RESULTS SECTION
+Title: "Results You Can Expect"
+
+## HOW WE MEASURE SUCCESS SECTION
+Title: "How We Measure Success"
+
+## INCLUDED IN SECTION
+Title: "Included In"
+Bundles:
+- Strategic Partner
+
+## READY TO GROW SECTION
+Title: "Ready to Stay Ahead of Your Competition?"
+
+================================================================================
+## PAGE 14: STAFF ONBOARDING SUPPORT (/services/staff-onboarding-support)
+================================================================================
+
+## HERO SECTION
+Background Image: Hero-05.png
+Title: "Train Your Team to Deliver Consistently."
+Subtitle: "We help your staff understand your marketing systems, tools, and brand standards—so everyone works efficiently and stays aligned."
+Description: "From internal playbooks to live walkthroughs, we make sure your team can execute without confusion or guesswork."
+CTA Buttons:
+- Primary: "Book an Onboarding Session."
+- Secondary: "See Sample Playbook"
+
+## WHY TEAMS STRUGGLE SECTION
+Title: "Why Teams Struggle"
+
+## OUR ONBOARDING PROCESS SECTION
+Title: "Our Onboarding Process"
+Banner: x001.png
+
+## WHAT YOU GET SECTION
+Title: "What You Get"
+Banner: x003.png
+
+## EXPECTED RESULTS SECTION
+Title: "Results You Can Expect"
+
+## HOW WE MEASURE SUCCESS SECTION
+Title: "How We Measure Success"
+
+## INCLUDED IN SECTION
+Title: "Included In"
+Bundles:
+- Strategic Partner
+
+## READY TO GROW SECTION
+Title: "Ready to Build a Team That Executes Flawlessly?"
+
+================================================================================
+## PAGE 15: UNLIMITED MARKETING CONSULTING (/services/unlimited-marketing-consulting)
+================================================================================
+
+## HERO SECTION
+Background Image: Hero-05.png
+Title: "Ask Anything. Decide with Confidence."
+Subtitle: "We act as your on-call marketing advisor—ready to answer questions, review ideas, and guide decisions whenever you need clarity."
+Description: "From campaign strategy to pricing, messaging, and automation—we're your experienced partner on speed dial."
+CTA Buttons:
+- Primary: "Book a Consulting Call."
+- Secondary: "Schedule Your First Session"
+
+## WHY BUSINESSES NEED ONGOING GUIDANCE SECTION
+Title: "Why Businesses Need Ongoing Guidance"
+
+## OUR CONSULTING PROCESS SECTION
+Title: "Our Consulting Process"
+Banner: x005.png
+
+## WHAT YOU GET SECTION
+Title: "What You Get"
+Banner: x002.png
+
+## EXPECTED RESULTS SECTION
+Title: "Results You Can Expect"
+
+## HOW WE MEASURE SUCCESS SECTION
+Title: "How We Measure Success"
+
+## INCLUDED IN SECTION
+Title: "Included In"
+Bundles:
+- Strategic Partner
+
+## READY TO GROW SECTION
+Title: "Ready to Have a Marketing Expert on Speed Dial?"
+
+================================================================================
+## PAGE 16: FULL BUSINESS PROCESS AUDIT (/services/full-business-process-audit)
+================================================================================
+
+## HERO SECTION
+Background Image: Hero-05.png
+Title: "See Your Whole Business—Clearly."
+Subtitle: "We perform a deep analysis of your marketing, sales, and operational systems to identify what's holding back growth—and how to fix it."
+Description: "You'll receive a prioritized roadmap showing exactly where to streamline, automate, and scale for long-term success."
+CTA Buttons:
+- Primary: "Request a Full Audit."
+- Secondary: "See Sample Audit Report"
+
+## WHY BUSINESSES HIT GROWTH CEILINGS SECTION
+Title: "Why Businesses Hit Growth Ceilings"
+
+## OUR AUDIT PROCESS SECTION
+Title: "Our Audit Process"
+Banner: x004.png
+
+## WHAT YOU GET SECTION
+Title: "What You Get"
+Banner: x001.png
+
+## EXPECTED RESULTS SECTION
+Title: "Results You Can Expect"
+
+## HOW WE MEASURE SUCCESS SECTION
+Title: "How We Measure Success"
+
+## INCLUDED IN SECTION
+Title: "Included In"
+Bundles:
+- Strategic Partner
+
+## READY TO GROW SECTION
+Title: "Ready to Unlock Your Business's Full Potential?"
+
+================================================================================
+## PAGE 17: PRIORITY SUPPORT (/services/priority-support)
+================================================================================
+
+## HERO SECTION
+Background Image: Hero-05.png
+Title: "When It's Urgent, We're Already There."
+Subtitle: "Get front-of-line access to our support team for critical requests, fixes, and updates—so nothing slows your business down."
+Description: "Fast response, direct access, and proactive monitoring to keep your marketing systems running smoothly 24/7."
+CTA Buttons:
+- Primary: "Activate Priority Support."
+- Secondary: "View Support Plans"
+
+## WHY SPEED MATTERS SECTION
+Title: "Why Speed Matters"
+
+## OUR PRIORITY SUPPORT PROCESS SECTION
+Title: "Our Priority Support Process"
+Banner: x003.png
+
+## WHAT YOU GET SECTION
+Title: "What You Get"
+Banner: x005.png
+
+## EXPECTED RESULTS SECTION
+Title: "Results You Can Expect"
+
+## HOW WE MEASURE SUCCESS SECTION
+Title: "How We Measure Success"
+
+## INCLUDED IN SECTION
+Title: "Included In"
+Bundles:
+- Performance Partner
+- Strategic Partner
+
+## READY TO GROW SECTION
+Title: "Ready to Never Wait for Support Again?"
+
+================================================================================
+## PAGE 18: QUARTERLY BUSINESS HEALTH DEEP-DIVE (/services/quarterly-business-health-deep-dive)
+================================================================================
+
+## HERO SECTION
+Background Image: Hero-03.png
+Title: "Step Back. See the Whole Picture."
+Subtitle: "Every quarter, we analyze your marketing, operations, and results to make sure your business is growing in the right direction."
+Description: "We combine performance data with strategic insight—so you know exactly where you stand and what to do next."
+CTA Button: "Book Your Next Deep-Dive."
+
+## SIX-PILLAR FRAMEWORK SECTION
+Title: "Our Six-Pillar Framework"
+Banner: x005.png
+
+6 Pillars:
+1. Marketing Performance Analysis
+2. Operational Efficiency Review
+3. Financial Health Assessment
+4. Customer Experience Evaluation
+5. Competitive Positioning Analysis
+6. Growth Opportunity Identification
+
+## QUARTERLY PROCESS SECTION
+Title: "Quarterly Process"
+Banner: x001.png
+
+4 Phases:
+1. Data Collection & Analysis
+2. Strategic Assessment
+3. Action Planning
+4. Implementation Support
+
+## PROMISE SECTION
+Title: "Our Promise"
+Content: "We promise to provide clear, actionable insights that help you make informed decisions about your business's future growth."
+
+## RESULTS & TESTIMONIALS SECTION
+Title: "Results & Testimonials"
+Data Panels:
+- +35% Revenue Growth
+- +50% Operational Efficiency
+- +25% Customer Satisfaction
+
+## READY TO GROW SECTION
+Title: "Ready to See Your Business from a New Perspective?"
+
+================================================================================
+## PAGE 19: CRM SETUP & AUTOMATION (/services/crm-setup-automation)
+================================================================================
+
+## HERO SECTION
+Background Image: Hero-03.png
+Title: "Turn Conversations Into Conversions."
+Subtitle: "We set up your Customer Relationship Management (CRM) system and automate follow-ups—so no lead slips through the cracks."
+Description: "From setup to integration, we connect your marketing, sales, and operations into one organized system that saves time and drives revenue."
+CTA Button: "Request a CRM Setup Consultation."
+
+## SIX-PILLAR FRAMEWORK SECTION
+Title: "Our Six-Pillar CRM Implementation Framework"
+Banner: x005.png
+
+6 Pillars:
+1. Needs Assessment & System Design
+2. Data Migration & Integration
+3. Workflow Automation Setup
+4. User Training & Documentation
+5. Performance Monitoring
+6. Ongoing Optimization
+
+## CRM PROCESS SECTION
+Title: "CRM Process"
+Banner: x001.png
+
+4 Phases:
+1. Discovery & Planning
+2. Setup & Configuration
+3. Integration & Testing
+4. Training & Launch
+
+## PROMISE SECTION
+Title: "Our Promise"
+Content: "We promise to deliver a CRM system that works seamlessly with your existing processes and helps you close more deals."
+
+## RESULTS SECTION
+Title: "Results"
+Data Panels:
+- +40% Lead Conversion Rate
+- +60% Sales Efficiency
+- +30% Customer Retention
+
+## READY TO GROW SECTION
+Title: "Ready to Never Lose a Lead Again?"
+
+================================================================================
+## PAGE 20: SEO SERVICES (/services/seo-services)
+================================================================================
+
+## HERO SECTION
+Background Image: Hero-03.png
+Title: "Be Found by the Right People—Every Time."
+Subtitle: "We combine technical precision, keyword strategy, and ongoing optimization to help your website rank higher and convert more visitors."
+Description: "Our SEO services focus on measurable growth, not vanity metrics—because visibility means nothing without results."
+CTA Button: "Request an SEO Consultation."
+
+## SIX-PILLAR FRAMEWORK SECTION
+Title: "Our Six-Pillar SEO Framework"
+Banner: x005.png
+
+6 Pillars:
+1. Audit & Research
+2. Technical Optimization
+3. Content Strategy & Creation
+4. Link Building & Authority
+5. Local SEO & Visibility
+6. Performance Monitoring
+
+## SEO PROCESS SECTION
+Title: "SEO Process"
+Banner: x001.png
+
+4 Phases:
+1. Foundation & Audit
+2. Optimization & Content
+3. Link Building & Authority
+4. Monitoring & Refinement
+
+## PROMISE SECTION
+Title: "Our Promise"
+Content: "We promise to deliver sustainable, long-term SEO results that drive real business growth and measurable ROI."
+
+## RESULTS SECTION
+Title: "Results"
+Data Panels:
+- +200% Organic Traffic
+- +150% Keyword Rankings
+- +80% Lead Generation
+
+## READY TO GROW SECTION
+Title: "Ready to Dominate Search Results?"
+
+================================================================================
+IMAGES USED THROUGHOUT WEBSITE
+================================================================================
+
+Hero Images:
+- Hero-01.png (Homepage desktop)
+- Hero-02.png (Homepage mobile)
+- Hero-03.png (SEO page, Services page, Quarterly Deep-Dive, CRM Setup, SEO Services)
+- Hero-05.png (Individual service pages)
+
+Content Images:
+- pic-001.png (Various sections)
+- pic-002.png (Success Library hero)
+
+Service Images:
+- s1.png to s6.png (SEO Standards)
+- s7.png to s22.png (Services)
+
+Success Story Images:
+- scr001.png to scr025.png (Success Library insight cards)
+
+Banner Images:
+- x001.png (Various banners)
+- x002.png (Various banners)
+- x003.png (Various banners)
+- x004.png (Various banners)
+- x005.png (Various banners)
+
+Logo:
+- Logo-1.png (Header)
+
+================================================================================
+NAVIGATION STRUCTURE (UPDATED)
+================================================================================
+
+Main Navigation:
+├── Home (/)
+├── Services (3-Column Dropdown)
+│   ├── All Services (/services)
+│   ├── Be Seen. Be Remembered.
+│   │   ├── Social Media Management (/services/social-media-management)
+│   │   ├── Google & Social Media Ads (/services/google-social-media-ads)
+│   │   ├── SEO Services (/services/seo-services)
+│   │   └── Custom Design Services (/services/custom-design-services)
+│   ├── Keep Everything Running Smoothly.
+│   │   ├── Website Updates & Maintenance (/services/website-updates-maintenance)
+│   │   ├── CRM Setup & Automation (/services/crm-setup-automation)
+│   │   ├── Monthly Report & Strategy Call (/services/monthly-report-strategy-call)
+│   │   ├── Email Support (/services/email-support)
+│   │   └── Priority Support (/services/priority-support)
+│   ├── Work With a Partner Who Thinks Beyond Ads.
+│   │   ├── Basic Business Process Review (/services/basic-business-process-review)
+│   │   ├── Customer Experience Suggestions (/services/customer-experience-suggestions)
+│   │   ├── Bi-Weekly Strategy Calls (/services/bi-weekly-strategy-calls)
+│   │   ├── Staff Onboarding Support (/services/staff-onboarding-support)
+│   │   ├── Unlimited Marketing Consulting (/services/unlimited-marketing-consulting)
+│   │   ├── Full Business Process Audit (/services/full-business-process-audit)
+│   │   └── Quarterly Business Health Deep-Dive (/services/quarterly-business-health-deep-dive)
+│   └── Our SEO Approach (/seo-approach)
+├── Success Library (/success-library)
+├── About (#about)
+└── Contact (#contact)
+
+================================================================================
+SERVICE BUNDLES & PRICING
+================================================================================
+
+## Essential Growth - $200 CAD/month
+- Social Media Management
+- Monthly Reports & Strategy Calls
+- Email Support
+- Basic Business Guidance
+
+## Performance Partner - $400 CAD/month
+- Everything in Essential Growth
+- Google & Social Media Ads
+- SEO Services
+- Website Updates & Maintenance
+- Basic Business Process Review
+- Priority Support
+
+## Strategic Partner - $800 CAD/month
+- Everything in Performance Partner
+- CRM Setup & Automation
+- Customer Experience Suggestions
+- Bi-Weekly Strategy Calls
+- Staff Onboarding Support
+- Unlimited Marketing Consulting
+- Full Business Process Audit
+- Quarterly Business Health Deep-Dive
+
+================================================================================
+CONTACT INFORMATION
+================================================================================
+
+Company: North Via Marketing
+Email: [Contact email]
+Phone: [Contact phone]
+Address: [Business address]
+
+Social Media:
+- Facebook: [Link]
+- Instagram: [Link]
+- LinkedIn: [Link]
+- Twitter: [Link]
+
+Calendly: https://calendly.com/northviamarketing
+
+================================================================================
+TECHNICAL SPECIFICATIONS
+================================================================================
+
+Framework: Next.js 14.0.4
+Styling: Tailwind CSS
+Icons: Lucide React
+Fonts: Playfair Display (serif), Source Sans Pro (sans-serif)
+Images: Next.js Image optimization with Sharp compression
+Responsive: Mobile-first design
+Header: Sticky navigation with 3-column dropdown
+Layout: Global Header and Footer components
+
+Performance Optimizations:
+- Image compression with Sharp
+- Bundle analysis with @next/bundle-analyzer
+- Dynamic imports for heavy components
+- Webpack optimization for vendor chunks
+
+================================================================================
+UPDATE LOG
+================================================================================
+
+[Date] - Initial content document created
+[Date] - Added Social Media Management page content
+[Date] - Updated Success Library with 25 insight cards
+[Date] - Added SEO Approach page
+[Date] - Added Services page with 16 services
+[Date] - Removed Design System section from Social Media Management page
+[January 2025] - Major update:
+- Added 16 individual service pages
+- Updated navigation to 3-column dropdown structure
+- Added service bundles and pricing
+- Added banner images throughout service pages
+- Updated global layout with sticky header
+- Added new service categories and organization
+- Updated all content to match current website structure
+
+================================================================================
+NOTES FOR FUTURE UPDATES
+================================================================================
+
+- Keep this document updated when adding new pages or content
+- Update image references when new images are added
+- Track any changes to navigation structure
+- Document new services or case studies as they're added
+- Update contact information as needed
+- Note any technical changes or improvements
+- Update service bundles and pricing as they change
+- Track new banner images and their usage
+
+================================================================================
+END OF DOCUMENT
+================================================================================
