@@ -1,0 +1,4 @@
+scripts/
+WEBSITE_CONTENT_MASTER.txt
+*.backup
+public/*.backup

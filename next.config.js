@@ -3,13 +3,12 @@ const nextConfig = {
   images: {
     domains: ['localhost'],
     formats: ['image/webp', 'image/avif'],
-    minimumCacheTTL: 31536000,
     dangerouslyAllowSVG: true,
     contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;",
   },
-  // Optimize compilation
+  // Disable build tracing to prevent stack overflow
   experimental: {
-    optimizePackageImports: ['lucide-react'],
+    buildTraces: false,
   },
   // Build optimization
   swcMinify: true,

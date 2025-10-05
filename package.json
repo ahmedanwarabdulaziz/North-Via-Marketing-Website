@@ -7,8 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "build:analyze": "ANALYZE=true next build",
-    "compress-images": "node scripts/compress-images.js"
+    "build:analyze": "ANALYZE=true next build"
   },
   "dependencies": {
     "autoprefixer": "^10.4.21",
@@ -25,8 +24,6 @@
     "@types/react-dom": "^18",
     "eslint": "^8",
     "eslint-config-next": "14.0.4",
-    "imagemin": "^9.0.1",
-    "imagemin-pngquant": "^10.0.0",
     "sharp": "^0.34.4",
     "typescript": "5.9.2"
   }
