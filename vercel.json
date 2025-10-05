@@ -1,0 +1,9 @@
+{
+  "buildCommand": "next build",
+  "framework": "nextjs",
+  "functions": {
+    "app/**/*.tsx": {
+      "maxDuration": 10
+    }
+  }
+}
