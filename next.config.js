@@ -6,9 +6,7 @@ const nextConfig = {
     dangerouslyAllowSVG: true,
     contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;",
   },
-  // Minimal configuration to avoid build issues
-  swcMinify: true,
-  // Disable problematic features
+  // Disable problematic features to avoid build issues
   eslint: {
     ignoreDuringBuilds: true,
   },
