@@ -1,4 +1,3 @@
-import Header from '../components/Header'
 import SuccessStats from './components/SuccessStats'
 import ProjectSnapshots from './components/ProjectSnapshots'
 import SuccessInsights from './components/SuccessInsights'
@@ -6,8 +5,7 @@ import { successStats, projectSnapshots, successInsights } from './data/successD
 
 export default function SuccessLibraryPage() {
   return (
-    <>
-      <Header />
+    <div>
       
       {/* Hero Section */}
       <section className="relative min-h-screen flex items-center justify-center overflow-hidden">
@@ -76,6 +74,6 @@ export default function SuccessLibraryPage() {
           </div>
         </div>
       </section>
-    </>
+    </div>
   )
 }

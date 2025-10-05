@@ -1,6 +1,5 @@
 import { ArrowRight, Shield, Zap, Search, FileText, Settings, TrendingUp } from 'lucide-react';
 import Image from 'next/image';
-import Header from '../components/Header';
 
 const seoStandards = [
   {
@@ -73,8 +72,7 @@ const optimizationPhases = [
 
 export default function SEOApproach() {
   return (
-    <main className="min-h-screen">
-      <Header />
+    <div className="min-h-screen">
       
       {/* Hero Section */}
       <section className="relative py-20 bg-gradient-to-br from-white via-[#e6e7e8]/20 to-white overflow-hidden">
@@ -345,6 +343,6 @@ export default function SEOApproach() {
           </div>
         </div>
       </section>
-    </main>
+    </div>
   )
 }
