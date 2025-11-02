@@ -21,7 +21,7 @@ const growthInsights = [
     client: {
       name: "Gardenias Health Care Clinic",
       location: "Milton, ON",
-      website: "https://gardenias-healthcare.net"
+      website: "https://www.gardenias-healthcare.net/"
     },
     credit: "Work delivered with North Via Marketing • Tech by North Via Tech"
   },
@@ -43,9 +43,9 @@ const growthInsights = [
       { label: "No‑show rate", value: "−12%" }
     ],
     client: {
-    name: "Gardenias Health Care Clinic",
-    location: "Milton, ON",
-      website: "https://gardenias-healthcare.net"
+      name: "Gardenias Health Care Clinic",
+      location: "Milton, ON",
+      website: "https://www.gardenias-healthcare.net/"
     },
     credit: "Work delivered with North Via Marketing • Tech by North Via Tech"
   },
@@ -69,7 +69,7 @@ const growthInsights = [
     client: {
       name: "JL Upholstery",
       location: "ON",
-      website: "https://jlupholstery.com"
+      website: "https://www.jlupholstery.com/"
     },
     credit: "Work delivered with North Via Marketing • Tech by North Via Tech"
   },
@@ -91,9 +91,9 @@ const growthInsights = [
       { label: "Customer satisfaction (CSAT)", value: "4.7/5" }
     ],
     client: {
-    name: "JL Upholstery",
+      name: "JL Upholstery",
       location: "ON",
-      website: "https://jlupholstery.com"
+      website: "https://www.jlupholstery.com/"
     },
     credit: "Work delivered with North Via Marketing • Tech by North Via Tech"
   },
@@ -117,7 +117,7 @@ const growthInsights = [
     client: {
       name: "Elite Car Shine",
       location: "Oakville, ON",
-      website: "https://elitecarshine.ca"
+      website: "https://elitecarshine.ca/"
     },
     credit: "Work delivered with North Via Marketing • Tech by North Via Tech"
   },
@@ -139,9 +139,9 @@ const growthInsights = [
       { label: "LTV (avg.)", value: "+18%" }
     ],
     client: {
-    name: "Elite Car Shine",
-    location: "Oakville, ON",
-      website: "https://elitecarshine.ca"
+      name: "Elite Car Shine",
+      location: "Oakville, ON",
+      website: "https://elitecarshine.ca/"
     },
     credit: "Work delivered with North Via Marketing • Tech by North Via Tech"
   },
@@ -173,33 +173,24 @@ const growthInsights = [
 
 function InsightCard({ item }: { item: any }) {
   return (
-    <article className="rounded-2xl bg-white shadow-lg p-6 flex flex-col gap-4 hover:shadow-xl transition-shadow duration-300">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h3 className="text-xl font-semibold text-[#274290]">{item.title}</h3>
-          {item.subtitle && <p className="text-sm text-gray-600 mt-1">{item.subtitle}</p>}
-        </div>
-        {item.imageSrc && (
-          <div className="w-24 h-24 bg-gradient-to-br from-[#274290]/10 to-[#f27921]/10 rounded-lg flex items-center justify-center">
-            <div className="text-[#274290] font-bold text-lg">
-              {item.title.split(' ').map((word: string) => word[0]).join('').slice(0, 2)}
-            </div>
-          </div>
-        )}
+    <article className="rounded-2xl bg-white shadow-lg p-6 flex flex-col gap-4 hover:shadow-xl transition-shadow duration-300 h-full">
+      <div>
+        <h3 className="text-xl font-semibold text-[#274290]">{item.title}</h3>
+        {item.subtitle && <p className="text-sm text-brand-orange font-medium mt-1">{item.subtitle}</p>}
       </div>
 
-      <div className="text-[15px] leading-7 text-gray-800">
+      <div className="text-[15px] leading-7 text-gray-800 flex-grow">
         <p><strong>Context:</strong> {item.context}</p>
         <p className="mt-2"><strong>What we did:</strong> {item.actions.join(" · ")}</p>
         <p className="mt-2"><strong>Outcome:</strong> {item.outcome}</p>
       </div>
 
       {item.metrics?.length ? (
-        <ul className="grid grid-cols-2 gap-3 mt-2">
+        <ul className="flex flex-row flex-wrap gap-3 mt-auto">
           {item.metrics.map((m: any, i: number) => (
-            <li key={i} className="rounded-xl border border-gray-200 p-3 bg-gray-50">
-              <div className="text-xs text-gray-500">{m.label}</div>
-              <div className="text-lg font-semibold text-[#274290]">{m.value}</div>
+            <li key={i} className="flex-1 min-w-[140px] rounded-xl border border-gray-200 p-3 bg-gray-50 text-center">
+              <div className="text-xs text-gray-500 font-medium mb-1">{m.label}</div>
+              <div className="text-base font-bold text-[#274290]">{m.value}</div>
             </li>
           ))}
         </ul>

@@ -60,10 +60,10 @@ export default function Hero() {
                 <Calendar className="ml-2 group-hover:scale-110 transition-transform duration-300" size={20} />
               </a>
               <a 
-                href="#services" 
+                href="/success-library" 
                 className="border-2 border-white text-white px-8 py-4 rounded-lg font-semibold hover:bg-white hover:text-[#274290] transition-all duration-300 text-center flex items-center justify-center group"
               >
-                See Our Work
+                Success Stories
                 <Eye className="ml-2 group-hover:scale-110 transition-transform duration-300" size={20} />
               </a>
             </div>
@@ -71,7 +71,7 @@ export default function Hero() {
             {/* Micro-trust line */}
             <div className="pt-6">
               <p className="text-sm text-white/80 italic">
-                Trusted by clinics, automotive detailers, upholstery shops, and wellness brands.
+                Trusted by clinics, automotive detailers, upholstery shops, restaurants, and wellness brands.
               </p>
             </div>
 

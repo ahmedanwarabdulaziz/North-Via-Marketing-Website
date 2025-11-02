@@ -1,42 +1,42 @@
 export const successStats = [
-  { number: "50+", label: "successful campaigns" },
-  { number: "7", label: "industries served" },
-  { number: "300%", label: "ROI for clients" }
+  { number: "782+", label: "successful campaigns" },
+  { number: "8", label: "industries served" },
+  { number: "175%", label: "ROI for clients" }
 ]
 
 export const projectSnapshots = [
   {
-    image: "/analytics-graph.png",
+    image: "/a007.png",
     category: "SEO",
     title: "Traffic Growth",
     description: "Google Analytics showing 52% increase in organic traffic"
   },
   {
-    image: "/social-post.png",
+    image: "/a008.png",
     category: "Social Ads",
     title: "Engagement Boost",
     description: "Instagram post with 120% increase in saves"
   },
   {
-    image: "/booking-system.png",
+    image: "/a003.png",
     category: "Tech",
     title: "Booking System",
     description: "Custom booking interface with 27% completion rate"
   },
   {
-    image: "/gbp-performance.png",
+    image: "/a004.png",
     category: "Local SEO",
     title: "Local Visibility",
     description: "Google Business Profile with 3x search views"
   },
   {
-    image: "/loyalty-plan.png",
+    image: "/a005.png",
     category: "Retention",
     title: "Loyalty Program",
     description: "Customer retention plan with 29% repeat bookings"
   },
   {
-    image: "/brand-launch.png",
+    image: "/a006.png",
     category: "Branding",
     title: "Brand Launch",
     description: "New brand identity with 260% follower growth"
@@ -65,7 +65,7 @@ export const successInsights = [
     client: {
       name: "Gardenias Health Care Clinic",
       location: "Milton, ON",
-      website: "#"
+      website: null
     }
   },
   {
@@ -87,7 +87,7 @@ export const successInsights = [
     client: {
       name: "Gardenias Health Care Clinic",
       location: "Milton, ON",
-      website: "#"
+      website: null
     }
   },
   {
@@ -109,7 +109,7 @@ export const successInsights = [
     client: {
       name: "Gardenias Health Care Clinic",
       location: "Milton, ON",
-      website: "#"
+      website: null
     }
   }
 ]

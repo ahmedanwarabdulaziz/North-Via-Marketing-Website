@@ -185,8 +185,7 @@ export default function Contact() {
                 </div>
                 <div>
                   <div className="font-semibold text-brand-blue">Email</div>
-                  <div className="text-gray-600">hello@nvm-marketing.com</div>
-                  <div className="text-gray-600">support@nvm-marketing.com</div>
+                  <div className="text-gray-600">info@northviamarketing.com</div>
                 </div>
               </div>
 
@@ -196,8 +195,7 @@ export default function Contact() {
                 </div>
                 <div>
                   <div className="font-semibold text-brand-blue">Phone</div>
-                  <div className="text-gray-600">+1 (555) 123-4567</div>
-                  <div className="text-gray-600">Mon-Fri: 9AM-6PM EST</div>
+                  <div className="text-gray-600">+1 (647) 675-3343</div>
                 </div>
               </div>
 
@@ -206,9 +204,9 @@ export default function Contact() {
                   <MapPin className="text-brand-orange" size={24} />
                 </div>
                 <div>
-                  <div className="font-semibold text-brand-blue">Office</div>
-                  <div className="text-gray-600">123 Marketing Street</div>
-                  <div className="text-gray-600">New York, NY 10001</div>
+                  <div className="font-semibold text-brand-blue">Address</div>
+                  <div className="text-gray-600">509 Dundas St W</div>
+                  <div className="text-gray-600">Oakville, ON L6M 5P4, Canada</div>
                 </div>
               </div>
             </div>

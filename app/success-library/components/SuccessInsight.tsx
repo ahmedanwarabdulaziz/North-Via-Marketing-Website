@@ -1,4 +1,3 @@
-import { ArrowRight, ExternalLink } from 'lucide-react'
 import Image from 'next/image'
 
 interface SuccessInsight {
@@ -28,29 +27,14 @@ export default function SuccessInsight({ insight }: SuccessInsightProps) {
     <article className="bg-white rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 overflow-hidden border border-gray-100">
       {/* Header */}
       <div className="bg-gradient-to-r from-[#274290] to-[#f27921] p-6 text-white">
-        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
-          <div className="flex-1">
-            <h3 className="text-xl lg:text-2xl font-bold mb-3">
-              {insight.title}
-            </h3>
-            <div className="text-sm text-white/90 mb-3">
-              {insight.category}
-            </div>
-            <div className="text-white/80 leading-relaxed">
-              <strong>Client:</strong> {insight.client.name} ({insight.client.location})
-            </div>
-          </div>
-          <div className="flex-shrink-0">
-            <a 
-              href={insight.client.website}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 bg-white/20 text-white px-4 py-2 rounded-lg hover:bg-white/30 transition-all duration-300 text-sm"
-            >
-              Visit Website
-              <ExternalLink className="w-4 h-4" />
-            </a>
-          </div>
+        <h3 className="text-lg lg:text-xl font-bold mb-3">
+          {insight.title}
+        </h3>
+        <div className="text-sm text-white/90 mb-3">
+          {insight.category}
+        </div>
+        <div className="text-white/80 leading-relaxed">
+          <strong>Client:</strong> {insight.client.name} ({insight.client.location})
         </div>
       </div>
 
@@ -93,11 +77,11 @@ export default function SuccessInsight({ insight }: SuccessInsightProps) {
           <h4 className="text-lg font-bold text-[#274290] mb-3">Results</h4>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {insight.results.map((result, index) => (
-              <div key={index} className="bg-gray-50 rounded-lg p-4">
-                <div className="text-2xl font-bold text-[#274290] mb-1">
+              <div key={index} className="bg-gray-50 rounded-lg p-4 text-center">
+                <div className="text-2xl font-bold text-[#274290] mb-1 text-center">
                   {result.metric}
                 </div>
-                <div className="text-sm text-gray-600">
+                <div className="text-sm text-gray-600 text-center">
                   {result.label}
                 </div>
               </div>

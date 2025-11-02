@@ -8,13 +8,26 @@ export default function EmailSupport() {
       <section className="relative min-h-screen flex items-center justify-center overflow-hidden">
         {/* Background Image */}
         <div className="absolute inset-0 z-0">
-          <Image
-            src="/Hero-01.png"
-            alt="Email Support"
-            fill
-            className="object-cover"
-            priority
-          />
+          {/* Desktop Image */}
+          <div className="hidden md:block absolute inset-0">
+            <Image
+              src="/a027.jpg"
+              alt="Email Support"
+              fill
+              className="object-cover object-center"
+              priority
+            />
+          </div>
+          {/* Mobile Image */}
+          <div className="md:hidden absolute inset-0">
+            <Image
+              src="/a028.jpg"
+              alt="Email Support"
+              fill
+              className="object-cover object-right"
+              priority
+            />
+          </div>
           <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/50 to-black/30"></div>
         </div>
 
@@ -357,33 +370,72 @@ export default function EmailSupport() {
       {/* Included In */}
       <section className="py-24 bg-white">
         <div className="container mx-auto px-6">
-          <div className="max-w-4xl mx-auto text-center mb-16">
-            <h2 className="text-3xl lg:text-4xl font-black text-[#274290] mb-8">
-              Included In
-            </h2>
-          </div>
-
           <div className="max-w-6xl mx-auto">
-            <div className="grid md:grid-cols-3 gap-8">
-              <div className="bg-gradient-to-br from-[#274290] to-[#f27921] rounded-2xl p-8 text-white text-center">
-                <h3 className="text-2xl font-bold mb-4">Essential Growth</h3>
-                <p className="text-lg mb-6">Standard support with same-day responses.</p>
-                <div className="text-3xl font-bold">$200</div>
-                <div className="text-white/80">CAD / month</div>
+            <div className="text-center mb-12">
+              <h2 className="text-3xl lg:text-4xl font-black text-[#274290] mb-4">
+                Included In
+              </h2>
+              <p className="text-xl text-gray-600 max-w-2xl mx-auto">
+                This service is available across all our partnership tiers, with varying levels of support.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+              {/* Essential Growth Card */}
+              <div className="bg-white rounded-2xl p-8 border-2 border-gray-100 shadow-lg hover:shadow-2xl transition-all duration-300 relative">
+                {/* Sticker-style Title */}
+                <div className="absolute -top-4 left-6 right-6">
+                  <div className="bg-gradient-to-r from-blue-500 to-blue-600 text-white px-6 py-3 rounded-lg shadow-lg transform rotate-[-2deg]">
+                    <h3 className="text-lg font-black text-center tracking-wide">Essential Growth</h3>
+                  </div>
+                </div>
+                
+                <div className="pt-8 mt-4">
+                  <div className="space-y-4">
+                    <div className="flex items-start gap-3">
+                      <Check className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                      <p className="text-gray-700 leading-relaxed">Standard support with same-day responses</p>
+                    </div>
+                  </div>
+                </div>
               </div>
 
-              <div className="bg-gradient-to-br from-[#f27921] to-[#274290] rounded-2xl p-8 text-white text-center">
-                <h3 className="text-2xl font-bold mb-4">Performance Partner</h3>
-                <p className="text-lg mb-6">Priority support with faster turnaround.</p>
-                <div className="text-3xl font-bold">$400</div>
-                <div className="text-white/80">CAD / month</div>
+              {/* Performance Partner Card */}
+              <div className="bg-white rounded-2xl p-8 border-2 border-gray-100 shadow-lg hover:shadow-2xl transition-all duration-300 relative">
+                {/* Sticker-style Title */}
+                <div className="absolute -top-4 left-6 right-6">
+                  <div className="bg-gradient-to-r from-orange-500 to-orange-600 text-white px-6 py-3 rounded-lg shadow-lg transform rotate-[1deg]">
+                    <h3 className="text-lg font-black text-center tracking-wide">Performance Partner</h3>
+                  </div>
+                </div>
+                
+                <div className="pt-8 mt-4">
+                  <div className="space-y-4">
+                    <div className="flex items-start gap-3">
+                      <Check className="w-5 h-5 text-orange-600 mt-0.5 flex-shrink-0" />
+                      <p className="text-gray-700 leading-relaxed">Priority support with faster turnaround</p>
+                    </div>
+                  </div>
+                </div>
               </div>
 
-              <div className="bg-gradient-to-br from-[#274290] to-[#f27921] rounded-2xl p-8 text-white text-center">
-                <h3 className="text-2xl font-bold mb-4">Strategic Partner</h3>
-                <p className="text-lg mb-6">Direct access to senior team and proactive support reviews.</p>
-                <div className="text-3xl font-bold">$800</div>
-                <div className="text-white/80">CAD / month</div>
+              {/* Strategic Partner Card */}
+              <div className="bg-white rounded-2xl p-8 border-2 border-gray-100 shadow-lg hover:shadow-2xl transition-all duration-300 relative">
+                {/* Sticker-style Title */}
+                <div className="absolute -top-4 left-6 right-6">
+                  <div className="bg-gradient-to-r from-purple-500 to-purple-600 text-white px-6 py-3 rounded-lg shadow-lg transform rotate-[-1deg]">
+                    <h3 className="text-lg font-black text-center tracking-wide">Strategic Partner</h3>
+                  </div>
+                </div>
+                
+                <div className="pt-8 mt-4">
+                  <div className="space-y-4">
+                    <div className="flex items-start gap-3">
+                      <Check className="w-5 h-5 text-purple-600 mt-0.5 flex-shrink-0" />
+                      <p className="text-gray-700 leading-relaxed">Direct access to senior team and proactive support reviews</p>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -405,7 +457,7 @@ export default function EmailSupport() {
               
               <div className="flex flex-col sm:flex-row gap-4 justify-center">
                 <a 
-                  href="https://calendly.com/northviamarketing" 
+                  href="/contact" 
                   target="_blank"
                   rel="noopener noreferrer"
                   className="bg-white text-[#274290] px-8 py-4 rounded-lg font-semibold hover:bg-gray-100 transition-all duration-300 flex items-center justify-center group shadow-lg hover:shadow-xl"
@@ -414,7 +466,7 @@ export default function EmailSupport() {
                   <ArrowRight className="ml-2 group-hover:translate-x-1 transition-transform duration-300" size={20} />
                 </a>
                 <a 
-                  href="#contact" 
+                  href="/contact" 
                   className="border-2 border-white text-white px-8 py-4 rounded-lg font-semibold hover:bg-white hover:text-[#274290] transition-all duration-300 flex items-center justify-center group"
                 >
                   View Support Options

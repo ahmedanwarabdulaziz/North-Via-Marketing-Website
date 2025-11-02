@@ -291,7 +291,7 @@ export default function SEOApproach() {
               
               <div className="mt-12">
                 <a 
-                  href="https://calendly.com/northviamarketing" 
+                  href="/contact" 
                   target="_blank"
                   rel="noopener noreferrer"
                   className="bg-white text-[#274290] px-8 py-4 rounded-lg font-semibold hover:bg-gray-100 transition-all duration-300 flex items-center justify-center group shadow-lg hover:shadow-xl mx-auto w-fit"

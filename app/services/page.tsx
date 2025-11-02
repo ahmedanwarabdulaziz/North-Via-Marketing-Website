@@ -137,6 +137,28 @@ const serviceGroups = [
   }
 ]
 
+const getServiceRoute = (serviceId: number, serviceTitle: string): string => {
+  const routeMap: { [key: number]: string } = {
+    1: "/services/social-media-management",
+    2: "/services/website-updates-maintenance",
+    3: "/services/monthly-report-strategy-call",
+    4: "/services/basic-business-process-review",
+    5: "/services/email-support",
+    6: "/services/google-social-media-ads",
+    7: "/services/crm-setup-automation",
+    8: "/services/customer-experience-suggestions",
+    9: "/services/bi-weekly-strategy-calls",
+    10: "/services/staff-onboarding-support",
+    11: "/services/custom-design-services",
+    12: "/services/seo-services",
+    13: "/services/unlimited-marketing-consulting",
+    14: "/services/full-business-process-audit",
+    15: "/services/priority-support",
+    16: "/services/quarterly-business-health-deep-dive"
+  }
+  return routeMap[serviceId] || "/services"
+}
+
 const getBundleColor = (bundle: string) => {
   switch (bundle) {
     case "Essential Growth":
@@ -159,10 +181,10 @@ export default function Services() {
         {/* Background Image */}
         <div className="absolute inset-0">
           <Image
-            src="/Hero-03.png"
+            src="/a010.png"
             alt="Services Background"
             fill
-            className="object-cover"
+            className="object-cover object-right md:object-center"
             priority
           />
           {/* Gradient Overlay for text readability */}
@@ -187,7 +209,7 @@ export default function Services() {
               </p>
 
               <a 
-                href="#contact" 
+                href="/contact" 
                 className="inline-flex items-center gap-2 bg-[#f27921] text-white px-8 py-4 rounded-lg font-semibold hover:bg-[#d6681a] transition-all duration-300 group shadow-lg hover:shadow-xl"
               >
                 Talk to a Growth Partner
@@ -227,9 +249,9 @@ export default function Services() {
                 </div>
 
                 {/* Services Grid */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                   {group.services.map((service) => (
-                    <div key={service.id} className="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100 hover:shadow-2xl transition-all duration-300">
+                    <div key={service.id} className="bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100 hover:shadow-2xl transition-all duration-300 flex flex-col">
                       {/* Banner Image */}
                       <div className="relative h-48 overflow-hidden">
                         <Image
@@ -238,24 +260,20 @@ export default function Services() {
                           fill
                           className="object-cover"
                         />
-                        {/* Service Number Badge */}
-                        <div className="absolute top-4 left-4 w-12 h-12 bg-gradient-to-br from-[#274290] to-[#f27921] rounded-full flex items-center justify-center shadow-lg">
-                          <span className="text-white font-black text-lg">{service.id.toString().padStart(2, '0')}</span>
-                        </div>
                       </div>
                       
                       {/* Content */}
-                      <div className="p-8">
+                      <div className="p-8 flex flex-col flex-grow">
                         <h4 className="text-2xl font-black text-[#274290] mb-4">
                           {service.title}
                         </h4>
                         
-                        <p className="text-gray-700 leading-relaxed mb-6">
+                        <p className="text-gray-700 leading-relaxed mb-6 flex-grow">
                           {service.description}
                         </p>
                         
                         {/* Bundle Tags */}
-                        <div className="mb-6">
+                        <div className="mb-6 mt-auto">
                           <p className="text-sm font-semibold text-gray-600 mb-3">Included in:</p>
                           <div className="flex flex-wrap gap-2">
                             {service.bundles.map((bundle) => (
@@ -271,7 +289,7 @@ export default function Services() {
                         
                         {/* Learn More Button */}
                         <a 
-                          href={`/services/${service.id}`}
+                          href={getServiceRoute(service.id, service.title)}
                           className="inline-flex items-center gap-2 text-[#f27921] font-semibold hover:text-[#d6681a] transition-colors duration-300 group"
                         >
                           Learn More
@@ -303,9 +321,6 @@ export default function Services() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               {/* Essential Growth Bundle */}
               <div className="bg-white rounded-2xl shadow-xl p-8 text-center">
-                <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                  <span className="text-blue-600 font-black text-2xl">E</span>
-                </div>
                 <h3 className="text-2xl font-black text-[#274290] mb-4">Essential Growth</h3>
                 <p className="text-gray-600 mb-6">For new or small businesses</p>
                 <div className="space-y-3 text-left">
@@ -330,9 +345,6 @@ export default function Services() {
 
               {/* Performance Partner Bundle */}
               <div className="bg-white rounded-2xl shadow-xl p-8 text-center border-2 border-[#f27921]">
-                <div className="w-20 h-20 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                  <span className="text-orange-600 font-black text-2xl">P</span>
-                </div>
                 <h3 className="text-2xl font-black text-[#274290] mb-4">Performance Partner</h3>
                 <p className="text-gray-600 mb-6">For growing teams ready to scale</p>
                 <div className="space-y-3 text-left">
@@ -361,9 +373,6 @@ export default function Services() {
 
               {/* Strategic Partner Bundle */}
               <div className="bg-white rounded-2xl shadow-xl p-8 text-center">
-                <div className="w-20 h-20 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                  <span className="text-purple-600 font-black text-2xl">S</span>
-                </div>
                 <h3 className="text-2xl font-black text-[#274290] mb-4">Strategic Partner</h3>
                 <p className="text-gray-600 mb-6">Full consulting + marketing department replacement</p>
                 <div className="space-y-3 text-left">
@@ -409,31 +418,44 @@ export default function Services() {
       <section className="py-24 bg-white">
         <div className="container mx-auto px-6">
           <div className="max-w-4xl mx-auto text-center">
-            <div className="bg-gradient-to-r from-[#274290] to-[#f27921] rounded-2xl p-12 text-white">
-              <h2 className="text-3xl lg:text-4xl font-black mb-8">
-                Let's grow your business together.
-              </h2>
-              
-              <p className="text-xl leading-relaxed mb-12">
-                Ready to start growing? Let's discuss which services and bundle level will best accelerate your business growth.
-              </p>
-              
-              <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                <a 
-                  href="https://calendly.com/northviamarketing" 
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="bg-white text-[#274290] px-8 py-4 rounded-lg font-semibold hover:bg-gray-100 transition-all duration-300 flex items-center justify-center group shadow-lg hover:shadow-xl"
-                >
-                  Book a Discovery Call
-                  <ArrowRight className="ml-2 group-hover:translate-x-1 transition-transform duration-300" size={20} />
-                </a>
-                <a 
-                  href="#contact" 
-                  className="border-2 border-white text-white px-8 py-4 rounded-lg font-semibold hover:bg-white hover:text-[#274290] transition-all duration-300 flex items-center justify-center group"
-                >
-                  Get Started Today
-                </a>
+            <div className="rounded-3xl p-12 text-white relative overflow-hidden">
+              {/* Background Image */}
+              <div className="absolute inset-0">
+                <Image
+                  src="/a001.png"
+                  alt="Success story background"
+                  fill
+                  className="object-cover"
+                  priority
+                />
+                {/* Gradient Overlay for text readability */}
+                <div className="absolute inset-0 bg-gradient-to-r from-brand-blue/90 via-brand-blue/80 to-brand-orange/90"></div>
+              </div>
+
+              <div className="relative z-10">
+                <h2 className="text-3xl lg:text-4xl font-black mb-8">
+                  Let's grow your business together.
+                </h2>
+                
+                <p className="text-xl leading-relaxed mb-12 opacity-90 max-w-2xl mx-auto">
+                  Ready to start growing? Let's discuss which services and bundle level will best accelerate your business growth.
+                </p>
+                
+                <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                  <a 
+                    href="/contact" 
+                    className="bg-white text-[#274290] px-8 py-4 rounded-lg font-semibold hover:bg-gray-100 transition-all duration-300 flex items-center justify-center group shadow-lg hover:shadow-xl"
+                  >
+                    Book a Discovery Call
+                    <ArrowRight className="ml-2 group-hover:translate-x-1 transition-transform duration-300" size={20} />
+                  </a>
+                  <a 
+                    href="/contact" 
+                    className="border-2 border-white text-white px-8 py-4 rounded-lg font-semibold hover:bg-white hover:text-[#274290] transition-all duration-300 flex items-center justify-center group"
+                  >
+                    Get Started Today
+                  </a>
+                </div>
               </div>
             </div>
           </div>

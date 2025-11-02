@@ -81,18 +81,31 @@ export default function QuarterlyBusinessHealthDeepDive() {
     <div className="min-h-screen">
       {/* Hero Section */}
       <section className="relative py-20 bg-gradient-to-br from-white via-[#e6e7e8]/20 to-white overflow-hidden">
-        {/* Background Image */}
-        <div className="absolute inset-0">
-          <Image
-            src="/Hero-03.png"
-            alt="Quarterly Business Health Deep-Dive Background"
-            fill
-            className="object-cover"
-            priority
-          />
-          {/* Gradient Overlay for text readability */}
-          <div className="absolute inset-0 bg-gradient-to-r from-[#274290]/80 via-[#274290]/60 to-[#f27921]/80"></div>
-        </div>
+          {/* Background Image */}
+          <div className="absolute inset-0">
+            {/* Desktop Image */}
+            <div className="hidden md:block absolute inset-0">
+              <Image
+                src="/a042.jpg"
+                alt="Quarterly Business Health Deep-Dive Background"
+                fill
+                className="object-cover object-center"
+                priority
+              />
+            </div>
+            {/* Mobile Image */}
+            <div className="md:hidden absolute inset-0">
+              <Image
+                src="/a041.jpg"
+                alt="Quarterly Business Health Deep-Dive Background"
+                fill
+                className="object-cover object-right"
+                priority
+              />
+            </div>
+            {/* Gradient Overlay for text readability */}
+            <div className="absolute inset-0 bg-gradient-to-r from-[#274290]/80 via-[#274290]/60 to-[#f27921]/80"></div>
+          </div>
 
         {/* Content */}
         <div className="relative z-10 container mx-auto px-6">
@@ -156,13 +169,13 @@ export default function QuarterlyBusinessHealthDeepDive() {
                 const IconComponent = standard.icon
                 return (
                   <div key={index} className="bg-white rounded-2xl shadow-xl overflow-hidden mb-12 border border-gray-100">
-                    <div className="p-8">
-                      <div className="flex items-start gap-8">
+                    <div className="p-4 md:p-8">
+                      <div className="flex flex-col md:flex-row items-start gap-6 md:gap-8">
                         {/* Left Column - Image and Number */}
-                        <div className="flex-shrink-0">
-                          <div className="relative">
+                        <div className="w-full md:w-auto md:flex-shrink-0">
+                          <div className="relative mx-auto md:mx-0">
                             {/* Image */}
-                            <div className="relative w-64 h-48 rounded-xl overflow-hidden shadow-lg">
+                            <div className="relative w-full md:w-64 h-48 md:h-48 rounded-xl overflow-hidden shadow-lg">
                               <Image
                                 src={standard.image}
                                 alt={standard.title}
@@ -179,28 +192,28 @@ export default function QuarterlyBusinessHealthDeepDive() {
                         </div>
 
                         {/* Right Column - Content */}
-                        <div className="flex-1">
-                          <div className="flex items-center gap-4 mb-6">
-                            <div className="w-12 h-12 bg-gradient-to-br from-[#274290] to-[#f27921] rounded-lg flex items-center justify-center">
+                        <div className="flex-1 w-full">
+                          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 mb-6">
+                            <div className="w-12 h-12 bg-gradient-to-br from-[#274290] to-[#f27921] rounded-lg flex items-center justify-center flex-shrink-0">
                               <IconComponent className="w-6 h-6 text-white" />
                             </div>
-                            <h3 className="text-2xl font-black text-[#274290]">{standard.title}</h3>
+                            <h3 className="text-xl md:text-2xl font-black text-[#274290]">{standard.title}</h3>
                           </div>
 
                           <div className="space-y-4">
                             <div>
                               <h4 className="font-bold text-[#274290] mb-2">What We Do:</h4>
-                              <p className="text-gray-700 leading-relaxed">{standard.what}</p>
+                              <p className="text-gray-700 leading-relaxed text-sm md:text-base">{standard.what}</p>
                             </div>
                             
                             <div>
                               <h4 className="font-bold text-[#274290] mb-2">Why It Matters:</h4>
-                              <p className="text-gray-700 leading-relaxed">{standard.why}</p>
+                              <p className="text-gray-700 leading-relaxed text-sm md:text-base">{standard.why}</p>
                             </div>
                             
                             <div>
                               <h4 className="font-bold text-[#274290] mb-2">How We Do It:</h4>
-                              <p className="text-gray-700 leading-relaxed">{standard.how}</p>
+                              <p className="text-gray-700 leading-relaxed text-sm md:text-base">{standard.how}</p>
                             </div>
                           </div>
                         </div>
@@ -296,7 +309,7 @@ export default function QuarterlyBusinessHealthDeepDive() {
               
               <div className="mt-12">
                 <a 
-                  href="https://calendly.com/northviamarketing" 
+                  href="/contact" 
                   target="_blank"
                   rel="noopener noreferrer"
                   className="bg-white text-[#274290] px-8 py-4 rounded-lg font-semibold hover:bg-gray-100 transition-all duration-300 flex items-center justify-center group shadow-lg hover:shadow-xl mx-auto w-fit"

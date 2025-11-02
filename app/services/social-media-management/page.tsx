@@ -8,7 +8,7 @@ const sampleDesigns = [
     type: "Square Post",
     visual: "Client photo or initials in a circle badge, large quote marks, bold headline on blue, subtle orange underline.",
     caption: "Nothing beats real feedback. '{Short client quote}' — {Name, Business}. Want results like this? Let's talk.",
-    image: "/s7.png"
+    image: "/a013.png"
   },
   {
     id: 2,
@@ -16,7 +16,7 @@ const sampleDesigns = [
     type: "Square, 4 slides",
     visual: "Slide 1 headline on blue; Slides 2–3: before/after photos; Slide 4: CTA panel with website URL.",
     caption: "From {problem} to {result}. Swipe to see the difference. Ready for your transformation? Book now.",
-    image: "/s8.png"
+    image: "/a014.png"
   },
   {
     id: 3,
@@ -157,10 +157,10 @@ export default function SocialMediaManagement() {
           {/* Background Image */}
           <div className="absolute inset-0">
             <Image
-              src="/Hero-05.png"
+              src="/a015.png"
               alt="Social Media Management Background"
               fill
-              className="object-cover"
+              className="object-cover object-right md:object-center"
               priority
             />
             {/* Gradient Overlay for text readability */}
@@ -182,7 +182,7 @@ export default function SocialMediaManagement() {
                 
                 <div className="flex flex-col sm:flex-row gap-6">
                   <a 
-                    href="#contact" 
+                    href="/contact" 
                     className="bg-gradient-to-r from-[#274290] to-[#f27921] text-white px-8 py-4 rounded-lg font-semibold hover:shadow-xl transition-all duration-300 flex items-center justify-center group"
                   >
                     Start Building Your Online Presence
@@ -208,23 +208,24 @@ export default function SocialMediaManagement() {
         <section className="py-24 bg-white">
           <div className="container mx-auto px-6">
             <div className="max-w-6xl mx-auto">
-              {/* Section Header with Banner */}
+              {/* Section Header with Waves Background */}
               <div className="relative mb-16">
-                <div className="relative h-64 rounded-3xl overflow-hidden shadow-2xl">
-                  <Image
-                    src="/x002.png"
-                    alt="Social Media Brand Identity Banner"
-                    fill
-                    className="object-cover"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-r from-[#274290]/50 via-[#274290]/30 to-[#f27921]/50"></div>
+                <div className="relative h-64 rounded-3xl overflow-hidden shadow-2xl bg-gradient-to-br from-[#274290] via-[#274290] to-[#1a3a6b]">
+                  {/* Waves Pattern */}
+                  <div className="absolute inset-0 opacity-20">
+                    <svg className="absolute bottom-0 w-full h-full" viewBox="0 0 1200 200" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M0,100 C150,150 350,50 600,100 C850,150 1050,50 1200,100 L1200,200 L0,200 Z" fill="rgba(255,255,255,0.3)"/>
+                      <path d="M0,120 C200,170 400,70 600,120 C800,170 1000,70 1200,120 L1200,200 L0,200 Z" fill="rgba(255,255,255,0.2)"/>
+                      <path d="M0,140 C250,190 450,90 600,140 C750,190 950,90 1200,140 L1200,200 L0,200 Z" fill="rgba(255,255,255,0.1)"/>
+                    </svg>
+                  </div>
                   <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="text-center text-white">
+                    <div className="text-center text-white relative z-10">
                       <h2 className="text-4xl lg:text-5xl font-black leading-tight mb-4">
-                        <span className="block">Social Media Should Feel Like</span>
+                        <span className="block text-white">Social Media Should Feel Like</span>
                         <span className="block text-[#f27921]">Your Brand</span>
                       </h2>
-                      <p className="text-xl text-white/90 max-w-2xl mx-auto">
+                      <p className="text-xl text-white max-w-2xl mx-auto">
                         Not Just More Noise
                       </p>
                     </div>
@@ -331,26 +332,17 @@ export default function SocialMediaManagement() {
 
               {/* Workflow Steps */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-12">
-                {approachSteps.slice(0, 4).map((step, index) => (
+                {approachSteps.map((step, index) => (
                   <div key={index} className="bg-white rounded-2xl shadow-xl p-8 hover:shadow-2xl transition-all duration-300">
-                    <div className="w-16 h-16 bg-gradient-to-br from-[#274290] to-[#f27921] rounded-full flex items-center justify-center mb-6">
-                      <span className="text-white font-bold text-xl">{index + 1}</span>
+                    <div className="flex items-center mb-4">
+                      <div className="w-12 h-12 bg-gradient-to-br from-[#274290] to-[#f27921] rounded-full flex items-center justify-center mr-4 flex-shrink-0">
+                        <span className="text-white font-bold text-lg">{index + 1}</span>
+                      </div>
+                      <h3 className="text-2xl font-black text-[#274290]">{step.title}</h3>
                     </div>
-                    <h3 className="text-2xl font-black text-[#274290] mb-4">{step.title}</h3>
                     <p className="text-gray-700 leading-relaxed">{step.description}</p>
                   </div>
                 ))}
-              </div>
-
-              {/* Full Width Step */}
-              <div className="bg-white rounded-2xl shadow-xl p-8 hover:shadow-2xl transition-all duration-300 max-w-4xl mx-auto">
-                <div className="flex items-center mb-6">
-                  <div className="w-16 h-16 bg-gradient-to-br from-[#274290] to-[#f27921] rounded-full flex items-center justify-center mr-6">
-                    <span className="text-white font-bold text-xl">5</span>
-                  </div>
-                  <h3 className="text-2xl font-black text-[#274290]">{approachSteps[4].title}</h3>
-                </div>
-                <p className="text-gray-700 leading-relaxed text-lg">{approachSteps[4].description}</p>
               </div>
 
               <div className="text-center mt-12">
@@ -396,10 +388,12 @@ export default function SocialMediaManagement() {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-12">
                 {whatYouGet.map((service, index) => (
                   <div key={index} className="bg-[#e6e7e8] rounded-2xl p-8 hover:shadow-xl transition-all duration-300">
-                    <div className="w-12 h-12 bg-gradient-to-br from-[#274290] to-[#f27921] rounded-full flex items-center justify-center mb-6">
-                      <span className="text-white font-bold text-lg">{index + 1}</span>
+                    <div className="flex items-center mb-4">
+                      <div className="w-12 h-12 bg-gradient-to-br from-[#274290] to-[#f27921] rounded-full flex items-center justify-center mr-4 flex-shrink-0">
+                        <span className="text-white font-bold text-lg">{index + 1}</span>
+                      </div>
+                      <h3 className="text-xl font-black text-[#274290]">{service.title}</h3>
                     </div>
-                    <h3 className="text-xl font-black text-[#274290] mb-4">{service.title}</h3>
                     <p className="text-gray-700 leading-relaxed text-sm">{service.description}</p>
                   </div>
                 ))}
@@ -558,7 +552,7 @@ export default function SocialMediaManagement() {
                       <ArrowRight className="ml-2 group-hover:translate-x-1 transition-transform duration-300" size={20} />
                     </a>
                     <a 
-                      href="#contact" 
+                      href="/contact" 
                       className="border-2 border-[#274290] text-[#274290] px-6 py-3 rounded-lg font-semibold hover:bg-[#274290] hover:text-white transition-all duration-300 flex items-center justify-center group"
                     >
                       Request Custom Samples
@@ -710,7 +704,7 @@ export default function SocialMediaManagement() {
             </p>
             <div className="flex flex-col sm:flex-row gap-6 justify-center">
               <a 
-                href="https://calendly.com/northviamarketing" 
+                  href="/contact"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="bg-white text-[#274290] px-8 py-4 rounded-lg font-bold text-lg hover:bg-gray-100 transition-all duration-300 flex items-center justify-center group shadow-xl"

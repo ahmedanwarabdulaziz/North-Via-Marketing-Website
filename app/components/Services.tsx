@@ -5,13 +5,17 @@ export default function Services() {
     <section id="services" className="py-20 bg-white">
       <div className="container mx-auto px-6">
         {/* Section Header */}
-        <div className="text-center mb-16">
-          <h2 className="text-4xl lg:text-5xl font-extrabold text-brand-blue leading-tight mb-6">
-            Choose the Partnership That Fits Your Growth Stage
-          </h2>
-          <p className="text-xl text-gray-700 leading-relaxed max-w-4xl mx-auto">
-            Every business is unique — and so is the level of support you need. Whether you're just getting started, ready to accelerate, or aiming for long-term dominance, we have a package designed to work with you and deliver measurable results.
-          </p>
+        <div className="flex flex-col lg:flex-row gap-8 lg:gap-12 items-start mb-16">
+          <div className="w-full lg:w-2/5">
+            <h2 className="text-4xl lg:text-5xl font-extrabold text-brand-blue leading-tight">
+              Choose the Partnership That Fits Your <span className="text-brand-orange">Growth Stage</span>
+            </h2>
+          </div>
+          <div className="w-full lg:w-3/5">
+            <p className="text-xl text-gray-700 leading-relaxed">
+              Every business is unique — and so is the level of support you need. Whether you're just getting started, ready to accelerate, or aiming for long-term dominance, we have a package designed to work with you and deliver measurable results.
+            </p>
+          </div>
         </div>
 
                  {/* Package Cards */}
@@ -130,9 +134,9 @@ export default function Services() {
 
           {/* Strategic Partner */}
           <div className="bg-white rounded-2xl shadow-lg hover:shadow-2xl hover:scale-105 transition-all duration-300 p-8 border border-gray-100 relative flex flex-col">
-            {/* Limited-Time Offer Box */}
-            <div className="absolute -top-4 left-1/2 transform -translate-x-1/2 bg-brand-orange text-white px-6 py-2 rounded-full text-sm font-semibold shadow-lg">
-              💡 Limited-Time Offer
+            {/* Professional Badge */}
+            <div className="absolute -top-4 left-1/2 transform -translate-x-1/2 bg-brand-orange text-white px-6 py-2 rounded-full text-xs font-bold uppercase tracking-wider shadow-xl border-2 border-white text-center whitespace-nowrap">
+              Most Popular • 40% OFF
             </div>
 
             <div className="text-center mb-8">

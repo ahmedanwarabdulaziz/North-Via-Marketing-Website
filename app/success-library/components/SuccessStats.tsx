@@ -22,11 +22,11 @@ export default function SuccessStats({ stats }: SuccessStatsProps) {
         
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-4xl mx-auto">
           {stats.map((stat, index) => (
-            <div key={index} className="text-center">
-              <div className="text-4xl lg:text-5xl font-black text-white mb-2">
+            <div key={index} className="text-center flex flex-col items-center justify-center">
+              <div className="text-4xl lg:text-5xl font-black text-white mb-2 text-center">
                 {stat.number}
               </div>
-              <div className="text-lg text-white/80">
+              <div className="text-lg text-white/80 text-center">
                 {stat.label}
               </div>
             </div>

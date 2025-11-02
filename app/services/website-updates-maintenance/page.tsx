@@ -109,13 +109,26 @@ export default function WebsiteUpdatesMaintenance() {
         <section className="relative py-20 bg-gradient-to-br from-white via-[#e6e7e8]/20 to-white overflow-hidden">
           {/* Background Image */}
           <div className="absolute inset-0">
-            <Image
-              src="/Hero-03.png"
-              alt="Website Updates & Maintenance Background"
-              fill
-              className="object-cover"
-              priority
-            />
+            {/* Desktop Image */}
+            <div className="hidden md:block absolute inset-0">
+              <Image
+                src="/a021.jpg"
+                alt="Website Updates & Maintenance Background"
+                fill
+                className="object-cover object-center"
+                priority
+              />
+            </div>
+            {/* Mobile Image */}
+            <div className="md:hidden absolute inset-0">
+              <Image
+                src="/a022.jpg"
+                alt="Website Updates & Maintenance Background"
+                fill
+                className="object-cover object-right"
+                priority
+              />
+            </div>
             {/* Gradient Overlay for text readability */}
             <div className="absolute inset-0 bg-gradient-to-r from-[#274290]/80 via-[#274290]/60 to-[#f27921]/80"></div>
           </div>
@@ -138,7 +151,7 @@ export default function WebsiteUpdatesMaintenance() {
                 </p>
 
                 <a 
-                  href="#contact" 
+                  href="/contact" 
                   className="inline-flex items-center gap-2 bg-[#f27921] text-white px-8 py-4 rounded-lg font-semibold hover:bg-[#d6681a] transition-all duration-300 group shadow-lg hover:shadow-xl"
                 >
                   Request a Site Checkup
@@ -156,22 +169,24 @@ export default function WebsiteUpdatesMaintenance() {
         <section className="py-24 bg-white">
           <div className="container mx-auto px-6">
             <div className="max-w-6xl mx-auto">
-              {/* Section Header with Banner */}
+              {/* Section Header with Waves Background */}
               <div className="relative mb-16">
-                <div className="relative h-64 rounded-3xl overflow-hidden shadow-2xl">
-                  <Image
-                    src="/x002.png"
-                    alt="Why Websites Fall Behind Banner"
-                    fill
-                    className="object-cover"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-r from-[#274290]/50 via-[#274290]/30 to-[#f27921]/50"></div>
+                <div className="relative h-64 rounded-3xl overflow-hidden shadow-2xl bg-gradient-to-br from-[#274290] via-[#274290] to-[#1a3a6b]">
+                  {/* Waves Pattern */}
+                  <div className="absolute inset-0 opacity-20">
+                    <svg className="absolute bottom-0 w-full h-full" viewBox="0 0 1200 200" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M0,100 C150,150 350,50 600,100 C850,150 1050,50 1200,100 L1200,200 L0,200 Z" fill="rgba(255,255,255,0.3)"/>
+                      <path d="M0,120 C200,170 400,70 600,120 C800,170 1000,70 1200,120 L1200,200 L0,200 Z" fill="rgba(255,255,255,0.2)"/>
+                      <path d="M0,140 C250,190 450,90 600,140 C750,190 950,90 1200,140 L1200,200 L0,200 Z" fill="rgba(255,255,255,0.1)"/>
+                    </svg>
+                  </div>
                   <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="text-center text-white">
+                    <div className="text-center text-white relative z-10">
                       <h2 className="text-4xl lg:text-5xl font-black leading-tight mb-4">
-                        Why Websites Fall Behind
+                        <span className="block text-white">Why Websites</span>
+                        <span className="block text-[#f27921]">Fall Behind</span>
                       </h2>
-                      <p className="text-xl text-white/90 max-w-2xl mx-auto">
+                      <p className="text-xl text-white max-w-2xl mx-auto">
                         Websites rarely fail overnight—they slow down, break silently, or become outdated without warning.
                       </p>
                     </div>
@@ -274,10 +289,12 @@ export default function WebsiteUpdatesMaintenance() {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-12">
                 {maintenanceProcess.map((step, index) => (
                   <div key={index} className="bg-white rounded-2xl shadow-xl p-8 hover:shadow-2xl transition-all duration-300">
-                    <div className="w-16 h-16 bg-gradient-to-br from-[#274290] to-[#f27921] rounded-full flex items-center justify-center mb-6">
-                      <span className="text-white font-bold text-xl">{index + 1}</span>
+                    <div className="flex items-center mb-4">
+                      <div className="w-12 h-12 bg-gradient-to-br from-[#274290] to-[#f27921] rounded-full flex items-center justify-center mr-4 flex-shrink-0">
+                        <span className="text-white font-bold text-lg">{index + 1}</span>
+                      </div>
+                      <h3 className="text-2xl font-black text-[#274290]">{step.title}</h3>
                     </div>
-                    <h3 className="text-2xl font-black text-[#274290] mb-4">{step.title}</h3>
                     <p className="text-gray-700 leading-relaxed">{step.description}</p>
                   </div>
                 ))}
@@ -326,10 +343,12 @@ export default function WebsiteUpdatesMaintenance() {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-12">
                 {whatYouGet.map((service, index) => (
                   <div key={index} className="bg-[#e6e7e8] rounded-2xl p-8 hover:shadow-xl transition-all duration-300">
-                    <div className="w-12 h-12 bg-gradient-to-br from-[#274290] to-[#f27921] rounded-full flex items-center justify-center mb-6">
-                      <span className="text-white font-bold text-lg">{index + 1}</span>
+                    <div className="flex items-center mb-4">
+                      <div className="w-12 h-12 bg-gradient-to-br from-[#274290] to-[#f27921] rounded-full flex items-center justify-center mr-4 flex-shrink-0">
+                        <span className="text-white font-bold text-lg">{index + 1}</span>
+                      </div>
+                      <h3 className="text-xl font-black text-[#274290]">{service.title}</h3>
                     </div>
-                    <h3 className="text-xl font-black text-[#274290] mb-4">{service.title}</h3>
                     <p className="text-gray-700 leading-relaxed text-sm">{service.description}</p>
                   </div>
                 ))}
@@ -462,25 +481,56 @@ export default function WebsiteUpdatesMaintenance() {
         </section>
 
         {/* Included In Section */}
-        <section className="py-24 bg-[#e6e7e8]">
+        <section className="py-24 bg-white">
           <div className="container mx-auto px-6">
-            <div className="max-w-4xl mx-auto text-center">
-              <h2 className="text-3xl lg:text-4xl font-black text-[#274290] mb-8">
-                Included In
-              </h2>
-              <div className="flex flex-wrap justify-center gap-4">
-                {bundles.map((bundle) => (
-                  <span
-                    key={bundle.name}
-                    className={`px-6 py-3 rounded-full text-lg font-semibold border ${bundle.color}`}
-                  >
-                    {bundle.name}
-                  </span>
-                ))}
+            <div className="max-w-6xl mx-auto">
+              <div className="text-center mb-12">
+                <h2 className="text-3xl lg:text-4xl font-black text-[#274290] mb-4">
+                  Included In
+                </h2>
+                <p className="text-xl text-gray-600 max-w-2xl mx-auto">
+                  This service is available across our partnership tiers, with varying levels of depth and detail.
+                </p>
               </div>
-              <div className="mt-8 text-lg text-gray-700">
-                <p className="mb-2"><strong>Performance Partner</strong> – regular updates and performance checks</p>
-                <p><strong>Strategic Partner</strong> – full maintenance, optimization, and on-demand support</p>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
+                {/* Performance Partner Card */}
+                <div className="bg-white rounded-2xl p-8 border-2 border-gray-100 shadow-lg hover:shadow-2xl transition-all duration-300 relative">
+                  {/* Sticker-style Title */}
+                  <div className="absolute -top-4 left-6 right-6">
+                    <div className="bg-gradient-to-r from-orange-500 to-orange-600 text-white px-6 py-3 rounded-lg shadow-lg transform rotate-[1deg]">
+                      <h3 className="text-lg font-black text-center tracking-wide">Performance Partner</h3>
+                    </div>
+                  </div>
+                  
+                  <div className="pt-8 mt-4">
+                    <div className="space-y-4">
+                      <div className="flex items-start gap-3">
+                        <Check className="w-5 h-5 text-orange-600 mt-0.5 flex-shrink-0" />
+                        <p className="text-gray-700 leading-relaxed">Regular updates and performance checks</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Strategic Partner Card */}
+                <div className="bg-white rounded-2xl p-8 border-2 border-gray-100 shadow-lg hover:shadow-2xl transition-all duration-300 relative">
+                  {/* Sticker-style Title */}
+                  <div className="absolute -top-4 left-6 right-6">
+                    <div className="bg-gradient-to-r from-purple-500 to-purple-600 text-white px-6 py-3 rounded-lg shadow-lg transform rotate-[-1deg]">
+                      <h3 className="text-lg font-black text-center tracking-wide">Strategic Partner</h3>
+                    </div>
+                  </div>
+                  
+                  <div className="pt-8 mt-4">
+                    <div className="space-y-4">
+                      <div className="flex items-start gap-3">
+                        <Check className="w-5 h-5 text-purple-600 mt-0.5 flex-shrink-0" />
+                        <p className="text-gray-700 leading-relaxed">Full maintenance, optimization, and on-demand support</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -497,7 +547,7 @@ export default function WebsiteUpdatesMaintenance() {
             </p>
             <div className="flex flex-col sm:flex-row gap-6 justify-center">
               <a 
-                href="https://calendly.com/northviamarketing" 
+                  href="/contact"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="bg-white text-[#274290] px-8 py-4 rounded-lg font-bold text-lg hover:bg-gray-100 transition-all duration-300 flex items-center justify-center group shadow-xl"

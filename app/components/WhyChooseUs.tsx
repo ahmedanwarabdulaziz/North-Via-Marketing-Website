@@ -1,4 +1,5 @@
 import { Target, TrendingUp, Cpu, Users, BarChart3, Award } from 'lucide-react'
+import Image from 'next/image'
 
 export default function WhyChooseUs() {
   return (
@@ -134,11 +135,18 @@ export default function WhyChooseUs() {
 
         {/* CTA Section */}
         <div className="text-center">
-          <div className="bg-gradient-to-r from-brand-blue to-brand-blue/90 rounded-3xl p-12 text-white relative overflow-hidden">
-            {/* Background Pattern */}
-            <div className="absolute inset-0 opacity-10">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-white rounded-full blur-3xl"></div>
-              <div className="absolute bottom-0 left-0 w-40 h-40 bg-brand-orange rounded-full blur-3xl"></div>
+          <div className="rounded-3xl p-12 text-white relative overflow-hidden">
+            {/* Background Image */}
+            <div className="absolute inset-0">
+              <Image
+                src="/a001.png"
+                alt="Success story background"
+                fill
+                className="object-cover"
+                priority
+              />
+              {/* Gradient Overlay for text readability */}
+              <div className="absolute inset-0 bg-gradient-to-r from-brand-blue/90 via-brand-blue/80 to-brand-orange/90"></div>
             </div>
 
             <div className="relative z-10">

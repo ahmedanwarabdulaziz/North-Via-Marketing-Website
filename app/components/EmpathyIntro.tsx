@@ -48,10 +48,10 @@ export default function EmpathyIntro() {
             {/* CTA Button */}
             <div className="pt-4">
               <a 
-                href="#partnership-approach" 
+                href="/services" 
                 className="inline-flex items-center text-brand-orange font-semibold text-lg hover:text-orange-600 transition-colors duration-300 group"
               >
-                Discover Our Approach
+                Discover Our Services
                 <svg 
                   className="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform duration-300" 
                   fill="none" 
