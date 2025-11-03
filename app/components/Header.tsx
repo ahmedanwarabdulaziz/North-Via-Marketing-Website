@@ -224,22 +224,19 @@ export default function Header() {
                     </div>
                   </div>
 
-                  {/* Additional Resources */}
-                  <div className="border-t border-gray-200 bg-gray-50">
-                    <a 
-                      href="/seo-approach" 
-                      className="block px-6 py-4 text-[#274290] hover:bg-gradient-to-r hover:from-[#274290] hover:to-[#f27921] hover:text-white transition-all duration-300 font-medium"
-                    >
-                      Our SEO Approach
-                    </a>
-                  </div>
                 </div>
               </div>
               <a 
-                href="#about" 
+                href="/about" 
                 className="text-[#274290] font-medium hover:text-white transition-colors duration-300"
               >
                 About
+              </a>
+              <a 
+                href="/about-ahmed" 
+                className="text-[#274290] font-medium hover:text-white transition-colors duration-300"
+              >
+                About Ahmed
               </a>
               <a 
                 href="#contact" 
@@ -491,23 +488,22 @@ export default function Header() {
                     )}
                   </div>
 
-                  {/* Additional Resources */}
-                  <a 
-                    href="/seo-approach" 
-                    className="text-sm text-[#274290] font-medium hover:text-white hover:bg-white/10 transition-all duration-300 px-4 py-2 rounded-lg block ml-4 border-l-2 border-white/20"
-                    onClick={() => setIsMenuOpen(false)}
-                  >
-                    Our SEO Approach
-                  </a>
                 </div>
 
                 <div className="border-t border-white/20 mt-2 pt-2">
                   <a 
-                    href="#about" 
+                    href="/about" 
                     className="text-[#274290] font-medium hover:text-white hover:bg-white/10 transition-all duration-300 px-4 py-2 rounded-lg block"
                     onClick={() => setIsMenuOpen(false)}
                   >
                     About
+                  </a>
+                  <a 
+                    href="/about-ahmed" 
+                    className="text-[#274290] font-medium hover:text-white hover:bg-white/10 transition-all duration-300 px-4 py-2 rounded-lg block"
+                    onClick={() => setIsMenuOpen(false)}
+                  >
+                    About Ahmed
                   </a>
                   <a 
                     href="#contact" 

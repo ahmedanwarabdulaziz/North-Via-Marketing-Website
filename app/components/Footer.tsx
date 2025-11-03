@@ -80,7 +80,7 @@ export default function Footer() {
                   </Link>
                 </li>
                 <li>
-                  <Link href="/#about" className="text-gray-300 hover:text-brand-orange transition-colors duration-300 flex items-center group text-sm">
+                  <Link href="/about" className="text-gray-300 hover:text-brand-orange transition-colors duration-300 flex items-center group text-sm">
                     <ArrowRight size={14} className="mr-2 opacity-0 group-hover:opacity-100 transition-opacity" />
                     <span className="group-hover:translate-x-1 transition-transform">About Us</span>
                   </Link>
