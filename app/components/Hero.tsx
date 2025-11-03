@@ -1,4 +1,4 @@
-import { Calendar, Eye } from 'lucide-react'
+import { Calendar, Eye, ClipboardCheck } from 'lucide-react'
 import Image from 'next/image'
 
 export default function Hero() {
@@ -58,6 +58,13 @@ export default function Hero() {
               >
                 Book a Free Consultation
                 <Calendar className="ml-2 group-hover:scale-110 transition-transform duration-300" size={20} />
+              </a>
+              <a 
+                href="/survey" 
+                className="bg-white text-[#274290] px-8 py-4 rounded-lg font-semibold hover:bg-gray-100 transition-all duration-300 flex items-center justify-center group shadow-lg hover:shadow-xl"
+              >
+                Get Your Free Business Assessment
+                <ClipboardCheck className="ml-2 group-hover:scale-110 transition-transform duration-300" size={20} />
               </a>
               <a 
                 href="/success-library" 

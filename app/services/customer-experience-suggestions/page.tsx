@@ -461,10 +461,17 @@ export default function CustomerExperienceSuggestions() {
               
               <div className="flex flex-col sm:flex-row gap-4 justify-center">
                 <a 
+                  href="/survey" 
+                  className="bg-white text-[#274290] px-8 py-4 rounded-lg font-semibold hover:bg-gray-100 transition-all duration-300 flex items-center justify-center group shadow-lg hover:shadow-xl"
+                >
+                  Get Your Free Business Assessment
+                  <ArrowRight className="ml-2 group-hover:translate-x-1 transition-transform duration-300" size={20} />
+                </a>
+                <a 
                   href="/contact" 
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="bg-white text-[#274290] px-8 py-4 rounded-lg font-semibold hover:bg-gray-100 transition-all duration-300 flex items-center justify-center group shadow-lg hover:shadow-xl"
+                  className="bg-white/10 backdrop-blur-sm border-2 border-white text-white px-8 py-4 rounded-lg font-semibold hover:bg-white hover:text-[#274290] transition-all duration-300 flex items-center justify-center group"
                 >
                   Book a CX Review Call
                   <ArrowRight className="ml-2 group-hover:translate-x-1 transition-transform duration-300" size={20} />

@@ -1,14 +1,27 @@
 'use client'
 
 import { useState } from 'react'
-import { Menu, X } from 'lucide-react'
+import { Menu, X, ChevronDown, ChevronRight, Search, Settings, Users, Wrench, Clock, Shield, MessageSquare, Brain, TrendingUp, Target, Share2, BarChart, FileSearch, Palette } from 'lucide-react'
 import Image from 'next/image'
 
 export default function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
+  const [expandedSections, setExpandedSections] = useState<string[]>([])
 
   const toggleMenu = () => {
     setIsMenuOpen(!isMenuOpen)
+    // Reset expanded sections when menu closes
+    if (isMenuOpen) {
+      setExpandedSections([])
+    }
+  }
+
+  const toggleSection = (section: string) => {
+    setExpandedSections(prev => 
+      prev.includes(section) 
+        ? prev.filter(s => s !== section)
+        : [...prev, section]
+    )
   }
 
   return (
@@ -62,34 +75,41 @@ export default function Header() {
                   
                   {/* Professional Three Column Layout */}
                   <div className="flex">
-                    {/* Column 1: Be Seen. Be Remembered. */}
+                    {/* Column 1: Get Found by More Customers */}
                     <div className="flex-1 border-r border-gray-100">
-                      <div className="px-6 py-4 bg-gray-50 text-sm font-semibold text-[#274290] border-b border-gray-200">
-                        Be Seen. Be Remembered.
+                      <div className="px-6 py-4 bg-gradient-to-r from-[#274290] to-[#f27921] text-white text-sm font-bold border-b-2 border-[#f27921] shadow-lg">
+                        <div className="flex items-center gap-2">
+                          <Search size={18} className="flex-shrink-0" />
+                          <span>Get Found by More Customers</span>
+                        </div>
                       </div>
-                      <div className="py-2">
+                      <div className="py-2 bg-orange-50/30">
                         <a 
                           href="/services/social-media-management" 
-                          className="block px-6 py-3 text-sm text-[#274290] hover:bg-gray-50 hover:text-[#f27921] transition-all duration-200 font-medium"
+                          className="block px-6 py-3 text-sm text-[#274290] hover:bg-orange-50 hover:text-[#f27921] transition-all duration-200 font-medium flex items-center gap-2 group"
                         >
+                          <Share2 size={16} className="text-[#f27921] group-hover:text-[#d6681a] flex-shrink-0" />
                           Social Media Management
                         </a>
                         <a 
                           href="/services/google-social-media-ads" 
-                          className="block px-6 py-3 text-sm text-[#274290] hover:bg-gray-50 hover:text-[#f27921] transition-all duration-200 font-medium"
+                          className="block px-6 py-3 text-sm text-[#274290] hover:bg-orange-50 hover:text-[#f27921] transition-all duration-200 font-medium flex items-center gap-2 group"
                         >
+                          <BarChart size={16} className="text-[#f27921] group-hover:text-[#d6681a] flex-shrink-0" />
                           Google & Social Media Ads
                         </a>
                         <a 
                           href="/services/seo-services" 
-                          className="block px-6 py-3 text-sm text-[#274290] hover:bg-gray-50 hover:text-[#f27921] transition-all duration-200 font-medium"
+                          className="block px-6 py-3 text-sm text-[#274290] hover:bg-orange-50 hover:text-[#f27921] transition-all duration-200 font-medium flex items-center gap-2 group"
                         >
+                          <FileSearch size={16} className="text-[#f27921] group-hover:text-[#d6681a] flex-shrink-0" />
                           SEO Services
                         </a>
                         <a 
                           href="/services/custom-design-services" 
-                          className="block px-6 py-3 text-sm text-[#274290] hover:bg-gray-50 hover:text-[#f27921] transition-all duration-200 font-medium"
+                          className="block px-6 py-3 text-sm text-[#274290] hover:bg-orange-50 hover:text-[#f27921] transition-all duration-200 font-medium flex items-center gap-2 group"
                         >
+                          <Palette size={16} className="text-[#f27921] group-hover:text-[#d6681a] flex-shrink-0" />
                           Custom Design Services
                         </a>
                       </div>
@@ -97,38 +117,46 @@ export default function Header() {
 
                     {/* Column 2: Keep Everything Running Smoothly. */}
                     <div className="flex-1 border-r border-gray-100">
-                      <div className="px-6 py-4 bg-gray-50 text-sm font-semibold text-[#274290] border-b border-gray-200">
-                        Keep Everything Running Smoothly.
+                      <div className="px-6 py-4 bg-gradient-to-r from-[#274290] to-[#f27921] text-white text-sm font-bold border-b-2 border-[#f27921] shadow-lg">
+                        <div className="flex items-center gap-2">
+                          <Settings size={18} className="flex-shrink-0" />
+                          <span>Keep Everything Running Smoothly.</span>
+                        </div>
                       </div>
-                      <div className="py-2">
+                      <div className="py-2 bg-orange-50/30">
                         <a 
                           href="/services/website-updates-maintenance" 
-                          className="block px-6 py-3 text-sm text-[#274290] hover:bg-gray-50 hover:text-[#f27921] transition-all duration-200 font-medium"
+                          className="block px-6 py-3 text-sm text-[#274290] hover:bg-orange-50 hover:text-[#f27921] transition-all duration-200 font-medium flex items-center gap-2 group"
                         >
+                          <Wrench size={16} className="text-[#f27921] group-hover:text-[#d6681a] flex-shrink-0" />
                           Website Updates & Maintenance
                         </a>
                         <a 
                           href="/services/crm-setup-automation" 
-                          className="block px-6 py-3 text-sm text-[#274290] hover:bg-gray-50 hover:text-[#f27921] transition-all duration-200 font-medium"
+                          className="block px-6 py-3 text-sm text-[#274290] hover:bg-orange-50 hover:text-[#f27921] transition-all duration-200 font-medium flex items-center gap-2 group"
                         >
+                          <Settings size={16} className="text-[#f27921] group-hover:text-[#d6681a] flex-shrink-0" />
                           CRM Setup & Automation
                         </a>
                         <a 
                           href="/services/monthly-report-strategy-call" 
-                          className="block px-6 py-3 text-sm text-[#274290] hover:bg-gray-50 hover:text-[#f27921] transition-all duration-200 font-medium"
+                          className="block px-6 py-3 text-sm text-[#274290] hover:bg-orange-50 hover:text-[#f27921] transition-all duration-200 font-medium flex items-center gap-2 group"
                         >
+                          <Clock size={16} className="text-[#f27921] group-hover:text-[#d6681a] flex-shrink-0" />
                           Monthly Report & Strategy Call
                         </a>
                         <a 
                           href="/services/email-support" 
-                          className="block px-6 py-3 text-sm text-[#274290] hover:bg-gray-50 hover:text-[#f27921] transition-all duration-200 font-medium"
+                          className="block px-6 py-3 text-sm text-[#274290] hover:bg-orange-50 hover:text-[#f27921] transition-all duration-200 font-medium flex items-center gap-2 group"
                         >
+                          <MessageSquare size={16} className="text-[#f27921] group-hover:text-[#d6681a] flex-shrink-0" />
                           Email Support
                         </a>
                         <a 
                           href="/services/priority-support" 
-                          className="block px-6 py-3 text-sm text-[#274290] hover:bg-gray-50 hover:text-[#f27921] transition-all duration-200 font-medium"
+                          className="block px-6 py-3 text-sm text-[#274290] hover:bg-orange-50 hover:text-[#f27921] transition-all duration-200 font-medium flex items-center gap-2 group"
                         >
+                          <Shield size={16} className="text-[#f27921] group-hover:text-[#d6681a] flex-shrink-0" />
                           Priority Support
                         </a>
                       </div>
@@ -136,50 +164,60 @@ export default function Header() {
 
                     {/* Column 3: Work With a Partner Who Thinks Beyond Ads. */}
                     <div className="flex-1">
-                      <div className="px-6 py-4 bg-gray-50 text-sm font-semibold text-[#274290] border-b border-gray-200">
-                        Work With a Partner Who Thinks Beyond Ads.
+                      <div className="px-6 py-4 bg-gradient-to-r from-[#274290] to-[#f27921] text-white text-sm font-bold border-b-2 border-[#f27921] shadow-lg">
+                        <div className="flex items-center gap-2">
+                          <Users size={18} className="flex-shrink-0" />
+                          <span>Work With a Partner Who Thinks Beyond Ads.</span>
+                        </div>
                       </div>
-                      <div className="py-2">
+                      <div className="py-2 bg-orange-50/30">
                         <a 
                           href="/services/basic-business-process-review" 
-                          className="block px-6 py-3 text-sm text-[#274290] hover:bg-gray-50 hover:text-[#f27921] transition-all duration-200 font-medium"
+                          className="block px-6 py-3 text-sm text-[#274290] hover:bg-orange-50 hover:text-[#f27921] transition-all duration-200 font-medium flex items-center gap-2 group"
                         >
+                          <Target size={16} className="text-[#f27921] group-hover:text-[#d6681a] flex-shrink-0" />
                           Basic Business Process Review
                         </a>
                         <a 
                           href="/services/customer-experience-suggestions" 
-                          className="block px-6 py-3 text-sm text-[#274290] hover:bg-gray-50 hover:text-[#f27921] transition-all duration-200 font-medium"
+                          className="block px-6 py-3 text-sm text-[#274290] hover:bg-orange-50 hover:text-[#f27921] transition-all duration-200 font-medium flex items-center gap-2 group"
                         >
+                          <MessageSquare size={16} className="text-[#f27921] group-hover:text-[#d6681a] flex-shrink-0" />
                           Customer Experience Suggestions
                         </a>
                         <a 
                           href="/services/bi-weekly-strategy-calls" 
-                          className="block px-6 py-3 text-sm text-[#274290] hover:bg-gray-50 hover:text-[#f27921] transition-all duration-200 font-medium"
+                          className="block px-6 py-3 text-sm text-[#274290] hover:bg-orange-50 hover:text-[#f27921] transition-all duration-200 font-medium flex items-center gap-2 group"
                         >
+                          <Clock size={16} className="text-[#f27921] group-hover:text-[#d6681a] flex-shrink-0" />
                           Bi-Weekly Strategy Calls
                         </a>
                         <a 
                           href="/services/staff-onboarding-support" 
-                          className="block px-6 py-3 text-sm text-[#274290] hover:bg-gray-50 hover:text-[#f27921] transition-all duration-200 font-medium"
+                          className="block px-6 py-3 text-sm text-[#274290] hover:bg-orange-50 hover:text-[#f27921] transition-all duration-200 font-medium flex items-center gap-2 group"
                         >
+                          <Users size={16} className="text-[#f27921] group-hover:text-[#d6681a] flex-shrink-0" />
                           Staff Onboarding Support
                         </a>
                         <a 
                           href="/services/unlimited-marketing-consulting" 
-                          className="block px-6 py-3 text-sm text-[#274290] hover:bg-gray-50 hover:text-[#f27921] transition-all duration-200 font-medium"
+                          className="block px-6 py-3 text-sm text-[#274290] hover:bg-orange-50 hover:text-[#f27921] transition-all duration-200 font-medium flex items-center gap-2 group"
                         >
+                          <Brain size={16} className="text-[#f27921] group-hover:text-[#d6681a] flex-shrink-0" />
                           Unlimited Marketing Consulting
                         </a>
                         <a 
                           href="/services/full-business-process-audit" 
-                          className="block px-6 py-3 text-sm text-[#274290] hover:bg-gray-50 hover:text-[#f27921] transition-all duration-200 font-medium"
+                          className="block px-6 py-3 text-sm text-[#274290] hover:bg-orange-50 hover:text-[#f27921] transition-all duration-200 font-medium flex items-center gap-2 group"
                         >
+                          <TrendingUp size={16} className="text-[#f27921] group-hover:text-[#d6681a] flex-shrink-0" />
                           Full Business Process Audit
                         </a>
                         <a 
                           href="/services/quarterly-business-health-deep-dive" 
-                          className="block px-6 py-3 text-sm text-[#274290] hover:bg-gray-50 hover:text-[#f27921] transition-all duration-200 font-medium"
+                          className="block px-6 py-3 text-sm text-[#274290] hover:bg-orange-50 hover:text-[#f27921] transition-all duration-200 font-medium flex items-center gap-2 group"
                         >
+                          <Target size={16} className="text-[#f27921] group-hover:text-[#d6681a] flex-shrink-0" />
                           Quarterly Business Health Deep-Dive
                         </a>
                       </div>
@@ -232,199 +270,260 @@ export default function Header() {
 
           {/* Mobile Menu */}
           {isMenuOpen && (
-            <div className="md:hidden mt-4 pb-4">
-              <nav className="flex flex-col space-y-4">
+            <div className="md:hidden mt-4 pb-4 border-t border-white/20">
+              <nav className="flex flex-col space-y-1 pt-4">
                 <a 
                   href="/" 
-                  className="text-[#274290] font-medium hover:text-white transition-colors duration-300"
+                  className="text-[#274290] font-medium hover:text-white hover:bg-white/10 transition-all duration-300 px-4 py-2 rounded-lg"
                   onClick={() => setIsMenuOpen(false)}
                 >
                   Home
                 </a>
                 <a 
                   href="/success-library" 
-                  className="text-[#274290] font-medium hover:text-white transition-colors duration-300"
+                  className="text-[#274290] font-medium hover:text-white hover:bg-white/10 transition-all duration-300 px-4 py-2 rounded-lg"
                   onClick={() => setIsMenuOpen(false)}
                 >
                   Success Library
                 </a>
-                <a 
-                  href="/services" 
-                  className="text-[#274290] font-medium hover:text-white transition-colors duration-300"
-                  onClick={() => setIsMenuOpen(false)}
-                >
-                  Services
-                </a>
-                <a 
-                  href="/services" 
-                  className="text-[#274290] font-semibold hover:text-white transition-colors duration-300 pl-4"
-                  onClick={() => setIsMenuOpen(false)}
-                >
-                  All Services
-                </a>
                 
-                {/* Be Seen. Be Remembered. */}
-                <div className="pl-4">
-                  <div className="text-sm font-semibold text-[#274290] mb-2">
-                    Be Seen. Be Remembered.
+                {/* Services Section */}
+                <div className="space-y-1">
+                  <a 
+                    href="/services" 
+                    className="text-[#274290] font-semibold hover:text-white hover:bg-white/10 transition-all duration-300 px-4 py-2 rounded-lg block"
+                    onClick={() => setIsMenuOpen(false)}
+                  >
+                    All Services
+                  </a>
+                  
+                  {/* Get Found by More Customers */}
+                  <div className="border-l-2 border-white/20 ml-4">
+                    <button
+                      onClick={() => toggleSection('be-seen')}
+                      className="w-full flex items-center justify-between text-sm font-bold bg-gradient-to-r from-[#274290] to-[#f27921] text-white hover:from-[#1e3370] hover:to-[#d6681a] transition-all duration-300 px-4 py-3 rounded-lg shadow-md"
+                    >
+                      <span className="flex items-center gap-2">
+                        <Search size={16} className="flex-shrink-0" />
+                        Get Found by More Customers
+                      </span>
+                      {expandedSections.includes('be-seen') ? (
+                        <ChevronDown size={18} className="flex-shrink-0" />
+                      ) : (
+                        <ChevronRight size={18} className="flex-shrink-0" />
+                      )}
+                    </button>
+                    {expandedSections.includes('be-seen') && (
+                      <div className="ml-4 mt-1 space-y-1 transition-all duration-200 ease-in-out bg-orange-50/20 rounded-lg">
+                        <a 
+                          href="/services/social-media-management" 
+                          className="block text-sm text-[#274290] hover:text-[#f27921] hover:bg-orange-50/50 transition-all duration-300 px-4 py-2 rounded-lg flex items-center gap-2"
+                          onClick={() => setIsMenuOpen(false)}
+                        >
+                          <Share2 size={16} className="text-[#f27921] flex-shrink-0" />
+                          Social Media Management
+                        </a>
+                        <a 
+                          href="/services/google-social-media-ads" 
+                          className="block text-sm text-[#274290] hover:text-[#f27921] hover:bg-orange-50/50 transition-all duration-300 px-4 py-2 rounded-lg flex items-center gap-2"
+                          onClick={() => setIsMenuOpen(false)}
+                        >
+                          <BarChart size={16} className="text-[#f27921] flex-shrink-0" />
+                          Google & Social Media Ads
+                        </a>
+                        <a 
+                          href="/services/seo-services" 
+                          className="block text-sm text-[#274290] hover:text-[#f27921] hover:bg-orange-50/50 transition-all duration-300 px-4 py-2 rounded-lg flex items-center gap-2"
+                          onClick={() => setIsMenuOpen(false)}
+                        >
+                          <FileSearch size={16} className="text-[#f27921] flex-shrink-0" />
+                          SEO Services
+                        </a>
+                        <a 
+                          href="/services/custom-design-services" 
+                          className="block text-sm text-[#274290] hover:text-[#f27921] hover:bg-orange-50/50 transition-all duration-300 px-4 py-2 rounded-lg flex items-center gap-2"
+                          onClick={() => setIsMenuOpen(false)}
+                        >
+                          <Palette size={16} className="text-[#f27921] flex-shrink-0" />
+                          Custom Design Services
+                        </a>
+                      </div>
+                    )}
                   </div>
+
+                  {/* Keep Everything Running Smoothly. */}
+                  <div className="border-l-2 border-white/20 ml-4">
+                    <button
+                      onClick={() => toggleSection('keep-running')}
+                      className="w-full flex items-center justify-between text-sm font-bold bg-gradient-to-r from-[#274290] to-[#f27921] text-white hover:from-[#1e3370] hover:to-[#d6681a] transition-all duration-300 px-4 py-3 rounded-lg shadow-md"
+                    >
+                      <span className="flex items-center gap-2">
+                        <Settings size={16} className="flex-shrink-0" />
+                        Keep Everything Running Smoothly.
+                      </span>
+                      {expandedSections.includes('keep-running') ? (
+                        <ChevronDown size={18} className="flex-shrink-0" />
+                      ) : (
+                        <ChevronRight size={18} className="flex-shrink-0" />
+                      )}
+                    </button>
+                    {expandedSections.includes('keep-running') && (
+                      <div className="ml-4 mt-1 space-y-1 transition-all duration-200 ease-in-out bg-orange-50/20 rounded-lg">
+                        <a 
+                          href="/services/website-updates-maintenance" 
+                          className="block text-sm text-[#274290] hover:text-[#f27921] hover:bg-orange-50/50 transition-all duration-300 px-4 py-2 rounded-lg flex items-center gap-2"
+                          onClick={() => setIsMenuOpen(false)}
+                        >
+                          <Wrench size={16} className="text-[#f27921] flex-shrink-0" />
+                          Website Updates & Maintenance
+                        </a>
+                        <a 
+                          href="/services/crm-setup-automation" 
+                          className="block text-sm text-[#274290] hover:text-[#f27921] hover:bg-orange-50/50 transition-all duration-300 px-4 py-2 rounded-lg flex items-center gap-2"
+                          onClick={() => setIsMenuOpen(false)}
+                        >
+                          <Settings size={16} className="text-[#f27921] flex-shrink-0" />
+                          CRM Setup & Automation
+                        </a>
+                        <a 
+                          href="/services/monthly-report-strategy-call" 
+                          className="block text-sm text-[#274290] hover:text-[#f27921] hover:bg-orange-50/50 transition-all duration-300 px-4 py-2 rounded-lg flex items-center gap-2"
+                          onClick={() => setIsMenuOpen(false)}
+                        >
+                          <Clock size={16} className="text-[#f27921] flex-shrink-0" />
+                          Monthly Report & Strategy Call
+                        </a>
+                        <a 
+                          href="/services/email-support" 
+                          className="block text-sm text-[#274290] hover:text-[#f27921] hover:bg-orange-50/50 transition-all duration-300 px-4 py-2 rounded-lg flex items-center gap-2"
+                          onClick={() => setIsMenuOpen(false)}
+                        >
+                          <MessageSquare size={16} className="text-[#f27921] flex-shrink-0" />
+                          Email Support
+                        </a>
+                        <a 
+                          href="/services/priority-support" 
+                          className="block text-sm text-[#274290] hover:text-[#f27921] hover:bg-orange-50/50 transition-all duration-300 px-4 py-2 rounded-lg flex items-center gap-2"
+                          onClick={() => setIsMenuOpen(false)}
+                        >
+                          <Shield size={16} className="text-[#f27921] flex-shrink-0" />
+                          Priority Support
+                        </a>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Work With a Partner Who Thinks Beyond Ads. */}
+                  <div className="border-l-2 border-white/20 ml-4">
+                    <button
+                      onClick={() => toggleSection('partner')}
+                      className="w-full flex items-center justify-between text-sm font-bold bg-gradient-to-r from-[#274290] to-[#f27921] text-white hover:from-[#1e3370] hover:to-[#d6681a] transition-all duration-300 px-4 py-3 rounded-lg shadow-md"
+                    >
+                      <span className="flex items-center gap-2">
+                        <Users size={16} className="flex-shrink-0" />
+                        Work With a Partner Who Thinks Beyond Ads.
+                      </span>
+                      {expandedSections.includes('partner') ? (
+                        <ChevronDown size={18} className="flex-shrink-0" />
+                      ) : (
+                        <ChevronRight size={18} className="flex-shrink-0" />
+                      )}
+                    </button>
+                    {expandedSections.includes('partner') && (
+                      <div className="ml-4 mt-1 space-y-1 transition-all duration-200 ease-in-out bg-orange-50/20 rounded-lg">
+                        <a 
+                          href="/services/basic-business-process-review" 
+                          className="block text-sm text-[#274290] hover:text-[#f27921] hover:bg-orange-50/50 transition-all duration-300 px-4 py-2 rounded-lg flex items-center gap-2"
+                          onClick={() => setIsMenuOpen(false)}
+                        >
+                          <Target size={16} className="text-[#f27921] flex-shrink-0" />
+                          Basic Business Process Review
+                        </a>
+                        <a 
+                          href="/services/customer-experience-suggestions" 
+                          className="block text-sm text-[#274290] hover:text-[#f27921] hover:bg-orange-50/50 transition-all duration-300 px-4 py-2 rounded-lg flex items-center gap-2"
+                          onClick={() => setIsMenuOpen(false)}
+                        >
+                          <MessageSquare size={16} className="text-[#f27921] flex-shrink-0" />
+                          Customer Experience Suggestions
+                        </a>
+                        <a 
+                          href="/services/bi-weekly-strategy-calls" 
+                          className="block text-sm text-[#274290] hover:text-[#f27921] hover:bg-orange-50/50 transition-all duration-300 px-4 py-2 rounded-lg flex items-center gap-2"
+                          onClick={() => setIsMenuOpen(false)}
+                        >
+                          <Clock size={16} className="text-[#f27921] flex-shrink-0" />
+                          Bi-Weekly Strategy Calls
+                        </a>
+                        <a 
+                          href="/services/staff-onboarding-support" 
+                          className="block text-sm text-[#274290] hover:text-[#f27921] hover:bg-orange-50/50 transition-all duration-300 px-4 py-2 rounded-lg flex items-center gap-2"
+                          onClick={() => setIsMenuOpen(false)}
+                        >
+                          <Users size={16} className="text-[#f27921] flex-shrink-0" />
+                          Staff Onboarding Support
+                        </a>
+                        <a 
+                          href="/services/unlimited-marketing-consulting" 
+                          className="block text-sm text-[#274290] hover:text-[#f27921] hover:bg-orange-50/50 transition-all duration-300 px-4 py-2 rounded-lg flex items-center gap-2"
+                          onClick={() => setIsMenuOpen(false)}
+                        >
+                          <Brain size={16} className="text-[#f27921] flex-shrink-0" />
+                          Unlimited Marketing Consulting
+                        </a>
+                        <a 
+                          href="/services/full-business-process-audit" 
+                          className="block text-sm text-[#274290] hover:text-[#f27921] hover:bg-orange-50/50 transition-all duration-300 px-4 py-2 rounded-lg flex items-center gap-2"
+                          onClick={() => setIsMenuOpen(false)}
+                        >
+                          <TrendingUp size={16} className="text-[#f27921] flex-shrink-0" />
+                          Full Business Process Audit
+                        </a>
+                        <a 
+                          href="/services/quarterly-business-health-deep-dive" 
+                          className="block text-sm text-[#274290] hover:text-[#f27921] hover:bg-orange-50/50 transition-all duration-300 px-4 py-2 rounded-lg flex items-center gap-2"
+                          onClick={() => setIsMenuOpen(false)}
+                        >
+                          <Target size={16} className="text-[#f27921] flex-shrink-0" />
+                          Quarterly Business Health Deep-Dive
+                        </a>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Additional Resources */}
                   <a 
-                    href="/services/social-media-management" 
-                    className="block text-sm text-[#274290] hover:text-white transition-colors duration-300 pl-4 mb-1"
+                    href="/seo-approach" 
+                    className="text-sm text-[#274290] font-medium hover:text-white hover:bg-white/10 transition-all duration-300 px-4 py-2 rounded-lg block ml-4 border-l-2 border-white/20"
                     onClick={() => setIsMenuOpen(false)}
                   >
-                    Social Media Management
-                  </a>
-                  <a 
-                    href="/services/google-social-media-ads" 
-                    className="block text-sm text-[#274290] hover:text-white transition-colors duration-300 pl-4 mb-1"
-                    onClick={() => setIsMenuOpen(false)}
-                  >
-                    Google & Social Media Ads
-                  </a>
-                  <a 
-                    href="/services/seo-services" 
-                    className="block text-sm text-[#274290] hover:text-white transition-colors duration-300 pl-4 mb-1"
-                    onClick={() => setIsMenuOpen(false)}
-                  >
-                    SEO Services
-                  </a>
-                  <a 
-                    href="/services/custom-design-services" 
-                    className="block text-sm text-[#274290] hover:text-white transition-colors duration-300 pl-4 mb-3"
-                    onClick={() => setIsMenuOpen(false)}
-                  >
-                    Custom Design Services
+                    Our SEO Approach
                   </a>
                 </div>
 
-                {/* Keep Everything Running Smoothly. */}
-                <div className="pl-4">
-                  <div className="text-sm font-semibold text-[#274290] mb-2">
-                    Keep Everything Running Smoothly.
-                  </div>
+                <div className="border-t border-white/20 mt-2 pt-2">
                   <a 
-                    href="/services/website-updates-maintenance" 
-                    className="block text-sm text-[#274290] hover:text-white transition-colors duration-300 pl-4 mb-1"
+                    href="#about" 
+                    className="text-[#274290] font-medium hover:text-white hover:bg-white/10 transition-all duration-300 px-4 py-2 rounded-lg block"
                     onClick={() => setIsMenuOpen(false)}
                   >
-                    Website Updates & Maintenance
+                    About
                   </a>
                   <a 
-                    href="/services/crm-setup-automation" 
-                    className="block text-sm text-[#274290] hover:text-white transition-colors duration-300 pl-4 mb-1"
+                    href="#contact" 
+                    className="text-[#274290] font-medium hover:text-white hover:bg-white/10 transition-all duration-300 px-4 py-2 rounded-lg block"
                     onClick={() => setIsMenuOpen(false)}
                   >
-                    CRM Setup & Automation
+                    Contact
                   </a>
                   <a 
-                    href="/services/monthly-report-strategy-call" 
-                    className="block text-sm text-[#274290] hover:text-white transition-colors duration-300 pl-4 mb-1"
+                    href="#contact" 
+                    className="bg-[#274290] text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-800 transition-all duration-300 inline-block w-full text-center mt-2 shadow-lg"
                     onClick={() => setIsMenuOpen(false)}
                   >
-                    Monthly Report & Strategy Call
-                  </a>
-                  <a 
-                    href="/services/email-support" 
-                    className="block text-sm text-[#274290] hover:text-white transition-colors duration-300 pl-4 mb-1"
-                    onClick={() => setIsMenuOpen(false)}
-                  >
-                    Email Support
-                  </a>
-                  <a 
-                    href="/services/priority-support" 
-                    className="block text-sm text-[#274290] hover:text-white transition-colors duration-300 pl-4 mb-3"
-                    onClick={() => setIsMenuOpen(false)}
-                  >
-                    Priority Support
+                    Get Started
                   </a>
                 </div>
-
-                {/* Work With a Partner Who Thinks Beyond Ads. */}
-                <div className="pl-4">
-                  <div className="text-sm font-semibold text-[#274290] mb-2">
-                    Work With a Partner Who Thinks Beyond Ads.
-                  </div>
-                  <a 
-                    href="/services/basic-business-process-review" 
-                    className="block text-sm text-[#274290] hover:text-white transition-colors duration-300 pl-4 mb-1"
-                    onClick={() => setIsMenuOpen(false)}
-                  >
-                    Basic Business Process Review
-                  </a>
-                  <a 
-                    href="/services/customer-experience-suggestions" 
-                    className="block text-sm text-[#274290] hover:text-white transition-colors duration-300 pl-4 mb-1"
-                    onClick={() => setIsMenuOpen(false)}
-                  >
-                    Customer Experience Suggestions
-                  </a>
-                  <a 
-                    href="/services/bi-weekly-strategy-calls" 
-                    className="block text-sm text-[#274290] hover:text-white transition-colors duration-300 pl-4 mb-1"
-                    onClick={() => setIsMenuOpen(false)}
-                  >
-                    Bi-Weekly Strategy Calls
-                  </a>
-                  <a 
-                    href="/services/staff-onboarding-support" 
-                    className="block text-sm text-[#274290] hover:text-white transition-colors duration-300 pl-4 mb-1"
-                    onClick={() => setIsMenuOpen(false)}
-                  >
-                    Staff Onboarding Support
-                  </a>
-                  <a 
-                    href="/services/unlimited-marketing-consulting" 
-                    className="block text-sm text-[#274290] hover:text-white transition-colors duration-300 pl-4 mb-1"
-                    onClick={() => setIsMenuOpen(false)}
-                  >
-                    Unlimited Marketing Consulting
-                  </a>
-                  <a 
-                    href="/services/full-business-process-audit" 
-                    className="block text-sm text-[#274290] hover:text-white transition-colors duration-300 pl-4 mb-1"
-                    onClick={() => setIsMenuOpen(false)}
-                  >
-                    Full Business Process Audit
-                  </a>
-                  <a 
-                    href="/services/quarterly-business-health-deep-dive" 
-                    className="block text-sm text-[#274290] hover:text-white transition-colors duration-300 pl-4 mb-3"
-                    onClick={() => setIsMenuOpen(false)}
-                  >
-                    Quarterly Business Health Deep-Dive
-                  </a>
-                </div>
-
-                {/* Additional Resources */}
-                <a 
-                  href="/seo-approach" 
-                  className="text-[#274290] font-medium hover:text-white transition-colors duration-300 pl-4"
-                  onClick={() => setIsMenuOpen(false)}
-                >
-                  Our SEO Approach
-                </a>
-                <a 
-                  href="#about" 
-                  className="text-[#274290] font-medium hover:text-white transition-colors duration-300"
-                  onClick={() => setIsMenuOpen(false)}
-                >
-                  About
-                </a>
-                <a 
-                  href="#contact" 
-                  className="text-[#274290] font-medium hover:text-white transition-colors duration-300"
-                  onClick={() => setIsMenuOpen(false)}
-                >
-                  Contact
-                </a>
-                <a 
-                  href="#contact" 
-                  className="bg-[#274290] text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-800 transition-colors duration-300 inline-block w-fit"
-                  onClick={() => setIsMenuOpen(false)}
-                >
-                  Get Started
-                </a>
               </nav>
             </div>
           )}

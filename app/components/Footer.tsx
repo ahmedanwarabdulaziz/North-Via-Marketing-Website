@@ -109,6 +109,12 @@ export default function Footer() {
                     <span className="group-hover:translate-x-1 transition-transform">Contact</span>
                   </Link>
                 </li>
+                <li>
+                  <Link href="/survey" className="text-gray-300 hover:text-brand-orange transition-colors duration-300 flex items-center group text-sm">
+                    <ArrowRight size={14} className="mr-2 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    <span className="group-hover:translate-x-1 transition-transform">Free Assessment</span>
+                  </Link>
+                </li>
               </ul>
             </div>
 
@@ -145,12 +151,19 @@ export default function Footer() {
           <div className="bg-gradient-to-r from-brand-orange/20 to-brand-orange/10 rounded-xl p-8 mb-12 text-center border border-white/10">
             <h3 className="text-2xl font-bold mb-3 text-white">Ready to Grow Your Business?</h3>
             <p className="text-gray-300 mb-6 max-w-2xl mx-auto">
-              Let's discuss how we can help you achieve your marketing goals with a free consultation.
+              Discover your business growth potential with our free assessment, or let's discuss how we can help you achieve your marketing goals with a free consultation.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <Link 
-                href="/#contact"
+                href="/survey"
                 className="inline-flex items-center justify-center bg-brand-orange text-white px-8 py-3 rounded-lg font-semibold hover:bg-[#d6681a] transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105"
+              >
+                Discover Your Business Growth Potential
+                <ArrowRight className="ml-2" size={20} />
+              </Link>
+              <Link 
+                href="/#contact"
+                className="inline-flex items-center justify-center bg-white/10 text-white px-8 py-3 rounded-lg font-semibold hover:bg-white/20 transition-all duration-300 border border-white/20"
               >
                 Get Started
                 <ArrowRight className="ml-2" size={20} />

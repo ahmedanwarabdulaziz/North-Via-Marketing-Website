@@ -4,7 +4,7 @@ import Image from 'next/image'
 const serviceGroups = [
   {
     id: "visibility",
-    title: "Be Seen. Be Remembered.",
+    title: "Get Found by More Customers",
     subtitle: "We bring your business in front of the right local customers.",
     services: [
       {
@@ -443,8 +443,15 @@ export default function Services() {
                 
                 <div className="flex flex-col sm:flex-row gap-4 justify-center">
                   <a 
-                    href="/contact" 
+                    href="/survey" 
                     className="bg-white text-[#274290] px-8 py-4 rounded-lg font-semibold hover:bg-gray-100 transition-all duration-300 flex items-center justify-center group shadow-lg hover:shadow-xl"
+                  >
+                    Discover Your Business Growth Potential
+                    <ArrowRight className="ml-2 group-hover:translate-x-1 transition-transform duration-300" size={20} />
+                  </a>
+                  <a 
+                    href="/contact" 
+                    className="bg-white/10 backdrop-blur-sm border-2 border-white text-white px-8 py-4 rounded-lg font-semibold hover:bg-white hover:text-[#274290] transition-all duration-300 flex items-center justify-center group"
                   >
                     Book a Discovery Call
                     <ArrowRight className="ml-2 group-hover:translate-x-1 transition-transform duration-300" size={20} />
