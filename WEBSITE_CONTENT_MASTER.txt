@@ -74,20 +74,25 @@ Content: "Running a business is hard enough without marketing feeling like a mys
 ## SERVICES SECTION
 Title: "What We Do"
 Service Bundles:
-1. Essential Growth ($200 CAD/month)
+1. Essential Growth
+   Pricing Note: "Less than the price of a coffee subscription, but for your business growth"
    - Social Media Management
    - Monthly Reports & Strategy Calls
    - Email Support
    - Basic Business Guidance
+   Note: Final pricing determined after first meeting to evaluate your business needs
 
-2. Performance Partner ($400 CAD/month)
+2. Performance Partner
+   Pricing Note: "What you'd spend on a nice family dinner, invested in measurable growth"
    - Everything in Essential Growth
    - Google & Social Media Ads
    - SEO Services
    - Website Maintenance
    - Business Process Review
+   Note: Final pricing determined after first meeting to evaluate your business needs
 
-3. Strategic Partner ($800 CAD/month)
+3. Strategic Partner
+   Pricing Note: "Less than hiring a part-time employee, but you get a full marketing team instead"
    - Everything in Performance Partner
    - CRM Setup & Automation
    - Customer Experience Suggestions
@@ -97,6 +102,7 @@ Service Bundles:
    - Full Business Process Audit
    - Priority Support
    - Quarterly Business Health Deep-Dive
+   Note: Final pricing determined after first meeting to evaluate your business needs
 
 ## HOW IT WORKS SECTION
 Title: "Our Partnership Path to Growth"
@@ -315,9 +321,15 @@ Title: "Choose Your Partnership Level"
 Description: "Three flexible bundles designed to scale with your business needs and budget."
 
 3 Bundles:
-- Essential Growth ($200 CAD/month)
-- Performance Partner ($400 CAD/month) - Highlighted
-- Strategic Partner ($800 CAD/month)
+- Essential Growth
+  Pricing Note: "Less than the price of a coffee subscription, but for your business growth"
+  Note: Final pricing determined after first meeting to evaluate your business needs
+- Performance Partner (Highlighted)
+  Pricing Note: "What you'd spend on a nice family dinner, invested in measurable growth"
+  Note: Final pricing determined after first meeting to evaluate your business needs
+- Strategic Partner
+  Pricing Note: "Less than hiring a part-time employee, but you get a full marketing team instead"
+  Note: Final pricing determined after first meeting to evaluate your business needs
 
 ## CTA SECTION
 Title: "Let's grow your business together."
@@ -1062,21 +1074,26 @@ Main Navigation:
 SERVICE BUNDLES & PRICING
 ================================================================================
 
-## Essential Growth - $200 CAD/month
+## Essential Growth
+Pricing Note: "Less than the price of a coffee subscription, but for your business growth"
 - Social Media Management
 - Monthly Reports & Strategy Calls
 - Email Support
 - Basic Business Guidance
+Note: Final pricing determined after first meeting to evaluate your business needs
 
-## Performance Partner - $400 CAD/month
+## Performance Partner
+Pricing Note: "What you'd spend on a nice family dinner, invested in measurable growth"
 - Everything in Essential Growth
 - Google & Social Media Ads
 - SEO Services
 - Website Updates & Maintenance
 - Basic Business Process Review
 - Priority Support
+Note: Final pricing determined after first meeting to evaluate your business needs
 
-## Strategic Partner - $800 CAD/month
+## Strategic Partner
+Pricing Note: "Less than hiring a part-time employee, but you get a full marketing team instead"
 - Everything in Performance Partner
 - CRM Setup & Automation
 - Customer Experience Suggestions
@@ -1085,6 +1102,7 @@ SERVICE BUNDLES & PRICING
 - Unlimited Marketing Consulting
 - Full Business Process Audit
 - Quarterly Business Health Deep-Dive
+Note: Final pricing determined after first meeting to evaluate your business needs
 
 ================================================================================
 CONTACT INFORMATION

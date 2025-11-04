@@ -1,4 +1,4 @@
-import { Check, ArrowRight } from 'lucide-react'
+import { Check, ArrowRight, Coffee, UtensilsCrossed, Users } from 'lucide-react'
 
 export default function Services() {
   return (
@@ -29,10 +29,18 @@ export default function Services() {
               <p className="text-gray-600 mb-6">
                 Build a strong marketing foundation and keep your online presence sharp.
               </p>
-              <div className="text-4xl font-bold text-brand-orange mb-2">
-                $200
+              <p className="text-sm font-semibold text-gray-700 mb-2">What it costs:</p>
+              <div className="bg-brand-orange rounded-lg p-4 mb-4">
+                <div className="flex items-start gap-3">
+                  <Coffee className="w-5 h-5 text-brand-blue flex-shrink-0 mt-0.5" />
+                  <p className="text-base font-semibold text-brand-blue">
+                    Less than the price of a coffee subscription, but for your business growth
+                  </p>
+                </div>
               </div>
-              <div className="text-gray-500">CAD / month</div>
+              <p className="text-sm text-gray-500 italic">
+                Final pricing determined after first meeting to evaluate your business needs
+              </p>
             </div>
 
             <div className="space-y-4 mb-8 flex-grow">
@@ -79,10 +87,18 @@ export default function Services() {
               <p className="text-gray-600 mb-6">
                 Boost visibility, improve processes, and start scaling faster.
               </p>
-              <div className="text-4xl font-bold text-brand-orange mb-2">
-                $400
+              <p className="text-sm font-semibold text-gray-700 mb-2">What it costs:</p>
+              <div className="bg-brand-orange rounded-lg p-4 mb-4">
+                <div className="flex items-start gap-3">
+                  <UtensilsCrossed className="w-5 h-5 text-brand-blue flex-shrink-0 mt-0.5" />
+                  <p className="text-base font-semibold text-brand-blue">
+                    What you'd spend on a nice family dinner, invested in measurable growth
+                  </p>
+                </div>
               </div>
-              <div className="text-gray-500">CAD / month</div>
+              <p className="text-sm text-gray-500 italic">
+                Final pricing determined after first meeting to evaluate your business needs
+              </p>
             </div>
 
             <div className="space-y-4 mb-8 flex-grow">
@@ -136,7 +152,7 @@ export default function Services() {
           <div className="bg-white rounded-2xl shadow-lg hover:shadow-2xl hover:scale-105 transition-all duration-300 p-8 border border-gray-100 relative flex flex-col">
             {/* Professional Badge */}
             <div className="absolute -top-4 left-1/2 transform -translate-x-1/2 bg-brand-orange text-white px-6 py-2 rounded-full text-xs font-bold uppercase tracking-wider shadow-xl border-2 border-white text-center whitespace-nowrap">
-              Most Popular • 40% OFF
+              Most Popular
             </div>
 
             <div className="text-center mb-8">
@@ -146,10 +162,18 @@ export default function Services() {
               <p className="text-gray-600 mb-6">
                 A fully integrated partnership for ambitious, long-term growth.
               </p>
-              <div className="text-4xl font-bold text-brand-orange mb-2">
-                $700
+              <p className="text-sm font-semibold text-gray-700 mb-2">What it costs:</p>
+              <div className="bg-brand-orange rounded-lg p-4 mb-4">
+                <div className="flex items-start gap-3">
+                  <Users className="w-5 h-5 text-brand-blue flex-shrink-0 mt-0.5" />
+                  <p className="text-base font-semibold text-brand-blue">
+                    Less than hiring a part-time employee, but you get a full marketing team instead
+                  </p>
+                </div>
               </div>
-              <div className="text-gray-500">CAD / month</div>
+              <p className="text-sm text-gray-500 italic">
+                Final pricing determined after first meeting to evaluate your business needs
+              </p>
             </div>
 
             <div className="space-y-4 mb-8 flex-grow">
@@ -182,15 +206,6 @@ export default function Services() {
               </ul>
             </div>
 
-            {/* Limited-Time Offer Details */}
-            <div className="bg-brand-orange text-white p-4 rounded-lg mb-6">
-              <p className="text-sm font-semibold mb-1">
-                Try our Strategic Partner package for your first 3 months at just $400/month (regularly $700).
-              </p>
-              <p className="text-xs opacity-90">
-                Experience the full power of a dedicated growth team — risk-free.
-              </p>
-            </div>
 
             <a 
               href="#contact" 

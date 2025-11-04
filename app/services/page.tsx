@@ -1,4 +1,4 @@
-import { ArrowRight, Check } from 'lucide-react'
+import { ArrowRight, Check, Coffee, UtensilsCrossed, Users } from 'lucide-react'
 import Image from 'next/image'
 
 const serviceGroups = [
@@ -322,7 +322,19 @@ export default function Services() {
               {/* Essential Growth Bundle */}
               <div className="bg-white rounded-2xl shadow-xl p-8 text-center">
                 <h3 className="text-2xl font-black text-[#274290] mb-4">Essential Growth</h3>
-                <p className="text-gray-600 mb-6">For new or small businesses</p>
+                <p className="text-gray-600 mb-4">For new or small businesses</p>
+                <p className="text-sm font-semibold text-gray-700 mb-2">What it costs:</p>
+                <div className="bg-[#f27921] rounded-lg p-4 mb-4">
+                  <div className="flex items-start gap-3">
+                    <Coffee className="w-5 h-5 text-[#274290] flex-shrink-0 mt-0.5" />
+                    <p className="text-sm font-semibold text-[#274290]">
+                      Less than the price of a coffee subscription, but for your business growth
+                    </p>
+                  </div>
+                </div>
+                <p className="text-xs text-gray-500 italic mb-6">
+                  Final pricing determined after first meeting to evaluate your business needs
+                </p>
                 <div className="space-y-3 text-left">
                   <div className="flex items-center gap-3">
                     <Check className="w-5 h-5 text-green-500 flex-shrink-0" />
@@ -346,7 +358,19 @@ export default function Services() {
               {/* Performance Partner Bundle */}
               <div className="bg-white rounded-2xl shadow-xl p-8 text-center border-2 border-[#f27921]">
                 <h3 className="text-2xl font-black text-[#274290] mb-4">Performance Partner</h3>
-                <p className="text-gray-600 mb-6">For growing teams ready to scale</p>
+                <p className="text-gray-600 mb-4">For growing teams ready to scale</p>
+                <p className="text-sm font-semibold text-gray-700 mb-2">What it costs:</p>
+                <div className="bg-[#f27921] rounded-lg p-4 mb-4">
+                  <div className="flex items-start gap-3">
+                    <UtensilsCrossed className="w-5 h-5 text-[#274290] flex-shrink-0 mt-0.5" />
+                    <p className="text-sm font-semibold text-[#274290]">
+                      What you'd spend on a nice family dinner, invested in measurable growth
+                    </p>
+                  </div>
+                </div>
+                <p className="text-xs text-gray-500 italic mb-6">
+                  Final pricing determined after first meeting to evaluate your business needs
+                </p>
                 <div className="space-y-3 text-left">
                   <div className="flex items-center gap-3">
                     <Check className="w-5 h-5 text-green-500 flex-shrink-0" />
@@ -374,7 +398,19 @@ export default function Services() {
               {/* Strategic Partner Bundle */}
               <div className="bg-white rounded-2xl shadow-xl p-8 text-center">
                 <h3 className="text-2xl font-black text-[#274290] mb-4">Strategic Partner</h3>
-                <p className="text-gray-600 mb-6">Full consulting + marketing department replacement</p>
+                <p className="text-gray-600 mb-4">Full consulting + marketing department replacement</p>
+                <p className="text-sm font-semibold text-gray-700 mb-2">What it costs:</p>
+                <div className="bg-[#f27921] rounded-lg p-4 mb-4">
+                  <div className="flex items-start gap-3">
+                    <Users className="w-5 h-5 text-[#274290] flex-shrink-0 mt-0.5" />
+                    <p className="text-sm font-semibold text-[#274290]">
+                      Less than hiring a part-time employee, but you get a full marketing team instead
+                    </p>
+                  </div>
+                </div>
+                <p className="text-xs text-gray-500 italic mb-6">
+                  Final pricing determined after first meeting to evaluate your business needs
+                </p>
                 <div className="space-y-3 text-left">
                   <div className="flex items-center gap-3">
                     <Check className="w-5 h-5 text-green-500 flex-shrink-0" />
