@@ -11,9 +11,14 @@
     "export": "next build && next export"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "autoprefixer": "^10.4.21",
+    "firebase-admin": "^13.8.0",
+    "google-ads-api": "^23.0.0",
+    "googleapis": "^171.4.0",
+    "jose": "^6.2.2",
     "lucide-react": "^0.294.0",
-    "next": "^15.0.0",
+    "next": "^16.2.4",
     "nodemailer": "^7.0.10",
     "react": "^18",
     "react-dom": "^18",

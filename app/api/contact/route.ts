@@ -16,10 +16,12 @@ export async function POST(request: NextRequest) {
 
     // Configure Gmail transporter
     const transporter = nodemailer.createTransport({
-      service: 'gmail',
+      host: 'smtp.purelymail.com',
+      port: 465,
+      secure: true,
       auth: {
         user: process.env.GMAIL_USER,
-        pass: process.env.GMAIL_APP_PASSWORD, // Use App Password, not regular password
+        pass: process.env.GMAIL_APP_PASSWORD, // Purelymail password
       },
     })
 
@@ -162,4 +164,6 @@ northviamarketing.com | info@northviamarketing.com
     )
   }
 }
+
+
 
