@@ -102,3 +102,56 @@ export interface ClientProfile {
   createdAt: string;
   updatedAt: string;
 }
+
+export type TaskStatus = 'todo' | 'in_progress' | 'waiting' | 'waiting_approval' | 'waiting_response' | 'on_hold' | 'done' | 'archived';
+export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent';
+export type TaskCategory = 'reviews' | 'ads' | 'website' | 'seo' | 'follow_up' | 'reporting' | 'billing' | 'internal';
+export type TaskRecurrenceType = 'daily' | 'weekly' | 'monthly' | 'every_x_days';
+
+export interface TaskNote {
+  id: string;
+  content: string;
+  createdAt: string;
+}
+
+export interface AgencyTask {
+  id?: string;
+  title: string;
+  description?: string;
+  clientId?: string;
+  clientNameSnapshot?: string;
+  status: TaskStatus;
+  priority: TaskPriority;
+  category?: TaskCategory;
+  dueDate?: string; // ISO format
+  scheduledDate?: string;
+  notes?: string;
+  taskNotes?: TaskNote[];
+  isRecurring: boolean;
+  recurrenceType?: TaskRecurrenceType;
+  recurrenceInterval?: number; // Only used for 'every_x_days', e.g., 6
+  recurrenceAnchorDate?: string;
+  nextOccurrenceAt?: string;
+  lastOccurrenceCompletedAt?: string;
+  recurrenceParentId?: string;
+  autoRegenerateOnComplete: boolean;
+  lastActivityAt?: string;
+  createdAt: string;
+  updatedAt: string;
+  completedAt?: string;
+}
+
+export type IdeaType = 'future_feature' | 'upsell' | 'process_improvement' | 'campaign_idea' | 'content_idea';
+export type IdeaStatus = 'backlog' | 'considering' | 'approved' | 'converted_to_task' | 'archived';
+
+export interface TaskIdea {
+  id?: string;
+  title: string;
+  description?: string;
+  clientId?: string;
+  clientNameSnapshot?: string;
+  ideaType: IdeaType;
+  status: IdeaStatus;
+  createdAt: string;
+  updatedAt: string;
+}

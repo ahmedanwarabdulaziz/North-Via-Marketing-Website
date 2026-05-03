@@ -1,5 +1,6 @@
 import { 
   BarChart3, 
+  CheckSquare,
   LayoutDashboard, 
   LogOut, 
   Mail, 
@@ -22,6 +23,11 @@ export function AdminSidebar() {
           href="/admin" 
           icon={<LayoutDashboard className="w-5 h-5" />} 
           label="Dashboard" 
+        />
+        <AdminNavLink 
+          href="/admin/tasks" 
+          icon={<CheckSquare className="w-5 h-5" />} 
+          label="Tasks" 
         />
         <AdminNavLink 
           href="/admin/clients" 
