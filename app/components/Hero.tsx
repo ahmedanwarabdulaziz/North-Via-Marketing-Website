@@ -47,7 +47,7 @@ export default function Hero() {
             </h1>
             
             <p className="text-xl lg:text-2xl text-white/90 leading-relaxed mb-8 max-w-2xl lg:max-w-none">
-              From vision to measurable results, we work shoulder-to-shoulder with you to grow faster, smarter, and stronger.
+              From vision to measurable results, we work shoulder-to-shoulder with you to grow faster, smarter, and stronger
             </p>
 
             {/* CTA Buttons */}

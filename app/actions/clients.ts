@@ -27,35 +27,14 @@ export async function createOrUpdateClient(data: Partial<ClientProfile>) {
     } else {
       // Create
       const newPayload = removeUndefinedValues({
-        businessName: data.businessName || '',
-        contactName: data.contactName || '',
+        brandName: data.brandName || '',
+        ownerName: data.ownerName || '',
         email: data.email || '',
-        reportingEmails: data.reportingEmails || [],
-        industry: data.industry || '',
-        businessDescription: data.businessDescription || '',
-        primaryServices: data.primaryServices || [],
-        serviceAreas: data.serviceAreas || [],
-        targetCities: data.targetCities || [],
-        excludedCities: data.excludedCities || [],
-        idealCustomerProfile: data.idealCustomerProfile || '',
-        averageJobValue: data.averageJobValue,
-        targetCostPerLead: data.targetCostPerLead,
-        monthlyAdBudget: data.monthlyAdBudget,
-        mainGoal: data.mainGoal || '',
-        primaryObjective: data.primaryObjective || 'lead_generation',
-        conversionDefinition: data.conversionDefinition || '',
-        leadQualificationRules: data.leadQualificationRules || '',
-        leadQualityNotes: data.leadQualityNotes || '',
-        priorityOffers: data.priorityOffers || [],
-        competitors: data.competitors || [],
-        seasonalityNotes: data.seasonalityNotes || '',
-        reportTone: data.reportTone || 'executive',
-        clientConcerns: data.clientConcerns || '',
-        nextStepNotes: data.nextStepNotes || '',
-        aiBehavioralNotes: data.aiBehavioralNotes || '',
-        aiAvoidanceWarnings: data.aiAvoidanceWarnings || '',
-        linkedGoogleAdsIds: data.linkedGoogleAdsIds || [],
-        linkedSocialMediaAccounts: data.linkedSocialMediaAccounts || [],
+        mobileNumber: data.mobileNumber || '',
+        facebookLink: data.facebookLink || '',
+        instagramLink: data.instagramLink || '',
+        tiktokLink: data.tiktokLink || '',
+        googleLink: data.googleLink || '',
         createdAt: timestamp,
         updatedAt: timestamp
       });
@@ -63,7 +42,6 @@ export async function createOrUpdateClient(data: Partial<ClientProfile>) {
     }
     
     revalidatePath('/admin/clients');
-    revalidatePath('/admin/ads');
     return { success: true };
   } catch (error: any) {
     console.error('Failed to merge Client Profile:', error);
@@ -75,10 +53,45 @@ export async function deleteClientProfile(clientId: string) {
   try {
     await db.collection('clients').doc(clientId).delete();
     revalidatePath('/admin/clients');
-    revalidatePath('/admin/ads');
     return { success: true };
   } catch (error: any) {
     console.error('Failed to delete Client:', error);
     return { success: false, error: error.message };
   }
+}
+
+export async function deleteClientProfileFromForm(formData: FormData) {
+  const clientId = valueAsString(formData.get('clientId'));
+  if (!clientId) {
+    return { success: false, error: 'Client id is required.' };
+  }
+  return deleteClientProfile(clientId);
+}
+
+function valueAsString(value: FormDataEntryValue | null) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+export async function saveClientFromForm(formData: FormData) {
+  const id = valueAsString(formData.get('id'));
+  const brandName = valueAsString(formData.get('brandName'));
+  const ownerName = valueAsString(formData.get('ownerName'));
+  const email = valueAsString(formData.get('email'));
+  const mobileNumber = valueAsString(formData.get('mobileNumber'));
+  const facebookLink = valueAsString(formData.get('facebookLink'));
+  const instagramLink = valueAsString(formData.get('instagramLink'));
+  const tiktokLink = valueAsString(formData.get('tiktokLink'));
+  const googleLink = valueAsString(formData.get('googleLink'));
+
+  return createOrUpdateClient({
+    id: id || undefined,
+    brandName,
+    ownerName,
+    email,
+    mobileNumber,
+    facebookLink,
+    instagramLink,
+    tiktokLink,
+    googleLink
+  });
 }

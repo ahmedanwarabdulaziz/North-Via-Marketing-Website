@@ -2,7 +2,7 @@
 
 import { getAdsClient } from '@/lib/google-ads';
 
-export async function fetchCustomerMetrics(customerId: string, startDate: string, endDate: string) {
+export async function fetchCustomerMetrics(customerId: string, startDate: string, endDate: string, campaignId?: string, campaignIds?: string[]) {
   try {
     const { client, refreshToken } = await getAdsClient();
     const customer = client.Customer({
@@ -10,17 +10,34 @@ export async function fetchCustomerMetrics(customerId: string, startDate: string
       refresh_token: refreshToken,
     });
 
-    const query = `
-      SELECT
-        metrics.cost_micros,
-        metrics.impressions,
-        metrics.clicks,
-        metrics.average_cpc,
-        metrics.conversions,
-        metrics.cost_per_conversion
-      FROM customer
-      WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
-    `;
+    const activeCampaignIds = campaignIds && campaignIds.length > 0
+      ? campaignIds
+      : (campaignId ? [campaignId] : undefined);
+
+    const query = activeCampaignIds && activeCampaignIds.length > 0
+      ? `
+        SELECT
+          metrics.cost_micros,
+          metrics.impressions,
+          metrics.clicks,
+          metrics.average_cpc,
+          metrics.conversions,
+          metrics.cost_per_conversion
+        FROM campaign
+        WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
+          AND campaign.id IN (${activeCampaignIds.map(id => `'${id}'`).join(', ')})
+      `
+      : `
+        SELECT
+          metrics.cost_micros,
+          metrics.impressions,
+          metrics.clicks,
+          metrics.average_cpc,
+          metrics.conversions,
+          metrics.cost_per_conversion
+        FROM customer
+        WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
+      `;
 
     const res = await customer.query(query);
     
@@ -28,23 +45,37 @@ export async function fetchCustomerMetrics(customerId: string, startDate: string
       return { success: true, data: null };
     }
 
-    const row = res[0].metrics;
-    if (!row) return { success: true, data: null };
+    let totalCost = 0;
+    let totalImpressions = 0;
+    let totalClicks = 0;
+    let totalConversions = 0;
+
+    res.forEach((row: any) => {
+      if (row.metrics) {
+        totalCost += (row.metrics.cost_micros || 0) / 1_000_000;
+        totalImpressions += row.metrics.impressions || 0;
+        totalClicks += row.metrics.clicks || 0;
+        totalConversions += row.metrics.conversions || 0;
+      }
+    });
+
+    const averageCpc = totalClicks > 0 ? totalCost / totalClicks : 0;
+    const costPerConversion = totalConversions > 0 ? totalCost / totalConversions : 0;
 
     return {
       success: true,
       data: {
-        cost: (row.cost_micros || 0) / 1_000_000,
-        impressions: row.impressions || 0,
-        clicks: row.clicks || 0,
-        averageCpc: (row.average_cpc || 0) / 1_000_000,
-        conversions: row.conversions || 0,
-        costPerConversion: (row.cost_per_conversion || 0) / 1_000_000,
+        cost: totalCost,
+        impressions: totalImpressions,
+        clicks: totalClicks,
+        averageCpc,
+        conversions: totalConversions,
+        costPerConversion,
       }
     };
   } catch (error: any) {
     console.warn(`fetchCustomerMetrics fail for ${customerId}:`, error.message || error);
-    return { success: false, error: 'Failed to retrieve metrics' };
+    return { success: false, error: `Failed to retrieve metrics: ${error.message || 'Unknown error'}` };
   }
 }
 
@@ -85,17 +116,21 @@ export async function fetchCampaignMetrics(customerId: string, startDate: string
     return { success: true, campaigns };
   } catch (error: any) {
     console.warn(`fetchCampaignMetrics fail for ${customerId}:`, error.message || error);
-    return { success: false, error: 'Failed to retrieve campaign data' };
+    return { success: false, error: `Failed to retrieve campaign data: ${error.message || 'Unknown error'}` };
   }
 }
 
-export async function fetchSearchTermMetrics(customerId: string, startDate: string, endDate: string) {
+export async function fetchSearchTermMetrics(customerId: string, startDate: string, endDate: string, campaignId?: string, campaignIds?: string[]) {
   try {
     const { client, refreshToken } = await getAdsClient();
     const customer = client.Customer({
       customer_id: customerId,
       refresh_token: refreshToken,
     });
+
+    const activeCampaignIds = campaignIds && campaignIds.length > 0
+      ? campaignIds
+      : (campaignId ? [campaignId] : undefined);
 
     const query = `
       SELECT
@@ -113,8 +148,10 @@ export async function fetchSearchTermMetrics(customerId: string, startDate: stri
         metrics.cost_per_conversion
       FROM search_term_view
       WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
+        AND metrics.clicks > 0
+      ${activeCampaignIds && activeCampaignIds.length > 0 ? `AND campaign.id IN (${activeCampaignIds.map(id => `'${id}'`).join(', ')})` : ''}
       ORDER BY metrics.clicks DESC
-      LIMIT 50
+      LIMIT 1000
     `;
 
     const res = await customer.query(query);
@@ -141,10 +178,14 @@ export async function fetchSearchTermMetrics(customerId: string, startDate: stri
   }
 }
 
-export async function fetchDeviceMetrics(customerId: string, startDate: string, endDate: string) {
+export async function fetchDeviceMetrics(customerId: string, startDate: string, endDate: string, campaignId?: string, campaignIds?: string[]) {
   try {
     const { client, refreshToken } = await getAdsClient();
     const customer = client.Customer({ customer_id: customerId, refresh_token: refreshToken });
+
+    const activeCampaignIds = campaignIds && campaignIds.length > 0
+      ? campaignIds
+      : (campaignId ? [campaignId] : undefined);
 
     const query = `
       SELECT
@@ -155,6 +196,7 @@ export async function fetchDeviceMetrics(customerId: string, startDate: string, 
         metrics.conversions
       FROM campaign
       WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
+      ${activeCampaignIds && activeCampaignIds.length > 0 ? `AND campaign.id IN (${activeCampaignIds.map(id => `'${id}'`).join(', ')})` : ''}
       AND metrics.impressions > 0
     `;
 
@@ -194,10 +236,14 @@ export async function fetchDeviceMetrics(customerId: string, startDate: string, 
   }
 }
 
-export async function fetchGeographicMetrics(customerId: string, startDate: string, endDate: string) {
+export async function fetchGeographicMetrics(customerId: string, startDate: string, endDate: string, campaignId?: string, campaignIds?: string[]) {
   try {
     const { client, refreshToken } = await getAdsClient();
     const customer = client.Customer({ customer_id: customerId, refresh_token: refreshToken });
+
+    const activeCampaignIds = campaignIds && campaignIds.length > 0
+      ? campaignIds
+      : (campaignId ? [campaignId] : undefined);
 
     // We query campaign while segmenting by geo_target_city map
     const query = `
@@ -209,6 +255,7 @@ export async function fetchGeographicMetrics(customerId: string, startDate: stri
         metrics.conversions
       FROM geographic_view
       WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
+      ${activeCampaignIds && activeCampaignIds.length > 0 ? `AND campaign.id IN (${activeCampaignIds.map(id => `'${id}'`).join(', ')})` : ''}
       AND metrics.impressions > 0
     `;
 

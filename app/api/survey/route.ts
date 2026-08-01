@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
             <p><strong>Status:</strong> ${detail.statusStatement}</p>
             <p><strong>Recommendations:</strong></p>
             <ul style="margin: 10px 0; padding-left: 20px;">
-              ${detail.recommendations.map(rec => `<li>${rec}</li>`).join('')}
+              ${detail.recommendations.map((rec: any) => `<li>${rec}</li>`).join('')}
             </ul>
           </div>
         `
@@ -95,7 +95,7 @@ export async function POST(request: NextRequest) {
           <div style="background-color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
             <h2 style="color: #274290; margin-top: 0;">General Recommendations</h2>
             <ul style="margin: 10px 0; padding-left: 20px;">
-              ${results.generalRecommendations.map(rec => `<li>${rec}</li>`).join('')}
+              ${results.generalRecommendations.map((rec: any) => `<li>${rec}</li>`).join('')}
             </ul>
           </div>
 
@@ -110,7 +110,7 @@ export async function POST(request: NextRequest) {
           <div style="background-color: #fff3cd; padding: 20px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #ffc107;">
             <h3 style="color: #856404; margin-top: 0;">Important Considerations</h3>
             <ul style="margin: 10px 0; padding-left: 20px; color: #856404;">
-              ${results.flags.map(flag => `<li>${flag}</li>`).join('')}
+              ${results.flags.map((flag: any) => `<li>${flag}</li>`).join('')}
             </ul>
           </div>
           ` : ''}
@@ -163,7 +163,7 @@ export async function POST(request: NextRequest) {
           <div style="background-color: white; padding: 20px; border-radius: 8px; margin: 20px 0;">
             <h3 style="color: #274290; margin-top: 0;">Recommended Next Steps</h3>
             <ul style="margin: 10px 0; padding-left: 20px; color: #666;">
-              ${results.generalRecommendations.map(rec => `<li style="margin-bottom: 8px;">${rec}</li>`).join('')}
+              ${results.generalRecommendations.map((rec: any) => `<li style="margin-bottom: 8px;">${rec}</li>`).join('')}
             </ul>
           </div>
 
@@ -179,7 +179,7 @@ export async function POST(request: NextRequest) {
           <div style="background-color: #fff3cd; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #ffc107;">
             <h3 style="color: #856404; margin-top: 0;">Important Considerations</h3>
             <ul style="margin: 10px 0; padding-left: 20px; color: #856404;">
-              ${results.flags.map(flag => `<li style="margin-bottom: 8px;">${flag}</li>`).join('')}
+              ${results.flags.map((flag: any) => `<li style="margin-bottom: 8px;">${flag}</li>`).join('')}
             </ul>
           </div>
           ` : ''}

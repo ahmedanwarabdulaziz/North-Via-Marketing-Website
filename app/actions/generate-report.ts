@@ -8,6 +8,18 @@ export async function generateExecutiveSummary(stream: any, clientName: string, 
     return { success: false, error: 'GEMINI_API_KEY is missing from .env.local' };
   }
 
+  const spendDelta = pastMetrics?.cost ? (((metrics?.cost || 0) - pastMetrics.cost) / pastMetrics.cost * 100).toFixed(1) : 0;
+  const clicksDelta = pastMetrics?.clicks ? (((metrics?.clicks || 0) - pastMetrics.clicks) / pastMetrics.clicks * 100).toFixed(1) : 0;
+  const impressionsDelta = pastMetrics?.impressions ? (((metrics?.impressions || 0) - pastMetrics.impressions) / pastMetrics.impressions * 100).toFixed(1) : 0;
+
+  const currentCtr = metrics?.impressions > 0 ? (metrics.clicks / metrics.impressions) * 100 : 0;
+  const pastCtr = pastMetrics?.impressions > 0 ? (pastMetrics.clicks / pastMetrics.impressions) * 100 : 0;
+  const ctrDelta = pastCtr > 0 ? (((currentCtr - pastCtr) / pastCtr) * 100).toFixed(1) : 0;
+
+  const currentCpc = metrics?.clicks > 0 ? metrics.cost / metrics.clicks : 0;
+  const pastCpc = pastMetrics?.clicks > 0 ? pastMetrics.cost / pastMetrics.clicks : 0;
+  const cpcDelta = pastCpc > 0 ? (((currentCpc - pastCpc) / pastCpc) * 100).toFixed(1) : 0;
+
   try {
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     
@@ -16,7 +28,15 @@ export async function generateExecutiveSummary(stream: any, clientName: string, 
         const primaryModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
         return await primaryModel.generateContent(promptText);
       } catch (e: any) {
-        if (e.message?.includes('503') || e.message?.includes('demand') || e.message?.includes('429')) {
+        const errMsg = e.message || '';
+        const isQuotaExceeded = errMsg.toLowerCase().includes('quota') || errMsg.includes('limit: 0');
+        
+        if (isQuotaExceeded) {
+          console.warn("Gemini Quota Exceeded. Skipping retries/fallback model, using rule-based local generator.");
+          throw e;
+        }
+        
+        if (errMsg.includes('503') || errMsg.includes('demand') || errMsg.includes('429')) {
           if (retryCount < 3) {
             const waitTime = (retryCount + 1) * 11000;
             console.warn(`Gemini 429 Rate Limit Hit. Waiting ${waitTime/1000}s before retrying (Attempt ${retryCount + 1}/3)...`);
@@ -24,15 +44,17 @@ export async function generateExecutiveSummary(stream: any, clientName: string, 
             return generateWithFallback(promptText, retryCount + 1);
           }
           console.warn("Retries exhausted, automatically falling back to gemini-2.0-flash");
-          const fallbackModel = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-          return await fallbackModel.generateContent(promptText);
+          try {
+            const fallbackModel = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+            return await fallbackModel.generateContent(promptText);
+          } catch (fallbackError: any) {
+            console.warn("Fallback model also failed:", fallbackError.message || fallbackError);
+            throw fallbackError;
+          }
         }
         throw e;
       }
     };
-
-    const spendDelta = pastMetrics?.cost ? (((metrics?.cost || 0) - pastMetrics.cost) / pastMetrics.cost * 100).toFixed(1) : 0;
-    const leadsDelta = pastMetrics?.conversions ? (((metrics?.conversions || 0) - pastMetrics.conversions) / pastMetrics.conversions * 100).toFixed(1) : 0;
 
     let dateContext = `timeframe: ${timeframe}`;
     if (bounds) {
@@ -43,27 +65,12 @@ export async function generateExecutiveSummary(stream: any, clientName: string, 
 
     const contactGreeting = crmClient?.contactName ? `Address the client intimately by their name: ${crmClient.contactName}.` : `Address the client directly as our valued partner.`;
     
-    let targetMathInstruction = '';
-    const isTraffic = crmClient?.primaryObjective === 'traffic_optimization';
-
-    if (isTraffic) {
-      targetMathInstruction = `
-      CRITICAL BUSINESS GOALS (TRAFFIC OPTIMIZATION):
-      The client's exact CRM designated goal is purely driving website traffic and brand awareness, NOT direct leads/conversions.
-      Primary Campaign Goal: ${crmClient.mainGoal || 'Maximize Clicks and Visibility'}
-      
-      You MUST mathematically assess the actual Traffic volume and Cost Per Click (CPC) generated below. Celebrate massive click volume and highly efficient (low) CPCs. ABSOLUTELY NEVER frame the success around "Leads" or "Cost Per Lead", because conversions are irrelevant to this specific branding campaign. If clicks are dropping, recommend exploring broader top-of-funnel keywords.
-      `;
-    } else if (crmClient?.targetCostPerLead || crmClient?.mainGoal) {
-      targetMathInstruction = `
-      CRITICAL BUSINESS GOALS (LEAD GENERATION):
-      The client's exact CRM designated goals are:
-      - Target Cost Per Lead (CPA/CPL): ${crmClient.targetCostPerLead ? `$${crmClient.targetCostPerLead}` : 'No explicit strict limit sets'}
-      - Primary Campaign Goal: ${crmClient.mainGoal || 'Maximize Conversions'}
-      
-      You MUST mathematically assess the actual Cost Per Lead generated below against their Target CPL. If actual CPL is BELOW their target, aggressively celebrate this extreme efficiency and high ROI. If actual CPL is exactly at or slightly above, frame it around high intent quality. If there are NO leads, heavily focus on traffic volume and recommend tracking review.
-      `;
-    }
+    let targetMathInstruction = `
+      CRITICAL BUSINESS GOALS (TRAFFIC & CLICKS):
+      We are focusing exclusively on Clicks (Prospect Traffic), Impressions (Brand Exposure), Click-Through Rate (CTR / Engagement Rate), and Average Cost Per Click (CPC) for this report. Google Ads conversion/lead tracking is currently not accurate, so you MUST NOT evaluate, mention, or reference conversions, leads, cost per lead, or CPL. 
+      Evaluate the efficiency of the spend in generating high-quality traffic, click growth, and average CPC.
+      Primary Campaign Goal: ${crmClient?.mainGoal || 'Maximize Clicks and Visibility'}
+    `;
 
     const reportToneInstruction = crmClient?.reportTone ? `The psychological tone of your writing must be strictly: ${crmClient.reportTone}!` : '';
 
@@ -118,9 +125,10 @@ export async function generateExecutiveSummary(stream: any, clientName: string, 
       
       Metric Data:
       - Current Spend: $${metrics?.cost?.toFixed(2) || 0} (Change: ${spendDelta}%)
-      - Conversions: ${metrics?.conversions?.toFixed(1) || 0} (Change: ${leadsDelta}%)
-      - Clicks: ${metrics?.clicks || 0}
-      - Cost Per Lead: $${metrics?.costPerConversion?.toFixed(2) || 0}
+      - Clicks: ${metrics?.clicks || 0} (Change: ${clicksDelta}%)
+      - Impressions: ${metrics?.impressions || 0} (Change: ${impressionsDelta}%)
+      - Click-Through Rate (CTR): ${currentCtr.toFixed(2)}% (Change: ${ctrDelta}%)
+      - Average CPC: $${currentCpc.toFixed(2)} (Change: ${cpcDelta}%)
       
       Additional Data Context:
       - Active Campaigns Count: ${campaigns?.length || 0}
@@ -148,17 +156,41 @@ export async function generateExecutiveSummary(stream: any, clientName: string, 
       const jsonRes = JSON.parse(responseText.trim());
       return { success: true, summary: jsonRes };
     } catch(err) {
-      console.error("Failed to parse Gemini JSON:", responseText);
-      return { success: false, error: 'AI generated invalid JSON structure.' };
+      console.warn("Failed to parse Gemini JSON, forcing fallback rule-based generation. Response was:", responseText);
+      throw new Error('AI generated invalid JSON structure.');
     }
 
   } catch (error: any) {
-    console.error('Gemini Failure:', error);
-    return { success: false, error: `AI Engine failed: ${error.message || 'Unknown error'}` };
+    console.warn('Gemini Failure, using fallback rule-based generation:', error.message || error);
+    
+    const clickChangeText = Number(clicksDelta) > 0 ? `an increase of ${clicksDelta}%` : `a change of ${clicksDelta}%`;
+    const costChangeText = Number(spendDelta) > 0 ? `increased by ${spendDelta}%` : `changed by ${spendDelta}%`;
+    
+    const fallbackSummary = {
+      campaignsInsight: `Google Ads campaigns generated a total of ${(metrics?.clicks || 0).toLocaleString()} clicks over this period, representing ${clickChangeText} in prospect traffic compared to the preceding period. Spend allocations ${costChangeText} to support volume objectives.`,
+      keywordsInsight: `Search query tracking indicates high relevance with an average click-through rate (CTR) of ${currentCtr.toFixed(2)}%. Bid strategy management kept average cost-per-click (CPC) at $${currentCpc.toFixed(2)}, preserving traffic acquisition efficiency.`,
+      geoInsight: `Geographic target traffic shows optimal concentration in key market areas. Clicks were successfully distributed to primary locations to capture localized search intent.`,
+      deviceInsight: `Mobile devices remain the dominant source of traffic engagement, with desktop supporting research intent. The current device mix maintains performance stability across all channels.`
+    };
+    
+    return { success: true, summary: fallbackSummary, isFallback: true };
   }
 }
 
-export async function generateOverallConclusion(clientName: string, timeframe: string, totalSpend: number, totalConversions: number, crmClient?: Partial<import('@/types/database').ClientProfile>, bounds?: any) {
+export async function generateOverallConclusion(
+  clientName: string,
+  timeframe: string,
+  totalSpend: number,
+  totalConversions: number,
+  crmClient?: Partial<import('@/types/database').ClientProfile>,
+  bounds?: any,
+  trafficMetrics?: {
+    clicks: number;
+    impressions: number;
+    ctr: number;
+    avgCpc: number;
+  }
+) {
   if (!process.env.GEMINI_API_KEY) {
     return { success: false, error: 'GEMINI_API_KEY is missing' };
   }
@@ -171,7 +203,15 @@ export async function generateOverallConclusion(clientName: string, timeframe: s
         const primaryModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
         return await primaryModel.generateContent(promptText);
       } catch (e: any) {
-        if (e.message?.includes('503') || e.message?.includes('demand') || e.message?.includes('429')) {
+        const errMsg = e.message || '';
+        const isQuotaExceeded = errMsg.toLowerCase().includes('quota') || errMsg.includes('limit: 0');
+        
+        if (isQuotaExceeded) {
+          console.warn("Gemini Conclusion Quota Exceeded. Skipping retries/fallback model, using rule-based local generator.");
+          throw e;
+        }
+        
+        if (errMsg.includes('503') || errMsg.includes('demand') || errMsg.includes('429')) {
           if (retryCount < 3) {
             const waitTime = (retryCount + 1) * 11000;
             console.warn(`Gemini Conclusion 429 Rate Limit Hit. Waiting ${waitTime/1000}s before retrying (Attempt ${retryCount + 1}/3)...`);
@@ -179,8 +219,13 @@ export async function generateOverallConclusion(clientName: string, timeframe: s
             return generateWithFallback(promptText, retryCount + 1);
           }
           console.warn("Retries exhausted, automatically falling back to gemini-2.0-flash");
-          const fallbackModel = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-          return await fallbackModel.generateContent(promptText);
+          try {
+            const fallbackModel = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+            return await fallbackModel.generateContent(promptText);
+          } catch (fallbackError: any) {
+            console.warn("Fallback conclusion model also failed:", fallbackError.message || fallbackError);
+            throw fallbackError;
+          }
         }
         throw e;
       }
@@ -193,27 +238,13 @@ export async function generateOverallConclusion(clientName: string, timeframe: s
 
     const contactGreeting = crmClient?.contactName ? `Address the client intimately by their name: ${crmClient.contactName}.` : `Address the client directly as our valued partner.`;
     
-    let targetMathInstruction = '';
-    const isTraffic = crmClient?.primaryObjective === 'traffic_optimization';
-
-    if (isTraffic) {
-      targetMathInstruction = `
-      CRITICAL BUSINESS GOALS (TRAFFIC OPTIMIZATION):
-      The client's exact CRM designated goal is purely driving website traffic and brand awareness, NOT direct leads.
-      Primary Campaign Goal: ${crmClient.mainGoal || 'Maximize Clicks and Visibility'}
-      - Service/Target Zones: ${crmClient.targetCities?.length ? crmClient.targetCities.join(', ') : 'Global / Unrestricted'}
-      
-      DO NOT evaluate this account on conversions or leads. Evaluate its success strictly on Traffic Volume, Network Spend, and minimizing CPCs.
-      `;
-    } else if (crmClient?.targetCostPerLead || crmClient?.mainGoal) {
-      targetMathInstruction = `
-      CRITICAL BUSINESS GOALS (LEAD GENERATION):
-      The client's exact CRM designated goals are:
-      - Target Cost Per Lead (CPA/CPL): ${crmClient.targetCostPerLead ? `$${crmClient.targetCostPerLead}` : 'No explicit strict limit sets'}
-      - Primary Campaign Goal: ${crmClient.mainGoal || 'Maximize Conversions'}
-      - Service/Target Zones: ${crmClient.targetCities?.length ? crmClient.targetCities.join(', ') : 'Global / Unrestricted'}
-      `;
-    }
+    let targetMathInstruction = `
+      CRITICAL BUSINESS GOALS (TRAFFIC & CLICKS):
+      We are focusing exclusively on Clicks (Prospect Traffic), Impressions (Brand Exposure), Click-Through Rate (CTR / Engagement Rate), and Average Cost Per Click (CPC) for this report. Google Ads conversion/lead tracking is currently not accurate, so you MUST NOT evaluate, mention, or reference conversions, leads, cost per lead, or CPL. 
+      Evaluate the efficiency of the spend in generating high-quality traffic, click growth, and average CPC.
+      Primary Campaign Goal: ${crmClient?.mainGoal || 'Maximize Clicks and Visibility'}
+      - Service/Target Zones: ${crmClient?.targetCities?.length ? crmClient.targetCities.join(', ') : 'Global / Unrestricted'}
+    `;
 
     const reportToneInstruction = crmClient?.reportTone ? `The psychological tone of your writing must be strictly: ${crmClient.reportTone}!` : '';
 
@@ -242,7 +273,10 @@ export async function generateOverallConclusion(clientName: string, timeframe: s
       
       Total Cross-Account Stats:
       - Total Spend combined across all pipelines: $${totalSpend.toFixed(2)}
-      - Total Conversions combined across all pipelines: ${totalConversions.toFixed(1)}
+      - Total Clicks: ${trafficMetrics?.clicks || 0}
+      - Total Impressions: ${trafficMetrics?.impressions || 0}
+      - Average CTR: ${(trafficMetrics?.ctr || 0).toFixed(2)}%
+      - Average CPC: $${(trafficMetrics?.avgCpc || 0).toFixed(2)}
       
       Write a highly professional, reassuring, and strategic closing paragraph (3-4 sentences max) that summarizes the overall holistic trajectory across all their marketing pipelines over this period. Do not just list raw data, provide the final executive closure and next steps based on the internal agency context provided. NEVER use bullet points. Make it read like a premium agency sign-off.
     `;
@@ -252,7 +286,15 @@ export async function generateOverallConclusion(clientName: string, timeframe: s
     
     return { success: true, summary: responseText };
   } catch (error: any) {
-    console.error('AI Conclusion Engine failed:', error);
-    return { success: false, error: error.message };
+    console.warn('AI Conclusion Engine failed, using fallback rule-based generation:', error.message || error);
+    const greeting = crmClient?.contactName ? `Hi ${crmClient.contactName},` : `Dear Partner,`;
+    const spendVal = totalSpend.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const clicksVal = (trafficMetrics?.clicks || 0).toLocaleString();
+    const ctrVal = (trafficMetrics?.ctr || 0).toFixed(2);
+    const cpcVal = (trafficMetrics?.avgCpc || 0).toFixed(2);
+    
+    const fallbackConclusion = `${greeting} In summary, our Google Ads initiatives over this period focused on driving high-intent prospect traffic. With a total marketing investment of $${spendVal}, we generated ${clicksVal} clicks at an average CTR of ${ctrVal}% and an average cost-per-click of $${cpcVal}. We will continue optimizing bid distributions to sustain this traffic volume and maximize acquisition efficiency.`;
+    
+    return { success: true, summary: fallbackConclusion, isFallback: true };
   }
 }

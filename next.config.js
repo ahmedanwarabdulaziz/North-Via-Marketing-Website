@@ -13,6 +13,7 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  serverExternalPackages: ['pdfkit'],
 }
 
 module.exports = nextConfig

@@ -43,8 +43,8 @@ export interface GoogleAdsAccount {
   isSelected: boolean;
   
   // CRM & AI Intelligence Fields
-  clientBusinessName?: string;
-  clientContactName?: string;
+  brandName?: string;
+  ownerName?: string;
   aiPromptNotes?: string;
   
   createdAt: string;
@@ -70,88 +70,124 @@ export interface AdminAuditLog {
 
 export interface ClientProfile {
   id?: string;
-  businessName: string;
-  contactName: string;
+  brandName: string;
+  ownerName: string;
   email: string;
-  reportingEmails?: string[];
-  industry?: string;
-  businessDescription?: string;
-  primaryServices?: string[];
-  serviceAreas?: string[];
-  targetCities?: string[];
-  excludedCities?: string[];
-  idealCustomerProfile?: string;
-  averageJobValue?: number;
-  targetCostPerLead?: number;
-  monthlyAdBudget?: number;
-  mainGoal?: string;
-  primaryObjective?: 'lead_generation' | 'traffic_optimization';
-  conversionDefinition?: string;
-  leadQualificationRules?: string;
-  leadQualityNotes?: string;
-  priorityOffers?: string[];
-  competitors?: string[];
-  seasonalityNotes?: string;
-  reportTone?: 'executive' | 'friendly' | 'technical' | 'reassuring';
-  clientConcerns?: string;
-  nextStepNotes?: string;
-  aiBehavioralNotes: string;
-  aiAvoidanceWarnings: string;
-  linkedGoogleAdsIds: string[]; // Can link multiple accounts to one client profile
-  linkedSocialMediaAccounts?: string[];
+  mobileNumber?: string;
+  facebookLink?: string;
+  instagramLink?: string;
+  tiktokLink?: string;
+  googleLink?: string;
+  linkedGoogleAdsIds?: string[];
   createdAt: string;
   updatedAt: string;
 }
 
-export type TaskStatus = 'todo' | 'in_progress' | 'waiting' | 'waiting_approval' | 'waiting_response' | 'on_hold' | 'done' | 'archived';
-export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent';
-export type TaskCategory = 'reviews' | 'ads' | 'website' | 'seo' | 'follow_up' | 'reporting' | 'billing' | 'internal';
-export type TaskRecurrenceType = 'daily' | 'weekly' | 'monthly' | 'every_x_days';
+export type AdminTaskType = 'focus' | 'idea' | 'admin' | 'client' | 'system';
+export type AdminTaskPriority = 'low' | 'medium' | 'high';
+export type AdminTaskStatus = 'top_3' | 'doing' | 'waiting' | 'done';
 
-export interface TaskNote {
-  id: string;
-  content: string;
-  createdAt: string;
-}
-
-export interface AgencyTask {
+export interface AdminTaskItem {
   id?: string;
   title: string;
-  description?: string;
-  clientId?: string;
-  clientNameSnapshot?: string;
-  status: TaskStatus;
-  priority: TaskPriority;
-  category?: TaskCategory;
-  dueDate?: string; // ISO format
-  scheduledDate?: string;
+  details?: string;
+  client?: string;
+  type: AdminTaskType;
+  priority: AdminTaskPriority;
+  status: AdminTaskStatus;
+  dueDate?: string;
+  ownerNote?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type FollowUpChannel = 'whatsapp' | 'call' | 'email' | 'meeting';
+export type FollowUpStatus = 'okay' | 'due_soon' | 'overdue' | 'waiting_on_client' | 'done';
+
+export interface AdminFollowUpItem {
+  id?: string;
+  clientName: string;
+  contactPerson?: string;
+  channel: FollowUpChannel;
+  reason: string;
+  lastContactDate?: string;
+  nextFollowUpDate: string;
+  cadenceStyle?: string;
+  currentIssue?: string;
+  promisedNextStep?: string;
   notes?: string;
-  taskNotes?: TaskNote[];
-  isRecurring: boolean;
-  recurrenceType?: TaskRecurrenceType;
-  recurrenceInterval?: number; // Only used for 'every_x_days', e.g., 6
-  recurrenceAnchorDate?: string;
-  nextOccurrenceAt?: string;
-  lastOccurrenceCompletedAt?: string;
-  recurrenceParentId?: string;
-  autoRegenerateOnComplete: boolean;
-  lastActivityAt?: string;
+  ownerNote?: string;
+  status: FollowUpStatus;
   createdAt: string;
   updatedAt: string;
-  completedAt?: string;
 }
 
-export type IdeaType = 'future_feature' | 'upsell' | 'process_improvement' | 'campaign_idea' | 'content_idea';
-export type IdeaStatus = 'backlog' | 'considering' | 'approved' | 'converted_to_task' | 'archived';
+export type ReportItemType = 'weekly' | 'monthly' | 'ads' | 'analysis' | 'custom';
+export type ReportItemStatus = 'not_started' | 'gathering_data' | 'drafting' | 'ready' | 'sent';
 
-export interface TaskIdea {
+export interface AdminReportItem {
   id?: string;
-  title: string;
-  description?: string;
+  clientName: string;
+  reportType: ReportItemType;
+  reportingPeriod?: string;
+  dueDate?: string;
+  keyFocus?: string;
+  notes?: string;
+  ownerNote?: string;
+  sentDate?: string;
+  status: ReportItemStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type InvoiceItemStatus = 'draft' | 'ready_to_send' | 'sent' | 'paid' | 'overdue' | 'partially_paid';
+
+export interface InvoiceLineItem {
+  description: string;
+  quantity: number;
+  price: number;
+  total: number;
+}
+
+export interface InvoicePayment {
+  id: string;
+  date: string;
+  amount: number;
+  method?: string;
+  note?: string;
+}
+
+export interface AdminInvoiceItem {
+  id?: string;
   clientId?: string;
-  clientNameSnapshot?: string;
-  ideaType: IdeaType;
-  status: IdeaStatus;
+  clientName: string;
+  clientBrand?: string;
+  recipientEmail?: string;
+  invoiceNumber?: string;
+  description?: string;
+  
+  lineItems?: InvoiceLineItem[];
+  payments?: InvoicePayment[];
+  
+  standardAmount: number;
+  discountAmount?: number;
+  subtotalAmount: number;
+  totalAmount: number;
+  amount: number;
+  currency: string;
+  serviceMonth?: string;
+  serviceMonthKey?: string;
+  billingPeriodFrom?: string;
+  billingPeriodTo?: string;
+  serviceSummary?: string;
+  issueDate?: string;
+  dueDate?: string;
+  sentDate?: string;
+  paidDate?: string;
+  paymentNote?: string;
+  ownerNote?: string;
+  isTemplateGenerated?: boolean;
+  status: InvoiceItemStatus;
   createdAt: string;
   updatedAt: string;
 }

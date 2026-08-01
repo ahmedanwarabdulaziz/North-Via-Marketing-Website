@@ -97,3 +97,65 @@ export async function selectDefaultAdsAccount(customerId: string) {
     return { success: false, error: error.message };
   }
 }
+
+export async function assignAdsAccountToClient(customerId: string, clientId: string | null) {
+  try {
+    const batch = db.batch();
+    
+    // 1. Fetch all clients to clean up existing links for this customerId
+    const clientsSnapshot = await db.collection('clients').get();
+    clientsSnapshot.docs.forEach((doc) => {
+      const data = doc.data();
+      const linkedIds: string[] = data.linkedGoogleAdsIds || [];
+      if (linkedIds.includes(customerId)) {
+        batch.update(doc.ref, {
+          linkedGoogleAdsIds: linkedIds.filter(id => id !== customerId),
+          updatedAt: new Date().toISOString()
+        });
+      }
+    });
+
+    let brandName = '';
+    let ownerName = '';
+
+    // 2. If a new clientId is specified, link it to this client
+    if (clientId) {
+      const clientDoc = await db.collection('clients').doc(clientId).get();
+      if (clientDoc.exists) {
+        const clientData = clientDoc.data();
+        brandName = clientData?.brandName || '';
+        ownerName = clientData?.ownerName || '';
+
+        const currentLinked: string[] = clientData?.linkedGoogleAdsIds || [];
+        if (!currentLinked.includes(customerId)) {
+          batch.update(clientDoc.ref, {
+            linkedGoogleAdsIds: [...currentLinked, customerId],
+            updatedAt: new Date().toISOString()
+          });
+        }
+      }
+    }
+
+    // 3. Update the google_ads_accounts document metadata
+    const accountDocRef = db.collection('google_ads_accounts').doc(customerId);
+    const accountDoc = await accountDocRef.get();
+    if (accountDoc.exists) {
+      batch.update(accountDocRef, {
+        brandName: brandName || null,
+        ownerName: ownerName || null,
+        updatedAt: new Date().toISOString()
+      });
+    }
+
+    await batch.commit();
+
+    revalidatePath('/admin/settings');
+    revalidatePath('/admin/ads');
+    revalidatePath('/admin/clients');
+
+    return { success: true };
+  } catch (error: any) {
+    console.error('Failed to assign Ads Account to Client:', error);
+    return { success: false, error: error.message || 'Database update failed' };
+  }
+}
