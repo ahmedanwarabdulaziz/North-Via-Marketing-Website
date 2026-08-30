@@ -14,6 +14,8 @@ export default async function EditClientPage({ params }: { params: Promise<{ id:
     notFound();
   }
 
+  const { clarityApiTokenEncrypted, ...safeClient } = client;
+
   return (
     <div className="max-w-4xl mx-auto p-6 md:p-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="mb-8">
@@ -28,7 +30,12 @@ export default async function EditClientPage({ params }: { params: Promise<{ id:
         <p className="text-zinc-500 mt-2">Update the information and settings for {client.brandName}.</p>
       </div>
 
-      <ClientForm initialData={client} />
+      <ClientForm
+        initialData={{
+          ...safeClient,
+          clarityApiTokenSet: Boolean(clarityApiTokenEncrypted),
+        }}
+      />
     </div>
   );
 }

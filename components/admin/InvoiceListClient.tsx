@@ -143,11 +143,25 @@ export function InvoiceListClient({ invoices: initialInvoices }: { invoices: Adm
 
     const file = new File([blob], getPdfFileName(invoice), { type: 'application/pdf' });
     
+    const formatName = (name: string) => {
+      return name.split(' ')
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+        .join(' ');
+    };
+    
+    const clientName = formatName(invoice.clientName || 'Valued Client');
+    const brandName = invoice.clientBrand || 'your business';
+    const amount = invoice.totalAmount ? `$${invoice.totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'the total balance';
+    const invoiceNo = invoice.invoiceNumber || 'your recent invoice';
+    
+    const templateMessage = `Hello ${clientName},\nI hope you're having a great day!\nPlease find attached the invoice for *${brandName}* for the amount of ${amount}.\nThank you for your continued business!\n\nBest regards,\nAhmed Anwar\nNorth via Marketing`;
+    const encodedMessage = encodeURIComponent(templateMessage);
+    
     if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
       try {
         await navigator.share({
           title: `Invoice ${invoice.invoiceNumber}`,
-          text: `Here is your invoice ${invoice.invoiceNumber} for $${invoice.totalAmount}.`,
+          text: templateMessage,
           files: [file]
         });
       } catch (e: any) {
@@ -167,9 +181,9 @@ export function InvoiceListClient({ invoices: initialInvoices }: { invoices: Adm
       
       // Open the app anyway
       if (platform === 'whatsapp') {
-        window.open(`https://wa.me/?text=Hello, please find attached your invoice ${invoice.invoiceNumber}.`);
+        window.open(`https://wa.me/?text=${encodedMessage}`);
       } else {
-        window.location.href = `mailto:${invoice.recipientEmail || ''}?subject=Invoice ${invoice.invoiceNumber}&body=Hello, please find attached your invoice.`;
+        window.location.href = `mailto:${invoice.recipientEmail || ''}?subject=Invoice ${invoice.invoiceNumber}&body=${encodedMessage}`;
       }
     }
   };

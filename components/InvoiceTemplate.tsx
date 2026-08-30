@@ -112,6 +112,10 @@ export const InvoiceTemplate = React.forwardRef<HTMLDivElement, { invoice: Parti
               <span style={{ fontWeight: 'bold', width: '80px' }}>{invoice.invoiceNumber || '------'}</span>
             </div>
             <div style={{ display: 'flex', gap: '16px', justifyContent: 'flex-end' }}>
+              <span style={{ letterSpacing: '1px' }}>ISSUE DATE:</span>
+              <span style={{ width: '80px' }}>{formatDate(invoice.issueDate || invoice.createdAt)}</span>
+            </div>
+            <div style={{ display: 'flex', gap: '16px', justifyContent: 'flex-end' }}>
               <span style={{ letterSpacing: '1px' }}>DUE DATE:</span>
               <span style={{ width: '80px' }}>{formatDate(invoice.dueDate)}</span>
             </div>

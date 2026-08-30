@@ -1,6 +1,12 @@
 'use server';
 
 import { getAdsClient } from '@/lib/google-ads';
+import { calculateAdsReportWindow } from '@/lib/date-utils';
+import {
+  calculateAdsMetricTotals,
+  type AdsReportData,
+  type AdsReportPeriod,
+} from '@/lib/ads-report';
 
 export async function fetchCustomerMetrics(customerId: string, startDate: string, endDate: string, campaignId?: string, campaignIds?: string[]) {
   try {
@@ -178,6 +184,83 @@ export async function fetchSearchTermMetrics(customerId: string, startDate: stri
   }
 }
 
+export async function fetchAdMetrics(customerId: string, startDate: string, endDate: string, campaignId?: string, campaignIds?: string[]) {
+  try {
+    const { client, refreshToken } = await getAdsClient();
+    const customer = client.Customer({
+      customer_id: customerId,
+      refresh_token: refreshToken,
+    });
+
+    const activeCampaignIds = campaignIds && campaignIds.length > 0
+      ? campaignIds
+      : (campaignId ? [campaignId] : undefined);
+
+    const query = `
+      SELECT
+        campaign.id,
+        campaign.name,
+        ad_group.id,
+        ad_group.name,
+        ad_group_ad.ad.id,
+        ad_group_ad.ad.name,
+        ad_group_ad.ad.type,
+        ad_group_ad.ad.responsive_search_ad.headlines,
+        ad_group_ad.ad.expanded_text_ad.headline_part1,
+        metrics.cost_micros,
+        metrics.impressions,
+        metrics.clicks,
+        metrics.ctr,
+        metrics.average_cpc,
+        metrics.conversions,
+        metrics.cost_per_conversion
+      FROM ad_group_ad
+      WHERE segments.date BETWEEN '${startDate}' AND '${endDate}'
+        AND ad_group_ad.status = 'ENABLED'
+      ${activeCampaignIds && activeCampaignIds.length > 0 ? `AND campaign.id IN (${activeCampaignIds.map(id => `'${id}'`).join(', ')})` : ''}
+      ORDER BY metrics.cost_micros DESC
+      LIMIT 100
+    `;
+
+    const res = await customer.query(query);
+
+    const ads = res.map((row: any) => {
+      let extractedName = row.ad_group_ad?.ad?.name;
+      if (!extractedName) {
+        if (row.ad_group_ad?.ad?.responsive_search_ad?.headlines && row.ad_group_ad.ad.responsive_search_ad.headlines.length > 0) {
+          extractedName = row.ad_group_ad.ad.responsive_search_ad.headlines[0].text;
+        } else if (row.ad_group_ad?.ad?.expanded_text_ad?.headline_part1) {
+          extractedName = row.ad_group_ad.ad.expanded_text_ad.headline_part1;
+        } else {
+          extractedName = 'Unknown Ad';
+        }
+      }
+
+      return {
+        adId: row.ad_group_ad?.ad?.id?.toString() || 'unknown',
+        adName: extractedName,
+        adType: row.ad_group_ad?.ad?.type || 'UNKNOWN',
+        campaignId: row.campaign?.id?.toString() || 'unknown',
+        campaignName: row.campaign?.name || 'Unknown Campaign',
+        adGroupId: row.ad_group?.id?.toString() || 'unknown',
+        adGroupName: row.ad_group?.name || 'Unknown Ad Group',
+        cost: (row.metrics?.cost_micros || 0) / 1_000_000,
+        impressions: row.metrics?.impressions || 0,
+        clicks: row.metrics?.clicks || 0,
+        ctr: row.metrics?.ctr || 0,
+        averageCpc: (row.metrics?.average_cpc || 0) / 1_000_000,
+        conversions: row.metrics?.conversions || 0,
+        costPerConversion: (row.metrics?.cost_per_conversion || 0) / 1_000_000,
+      };
+    });
+
+    return { success: true, ads };
+  } catch (error: any) {
+    console.warn(`fetchAdMetrics fail for ${customerId}:`, error.message || error);
+    return { success: false, error: 'Failed to retrieve ads data' };
+  }
+}
+
 export async function fetchDeviceMetrics(customerId: string, startDate: string, endDate: string, campaignId?: string, campaignIds?: string[]) {
   try {
     const { client, refreshToken } = await getAdsClient();
@@ -313,5 +396,71 @@ export async function fetchGeographicMetrics(customerId: string, startDate: stri
   } catch (error: any) {
     console.warn(`fetchGeographicMetrics fail for ${customerId}:`, error.message || error);
     return { success: false, error: 'Failed to retrieve geographic data' };
+  }
+}
+
+export async function fetchProfessionalAdsReport(
+  customerId: string,
+  periodDays: AdsReportPeriod
+): Promise<{ success: true; data: AdsReportData } | { success: false; error: string }> {
+  try {
+    const window = calculateAdsReportWindow(periodDays);
+    const [
+      currentMetrics,
+      previousMetrics,
+      lastYearMetrics,
+      currentCampaigns,
+      previousCampaigns,
+    ] = await Promise.all([
+      fetchCustomerMetrics(customerId, window.currentStart, window.currentEnd),
+      fetchCustomerMetrics(customerId, window.previousStart, window.previousEnd),
+      fetchCustomerMetrics(customerId, window.lastYearStart, window.lastYearEnd),
+      fetchCampaignMetrics(customerId, window.currentStart, window.currentEnd),
+      fetchCampaignMetrics(customerId, window.previousStart, window.previousEnd),
+    ]);
+
+    if (!currentMetrics.success) throw new Error(currentMetrics.error);
+    if (!previousMetrics.success) throw new Error(previousMetrics.error);
+    if (!currentCampaigns.success) throw new Error(currentCampaigns.error);
+    if (!previousCampaigns.success) throw new Error(previousCampaigns.error);
+
+    const normalizeCampaigns = (campaigns: Array<{
+      id: string;
+      name: string;
+      status: string;
+      cost: number;
+      impressions: number;
+      clicks: number;
+      conversions: number;
+    }>) => campaigns.map((campaign) => ({
+      id: campaign.id,
+      name: campaign.name,
+      status: campaign.status,
+      cost: campaign.cost,
+      impressions: campaign.impressions,
+      clicks: campaign.clicks,
+      ctr: campaign.impressions > 0 ? (campaign.clicks / campaign.impressions) * 100 : 0,
+    }));
+
+    return {
+      success: true,
+      data: {
+        customerId,
+        periodDays,
+        window,
+        current: calculateAdsMetricTotals(currentMetrics.data),
+        previous: calculateAdsMetricTotals(previousMetrics.data),
+        lastYear: lastYearMetrics.success && lastYearMetrics.data ? calculateAdsMetricTotals(lastYearMetrics.data) : null,
+        campaigns: normalizeCampaigns(currentCampaigns.campaigns || []),
+        previousCampaigns: normalizeCampaigns(previousCampaigns.campaigns || []),
+        generatedAt: new Date().toISOString(),
+      },
+    };
+  } catch (error: any) {
+    console.warn('fetchProfessionalAdsReport failed for ' + customerId + ':', error.message || error);
+    return {
+      success: false,
+      error: error.message || 'Failed to build the professional Ads report.',
+    };
   }
 }

@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { Inter, Playfair_Display } from 'next/font/google'
 import './globals.css'
 import { ConditionalHeader, ConditionalFooter } from './components/ClientLayoutElements'
+import Chatbot from '@/components/Chatbot'
 
 const inter = Inter({ 
   subsets: ['latin'],
@@ -73,19 +74,20 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en" className={`${inter.variable} ${playfair.variable}`}>
+    <html lang="en" className={`${inter.variable} ${playfair.variable}`} suppressHydrationWarning>
       <head>
         <link rel="icon" href="/Logo-1.png" />
         <link rel="apple-touch-icon" href="/Logo-1.png" />
         <link rel="manifest" href="/site.webmanifest" />
         <meta name="theme-color" content="#f27921" />
       </head>
-      <body className={`${inter.className} antialiased`}>
+      <body className={`${inter.className} antialiased`} suppressHydrationWarning>
         <ConditionalHeader />
         <main>
           {children}
         </main>
         <ConditionalFooter />
+        <Chatbot />
       </body>
     </html>
   )

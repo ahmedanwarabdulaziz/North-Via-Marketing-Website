@@ -8,7 +8,7 @@ import { InvoiceTemplate } from '../InvoiceTemplate';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 
-export function InvoiceForm({ initialData, clients }: { initialData?: AdminInvoiceItem; clients?: ClientProfile[] }) {
+export function InvoiceForm({ initialData, clients, onSuccess }: { initialData?: AdminInvoiceItem; clients?: ClientProfile[]; onSuccess?: () => void }) {
   const router = useRouter();
   const [isSaving, setIsSaving] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -109,6 +109,10 @@ export function InvoiceForm({ initialData, clients }: { initialData?: AdminInvoi
   };
 
   const saveInvoice = async () => {
+    if (!formData.clientId) {
+      alert('Please select a client.');
+      return;
+    }
     setIsSaving(true);
     
     const totalPaid = (formData.payments || []).reduce((sum, p) => sum + p.amount, 0);
@@ -143,8 +147,12 @@ export function InvoiceForm({ initialData, clients }: { initialData?: AdminInvoi
           body: JSON.stringify(cleanPayload)
         });
       }
-      router.push('/admin/invoices');
-      router.refresh();
+      if (onSuccess) {
+        onSuccess();
+      } else {
+        router.push('/admin/invoices');
+        router.refresh();
+      }
     } catch (e) {
       console.error(e);
       alert('Failed to save invoice');
@@ -180,9 +188,10 @@ export function InvoiceForm({ initialData, clients }: { initialData?: AdminInvoi
         <div className="grid grid-cols-2 gap-4">
           <div className="col-span-2 bg-zinc-50 p-4 rounded-xl border border-zinc-100 mb-2 space-y-4">
             <div>
-              <label className="block text-sm font-medium text-zinc-700 mb-1">Quick Select Existing Client</label>
+              <label className="block text-sm font-medium text-zinc-700 mb-1">Select Client <span className="text-red-500">*</span></label>
               <select 
                 className="w-full px-3 py-2 border rounded-lg bg-white"
+                value={formData.clientId || ''}
                 onChange={e => {
                   const client = clients?.find(c => c.id === e.target.value);
                   if (client) {
@@ -198,7 +207,7 @@ export function InvoiceForm({ initialData, clients }: { initialData?: AdminInvoi
                   }
                 }}
               >
-                <option value="">-- Custom / Manual Entry --</option>
+                <option value="">-- Select Client --</option>
                 {(clients || []).map(client => (
                   <option key={client.id} value={client.id}>{client.brandName} ({client.ownerName})</option>
                 ))}

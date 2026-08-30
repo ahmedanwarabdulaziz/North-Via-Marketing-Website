@@ -3,10 +3,14 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { saveClientFromForm } from '@/app/actions/clients';
-import { Save, X, Building2, User, Mail, Phone, Facebook, Instagram, Music, Globe } from 'lucide-react';
+import { Save, X, Building2, User, Mail, Phone, Facebook, Instagram, Music, Globe, BarChart3, KeyRound } from 'lucide-react';
 import type { ClientProfile } from '@/types/database';
 
-export function ClientForm({ initialData }: { initialData?: Partial<ClientProfile> }) {
+type ClientFormData = Partial<ClientProfile> & {
+  clarityApiTokenSet?: boolean;
+};
+
+export function ClientForm({ initialData }: { initialData?: ClientFormData }) {
   const router = useRouter();
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -97,6 +101,84 @@ export function ClientForm({ initialData }: { initialData?: Partial<ClientProfil
               className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 bg-zinc-50/50 focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all outline-none"
               placeholder="+1 (555) 123-4567"
             />
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-sm border border-zinc-200 overflow-hidden transition-all duration-300 hover:shadow-md">
+        <div className="p-6 border-b border-zinc-100 bg-zinc-50/50">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-zinc-900">Website Analytics Integrations</h2>
+              <p className="text-sm text-zinc-500 mt-1">Connect website data for future campaign and customer-journey reports.</p>
+            </div>
+            {initialData?.clarityApiTokenSet && (
+              <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1.5 rounded-full">
+                <KeyRound className="w-3.5 h-3.5" />
+                Clarity token saved
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="p-6 space-y-6">
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-zinc-700 flex items-center gap-2">
+              <Globe className="w-4 h-4 text-zinc-400" />
+              Professional Website URL
+            </label>
+            <input
+              type="url"
+              name="websiteUrl"
+              defaultValue={initialData?.websiteUrl}
+              className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 bg-zinc-50/50 focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all outline-none"
+              placeholder="https://www.example.com"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-zinc-700 flex items-center gap-2">
+                <BarChart3 className="w-4 h-4 text-zinc-400" />
+                GA4 Property ID
+              </label>
+              <input
+                name="ga4PropertyId"
+                defaultValue={initialData?.ga4PropertyId}
+                className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 bg-zinc-50/50 focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all outline-none"
+                placeholder="e.g. 123456789"
+              />
+              <p className="text-xs text-zinc-400">The Google account connection must have read access to this property.</p>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-zinc-700 flex items-center gap-2">
+                <KeyRound className="w-4 h-4 text-zinc-400" />
+                Clarity Project ID
+              </label>
+              <input
+                name="clarityProjectId"
+                defaultValue={initialData?.clarityProjectId}
+                className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 bg-zinc-50/50 focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all outline-none"
+                placeholder="e.g. abc123..."
+              />
+              <p className="text-xs text-zinc-400">Found in the Clarity project setup or tracking code.</p>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-zinc-700 flex items-center gap-2">
+              <KeyRound className="w-4 h-4 text-zinc-400" />
+              Clarity Data Export API Token
+            </label>
+            <input
+              type="password"
+              name="clarityApiToken"
+              autoComplete="new-password"
+              className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 bg-zinc-50/50 focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all outline-none"
+              placeholder={initialData?.clarityApiTokenSet ? 'Leave blank to keep the saved token' : 'Paste the project API token'}
+            />
+            <p className="text-xs text-zinc-400">Stored encrypted. Generate this token from Clarity Project Settings &gt; Data Export.</p>
           </div>
         </div>
       </div>

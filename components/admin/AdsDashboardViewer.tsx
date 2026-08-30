@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { ClientAdsDashboard } from './ClientAdsDashboard';
+import { ProfessionalAdsReport } from './ProfessionalAdsReport';
 import type { ClientProfile } from '@/types/database';
 
 export function AdsDashboardViewer({ clients }: { clients: ClientProfile[] }) {
@@ -29,7 +30,10 @@ export function AdsDashboardViewer({ clients }: { clients: ClientProfile[] }) {
       </div>
       
       {adsCustomerId ? (
-        <ClientAdsDashboard customerId={adsCustomerId} brandName={selectedClient.brandName} />
+        <>
+          <ProfessionalAdsReport customerId={adsCustomerId} brandName={selectedClient.brandName} />
+          <ClientAdsDashboard customerId={adsCustomerId} brandName={selectedClient.brandName} />
+        </>
       ) : (
         <div className="text-center p-12 bg-white rounded-2xl shadow-sm border border-zinc-200 text-zinc-500">
           {clients.length === 0 ? "You don't have any clients with linked Google Ads accounts yet." : "Please select a client to view their Google Ads dashboard."}

@@ -1,3 +1,5 @@
+import type { AdsReportDateWindow, AdsReportPeriod } from './ads-report';
+
 /**
  * Formats a Date object strictly into Google Ads API accepted YYYY-MM-DD
  */
@@ -70,5 +72,50 @@ export function calculateDateWindows(timeframe: Timeframe): {
     currentEnd: formatGoogleDate(currentEnd),
     pastStart: formatGoogleDate(pastStart),
     pastEnd: formatGoogleDate(pastEnd)
+  };
+}
+
+function formatUtcDate(date: Date): string {
+  return [
+    date.getUTCFullYear(),
+    String(date.getUTCMonth() + 1).padStart(2, '0'),
+    String(date.getUTCDate()).padStart(2, '0'),
+  ].join('-');
+}
+
+/**
+ * Returns two equal-length, complete date windows for Google Ads reporting.
+ * The current window ends yesterday so today's partial data is never included.
+ */
+export function calculateAdsReportWindow(
+  periodDays: AdsReportPeriod,
+  now = new Date()
+): AdsReportDateWindow {
+  const currentEnd = new Date(now);
+  currentEnd.setUTCHours(12, 0, 0, 0);
+  currentEnd.setUTCDate(currentEnd.getUTCDate() - 1);
+
+  const currentStart = new Date(currentEnd);
+  currentStart.setUTCDate(currentStart.getUTCDate() - (periodDays - 1));
+
+  const previousEnd = new Date(currentStart);
+  previousEnd.setUTCDate(previousEnd.getUTCDate() - 1);
+
+  const previousStart = new Date(previousEnd);
+  previousStart.setUTCDate(previousStart.getUTCDate() - (periodDays - 1));
+
+  const lastYearEnd = new Date(currentEnd);
+  lastYearEnd.setUTCFullYear(lastYearEnd.getUTCFullYear() - 1);
+
+  const lastYearStart = new Date(currentStart);
+  lastYearStart.setUTCFullYear(lastYearStart.getUTCFullYear() - 1);
+
+  return {
+    currentStart: formatUtcDate(currentStart),
+    currentEnd: formatUtcDate(currentEnd),
+    previousStart: formatUtcDate(previousStart),
+    previousEnd: formatUtcDate(previousEnd),
+    lastYearStart: formatUtcDate(lastYearStart),
+    lastYearEnd: formatUtcDate(lastYearEnd),
   };
 }

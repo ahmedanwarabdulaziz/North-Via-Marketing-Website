@@ -3,6 +3,7 @@
 import { db } from '@/lib/firebase';
 import { ClientProfile } from '@/types/database';
 import { revalidatePath } from 'next/cache';
+import { encryptString } from '@/lib/encryption';
 
 function removeUndefinedValues<T extends Record<string, unknown>>(payload: T) {
   return Object.fromEntries(
@@ -31,10 +32,13 @@ export async function createOrUpdateClient(data: Partial<ClientProfile>) {
         ownerName: data.ownerName || '',
         email: data.email || '',
         mobileNumber: data.mobileNumber || '',
+        websiteUrl: data.websiteUrl || '',
         facebookLink: data.facebookLink || '',
         instagramLink: data.instagramLink || '',
         tiktokLink: data.tiktokLink || '',
         googleLink: data.googleLink || '',
+        ga4PropertyId: data.ga4PropertyId || '',
+        clarityProjectId: data.clarityProjectId || '',
         createdAt: timestamp,
         updatedAt: timestamp
       });
@@ -78,10 +82,14 @@ export async function saveClientFromForm(formData: FormData) {
   const ownerName = valueAsString(formData.get('ownerName'));
   const email = valueAsString(formData.get('email'));
   const mobileNumber = valueAsString(formData.get('mobileNumber'));
+  const websiteUrl = valueAsString(formData.get('websiteUrl'));
   const facebookLink = valueAsString(formData.get('facebookLink'));
   const instagramLink = valueAsString(formData.get('instagramLink'));
   const tiktokLink = valueAsString(formData.get('tiktokLink'));
   const googleLink = valueAsString(formData.get('googleLink'));
+  const ga4PropertyId = valueAsString(formData.get('ga4PropertyId'));
+  const clarityProjectId = valueAsString(formData.get('clarityProjectId'));
+  const clarityApiToken = valueAsString(formData.get('clarityApiToken'));
 
   return createOrUpdateClient({
     id: id || undefined,
@@ -89,9 +97,13 @@ export async function saveClientFromForm(formData: FormData) {
     ownerName,
     email,
     mobileNumber,
+    websiteUrl,
     facebookLink,
     instagramLink,
     tiktokLink,
-    googleLink
+    googleLink,
+    ga4PropertyId,
+    clarityProjectId,
+    ...(clarityApiToken ? { clarityApiTokenEncrypted: encryptString(clarityApiToken) } : {}),
   });
 }

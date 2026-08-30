@@ -74,10 +74,14 @@ export interface ClientProfile {
   ownerName: string;
   email: string;
   mobileNumber?: string;
+  websiteUrl?: string;
   facebookLink?: string;
   instagramLink?: string;
   tiktokLink?: string;
   googleLink?: string;
+  ga4PropertyId?: string;
+  clarityProjectId?: string;
+  clarityApiTokenEncrypted?: string;
   linkedGoogleAdsIds?: string[];
   createdAt: string;
   updatedAt: string;

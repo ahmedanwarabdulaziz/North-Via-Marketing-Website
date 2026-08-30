@@ -8,8 +8,10 @@ import { Edit2, Eye, Download, MessageCircle, Mail } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import { useRef } from 'react';
+import { useRouter } from 'next/navigation';
 
 export function InvoiceDetailClient({ invoice, clients }: { invoice: AdminInvoiceItem, clients: ClientProfile[] }) {
+  const router = useRouter();
   const [isEditing, setIsEditing] = useState(false);
   const pdfRef = useRef<HTMLDivElement>(null);
   
@@ -76,7 +78,14 @@ export function InvoiceDetailClient({ invoice, clients }: { invoice: AdminInvoic
       </div>
 
       {isEditing ? (
-        <InvoiceForm initialData={invoice} clients={clients} />
+        <InvoiceForm 
+          initialData={invoice} 
+          clients={clients} 
+          onSuccess={() => {
+            setIsEditing(false);
+            router.refresh();
+          }} 
+        />
       ) : (
         <div className="bg-zinc-100 rounded-2xl p-4 md:p-8 flex justify-center items-start shadow-inner overflow-x-auto min-h-[800px]">
           <div ref={pdfRef} className="bg-white shadow-xl">

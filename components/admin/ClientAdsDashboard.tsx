@@ -13,13 +13,19 @@ import {
   Monitor,
   Tablet,
   Search,
-  Activity
+  Activity,
+  Download
 } from 'lucide-react';
+import html2canvas from 'html2canvas';
+import jsPDF from 'jspdf';
+import { ClientAdsReportTemplate } from './ClientAdsReportTemplate';
+import { useRef } from 'react';
 import { 
   fetchCustomerMetrics, 
   fetchCampaignMetrics,
   fetchDeviceMetrics,
-  fetchSearchTermMetrics
+  fetchSearchTermMetrics,
+  fetchAdMetrics
 } from '@/app/actions/ads-reports';
 
 export function ClientAdsDashboard({ 
@@ -60,11 +66,18 @@ export function ClientAdsDashboard({
       prevEnd.setMonth(prevEnd.getMonth() - 1); // Same day in previous month
     }
 
+    let lastYearStart = new Date(start);
+    lastYearStart.setFullYear(lastYearStart.getFullYear() - 1);
+    let lastYearEnd = new Date(end);
+    lastYearEnd.setFullYear(lastYearEnd.getFullYear() - 1);
+
     return {
       startDate: start.toISOString().split('T')[0],
       endDate: end.toISOString().split('T')[0],
       prevStartDate: prevStart.toISOString().split('T')[0],
       prevEndDate: prevEnd.toISOString().split('T')[0],
+      lastYearStartDate: lastYearStart.toISOString().split('T')[0],
+      lastYearEndDate: lastYearEnd.toISOString().split('T')[0],
     };
   };
 
@@ -73,29 +86,37 @@ export function ClientAdsDashboard({
   const [campaigns, setCampaigns] = useState<any[]>([]);
   const [devices, setDevices] = useState<any[]>([]);
   const [searchTerms, setSearchTerms] = useState<any[]>([]);
+  const [ads, setAds] = useState<any[]>([]);
   
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const pdfRef = useRef<HTMLDivElement>(null);
+  const [lastYearMetrics, setLastYearMetrics] = useState<any>(null);
 
   useEffect(() => {
     async function loadData() {
       setIsLoading(true);
       setError(null);
       try {
-        const { startDate, endDate, prevStartDate, prevEndDate } = getDates(dateRange);
+        const { startDate, endDate, prevStartDate, prevEndDate, lastYearStartDate, lastYearEndDate } = getDates(dateRange);
         
         const [
           currMetricsRes, 
           prevMetricsRes, 
+          lastYearMetricsRes,
           campaignsRes,
           devicesRes,
-          searchTermsRes
+          searchTermsRes,
+          adsRes
         ] = await Promise.all([
           fetchCustomerMetrics(customerId, startDate, endDate),
           fetchCustomerMetrics(customerId, prevStartDate, prevEndDate),
+          fetchCustomerMetrics(customerId, lastYearStartDate, lastYearEndDate),
           fetchCampaignMetrics(customerId, startDate, endDate),
           fetchDeviceMetrics(customerId, startDate, endDate),
-          fetchSearchTermMetrics(customerId, startDate, endDate)
+          fetchSearchTermMetrics(customerId, startDate, endDate),
+          fetchAdMetrics(customerId, startDate, endDate)
         ]);
 
         if (!currMetricsRes.success) throw new Error(currMetricsRes.error);
@@ -103,9 +124,11 @@ export function ClientAdsDashboard({
 
         setMetrics(currMetricsRes.data);
         setPrevMetrics(prevMetricsRes.success ? prevMetricsRes.data : null);
-        setCampaigns(campaignsRes.campaigns || []);
+        setLastYearMetrics(lastYearMetricsRes.success ? lastYearMetricsRes.data : null);
+        setCampaigns((campaignsRes.campaigns || []).filter((c: any) => c.cost > 0));
         setDevices(devicesRes.success ? devicesRes.devices || [] : []);
         setSearchTerms(searchTermsRes.success ? searchTermsRes.searchTerms || [] : []);
+        setAds(adsRes.success ? (adsRes.ads || []).filter((a: any) => a.cost > 0) : []);
       } catch (err: any) {
         setError(err.message || 'Failed to fetch Ads data');
       } finally {
@@ -114,6 +137,41 @@ export function ClientAdsDashboard({
     }
     loadData();
   }, [customerId, dateRange]);
+
+  const generatePdf = async () => {
+    if (!pdfRef.current || !metrics) return;
+    setIsGeneratingPdf(true);
+    
+    try {
+      // Need a slight delay to ensure rendering is fresh if we just un-hid it
+      await new Promise(r => setTimeout(r, 100));
+      
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pages = pdfRef.current.querySelectorAll('.pdf-page');
+      
+      for (let i = 0; i < pages.length; i++) {
+        const pageEl = pages[i] as HTMLElement;
+        const canvas = await html2canvas(pageEl, { scale: 2, useCORS: true });
+        const imgData = canvas.toDataURL('image/jpeg', 0.95);
+        
+        const pdfWidth = pdf.internal.pageSize.getWidth();
+        const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+        
+        if (i > 0) {
+          pdf.addPage();
+        }
+        
+        pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight, undefined, 'FAST');
+      }
+      
+      pdf.save(`${brandName} - Performance Report.pdf`);
+    } catch (err) {
+      console.error('Failed to generate PDF', err);
+      alert('Failed to generate PDF. Please try again.');
+    } finally {
+      setIsGeneratingPdf(false);
+    }
+  };
 
   const calculateChange = (current: number, previous: number, inverseGood = false) => {
     if (!previous || previous === 0) return { pct: 0, isGood: true, text: 'N/A' };
@@ -152,6 +210,8 @@ export function ClientAdsDashboard({
     );
   };
 
+  const [showPreview, setShowPreview] = useState(false);
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -160,15 +220,37 @@ export function ClientAdsDashboard({
           <Activity className="w-6 h-6 text-blue-500" />
           Performance Dashboard
         </h2>
-        <select 
-          value={dateRange}
-          onChange={(e) => setDateRange(e.target.value)}
-          className="bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm font-medium text-zinc-700 outline-none focus:ring-2 focus:ring-blue-500/20 shadow-sm cursor-pointer hover:border-zinc-300 transition-colors"
-        >
-          <option value="LAST_7_DAYS">Last 7 Days</option>
-          <option value="LAST_30_DAYS">Last 30 Days</option>
-          <option value="THIS_MONTH">This Month</option>
-        </select>
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={() => setShowPreview(true)}
+            disabled={!metrics}
+            className="flex items-center gap-2 px-3 py-2 bg-white border border-zinc-200 text-zinc-700 rounded-lg text-sm font-medium hover:bg-zinc-50 disabled:opacity-50 transition-colors"
+          >
+            <Search className="w-4 h-4" />
+            Preview Report
+          </button>
+          <button 
+            onClick={generatePdf}
+            disabled={isGeneratingPdf || !metrics}
+            className="flex items-center gap-2 px-3 py-2 bg-zinc-900 text-white rounded-lg text-sm font-medium hover:bg-zinc-800 disabled:opacity-50 transition-colors"
+          >
+            {isGeneratingPdf ? (
+              <div className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin"></div>
+            ) : (
+              <Download className="w-4 h-4" />
+            )}
+            Download PDF
+          </button>
+          <select 
+            value={dateRange}
+            onChange={(e) => setDateRange(e.target.value)}
+            className="bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm font-medium text-zinc-700 outline-none focus:ring-2 focus:ring-blue-500/20 shadow-sm cursor-pointer hover:border-zinc-300 transition-colors"
+          >
+            <option value="LAST_7_DAYS">Last 7 Days</option>
+            <option value="LAST_30_DAYS">Last 30 Days</option>
+            <option value="THIS_MONTH">This Month</option>
+          </select>
+        </div>
       </div>
 
       {isLoading ? (
@@ -337,8 +419,145 @@ export function ClientAdsDashboard({
             </div>
           </div>
 
+          {/* Ads Table */}
+          <div className="bg-white rounded-2xl shadow-sm border border-zinc-100 overflow-hidden mt-6">
+            <div className="p-5 border-b border-zinc-100 bg-zinc-50/30 flex items-center justify-between">
+              <h3 className="font-semibold text-zinc-900 flex items-center gap-2">
+                <Target className="w-4 h-4 text-zinc-400" />
+                Top Performing Ads
+              </h3>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="border-b border-zinc-100 bg-zinc-50/50 text-xs font-semibold text-zinc-500 uppercase tracking-wider">
+                    <th className="px-5 py-3">Ad Name / Type</th>
+                    <th className="px-5 py-3">Campaign / Ad Group</th>
+                    <th className="px-5 py-3 text-right">Spend</th>
+                    <th className="px-5 py-3 text-right">Clicks</th>
+                    <th className="px-5 py-3 text-right">CTR</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-100">
+                  {ads.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="px-5 py-8 text-center text-zinc-500 text-sm">
+                        No active ads in this period.
+                      </td>
+                    </tr>
+                  ) : (
+                    ads.slice(0, 15).map((ad, i) => (
+                      <tr key={i} className="hover:bg-zinc-50/50 transition-colors">
+                        <td className="px-5 py-3.5">
+                          <div className="font-medium text-zinc-900 truncate max-w-[200px]" title={ad.adName}>{ad.adName}</div>
+                          <div className="text-xs text-zinc-500 mt-0.5">{String(ad.adType || '').replace(/_/g, ' ')}</div>
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <div className="font-medium text-zinc-800 text-sm truncate max-w-[150px]" title={ad.campaignName}>{ad.campaignName}</div>
+                          <div className="text-xs text-zinc-500 mt-0.5 truncate max-w-[150px]" title={ad.adGroupName}>{ad.adGroupName}</div>
+                        </td>
+                        <td className="px-5 py-3.5 text-right font-medium text-zinc-900">
+                          ${ad.cost.toFixed(2)}
+                        </td>
+                        <td className="px-5 py-3.5 text-right text-sm text-zinc-600">
+                          {ad.clicks.toLocaleString()}
+                        </td>
+                        <td className="px-5 py-3.5 text-right text-sm text-zinc-600">
+                          {(ad.ctr * 100).toFixed(2)}%
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
         </>
       )}
+
+      {/* Preview Modal */}
+      {showPreview && metrics && (
+        <div className="fixed inset-0 z-[100] bg-black/80 flex flex-col backdrop-blur-sm overflow-hidden">
+          <div className="flex items-center justify-between p-4 bg-zinc-900 border-b border-zinc-800 shrink-0">
+            <h3 className="text-white font-medium">Report Preview: {brandName}</h3>
+            <div className="flex gap-3">
+              <button 
+                onClick={generatePdf}
+                disabled={isGeneratingPdf}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-500 disabled:opacity-50 transition-colors"
+              >
+                {isGeneratingPdf ? 'Generating...' : 'Download PDF'}
+              </button>
+              <button 
+                onClick={() => setShowPreview(false)}
+                className="px-4 py-2 bg-zinc-800 text-zinc-300 rounded text-sm font-medium hover:bg-zinc-700 hover:text-white transition-colors"
+              >
+                Close Preview
+              </button>
+            </div>
+          </div>
+          <div className="flex-1 overflow-y-auto p-4 md:p-8 flex justify-center bg-zinc-950/50">
+            <div className="shadow-[0_0_50px_rgba(0,0,0,0.3)] shrink-0 my-4 transform scale-75 md:scale-100 origin-top">
+              <ClientAdsReportTemplate 
+                clientName={brandName}
+                data={{
+                  customerId: customerId,
+                  periodDays: dateRange === 'LAST_7_DAYS' ? 7 : 30,
+                  window: {
+                    currentStart: getDates(dateRange).startDate,
+                    currentEnd: getDates(dateRange).endDate,
+                    previousStart: getDates(dateRange).prevStartDate,
+                    previousEnd: getDates(dateRange).prevEndDate,
+                    lastYearStart: getDates(dateRange).lastYearStartDate,
+                    lastYearEnd: getDates(dateRange).lastYearEndDate,
+                  },
+                  current: metrics,
+                  previous: prevMetrics,
+                  lastYear: lastYearMetrics,
+                  campaigns: campaigns,
+                  previousCampaigns: [],
+                  generatedAt: new Date().toISOString()
+                }}
+                searchTerms={searchTerms}
+                devices={devices}
+                ads={ads}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Hidden PDF Generator */}
+      <div className="fixed top-0 left-0 -z-50 opacity-0 pointer-events-none" style={{ transform: 'scale(1)' }}>
+        {metrics && (
+          <ClientAdsReportTemplate 
+            ref={pdfRef}
+            clientName={brandName}
+            data={{
+              customerId: customerId,
+              periodDays: dateRange === 'LAST_7_DAYS' ? 7 : 30,
+              window: {
+                currentStart: getDates(dateRange).startDate,
+                currentEnd: getDates(dateRange).endDate,
+                previousStart: getDates(dateRange).prevStartDate,
+                previousEnd: getDates(dateRange).prevEndDate,
+                lastYearStart: getDates(dateRange).lastYearStartDate,
+                lastYearEnd: getDates(dateRange).lastYearEndDate,
+              },
+              current: metrics,
+              previous: prevMetrics,
+              lastYear: lastYearMetrics,
+              campaigns: campaigns,
+              previousCampaigns: [],
+              generatedAt: new Date().toISOString()
+            }}
+            searchTerms={searchTerms}
+            devices={devices}
+            ads={ads}
+          />
+        )}
+      </div>
     </div>
   );
 }
