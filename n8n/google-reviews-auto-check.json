@@ -1,29 +1,31 @@
 {
-  "name": "Google Reviews – daily Telegram digest",
+  "name": "Google Reviews – Telegram digest (schedule set in panel)",
   "nodes": [
     {
       "parameters": {
         "rule": {
           "interval": [
             {
-              "field": "days",
-              "daysInterval": 1,
-              "triggerAtHour": 9,
+              "field": "hours",
+              "hoursInterval": 1,
               "triggerAtMinute": 0
             }
           ]
         }
       },
       "id": "a1f0c6c2-6d1e-4c38-9a51-1b2f0f6a0001",
-      "name": "Every day at 9:00",
+      "name": "Every hour",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
-      "position": [0, 0]
+      "position": [
+        0,
+        0
+      ]
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "https://www.northviamarketing.com/api/reviews/digest",
+        "url": "https://www.northviamarketing.com/api/reviews/digest?scheduled=1",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "options": {
@@ -31,10 +33,13 @@
         }
       },
       "id": "a1f0c6c2-6d1e-4c38-9a51-1b2f0f6a0002",
-      "name": "Check reviews, draft & send to Telegram",
+      "name": "Send digest if scheduled (times set in panel)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [260, 0],
+      "position": [
+        260,
+        0
+      ],
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 5000,
@@ -47,8 +52,16 @@
     }
   ],
   "connections": {
-    "Every day at 9:00": {
-      "main": [[{ "node": "Check reviews, draft & send to Telegram", "type": "main", "index": 0 }]]
+    "Every hour": {
+      "main": [
+        [
+          {
+            "node": "Send digest if scheduled (times set in panel)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {
