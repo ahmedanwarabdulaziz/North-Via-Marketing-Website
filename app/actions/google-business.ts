@@ -17,6 +17,7 @@ import {
   regenerateReviewDraft,
   saveReplySettings,
 } from '@/lib/review-engine';
+import { nextDigestRun, saveDigestSchedule } from '@/lib/digest-schedule';
 import type { GbpReplySettings } from '@/types/database';
 
 function errorMessage(error: unknown) {
@@ -139,6 +140,17 @@ export async function skipReview(reviewId: string) {
     await db.collection(GBP_REVIEWS).doc(reviewId).update({ status: 'skipped', updatedAt: new Date().toISOString() });
     revalidatePath('/admin/reviews');
     return { success: true };
+  } catch (error) {
+    return { success: false, error: errorMessage(error) };
+  }
+}
+
+export async function saveDigestScheduleAction(input: { enabled: boolean; hours: number[]; days: number[]; timezone: string }) {
+  await requireAdmin();
+  try {
+    const schedule = await saveDigestSchedule(input);
+    revalidatePath('/admin/reviews');
+    return { success: true, nextRun: nextDigestRun({ ...schedule }) };
   } catch (error) {
     return { success: false, error: errorMessage(error) };
   }

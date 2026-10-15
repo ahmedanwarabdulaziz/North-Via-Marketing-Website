@@ -2,16 +2,19 @@ import { ReviewsInbox, type InboxReview } from '@/components/admin/ReviewsInbox'
 import { listLinkedLocations } from '@/lib/google-business';
 import { getLatestSyncSummary, listReviewQueue } from '@/lib/review-engine';
 import { listClientProfiles } from '@/lib/admin-ops';
+import { DigestScheduleCard } from '@/components/admin/DigestScheduleCard';
+import { getDigestSchedule, nextDigestRun } from '@/lib/digest-schedule';
 import { Star } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
 
 export default async function AdminReviewsPage() {
-  const [queue, lastSync, clients, locations] = await Promise.all([
+  const [queue, lastSync, clients, locations, schedule] = await Promise.all([
     listReviewQueue(),
     getLatestSyncSummary(),
     listClientProfiles(),
     listLinkedLocations(),
+    getDigestSchedule(),
   ]);
   const clientNames = new Map(clients.map((c) => [c.id, c.brandName]));
   const reviews: InboxReview[] = queue.map((r) => ({ ...r, clientName: clientNames.get(r.clientId) || 'Unknown client' }));
@@ -27,6 +30,13 @@ export default async function AdminReviewsPage() {
           New reviews are checked automatically and drafted by AI in each client&apos;s style. 5★ replies can be approved in bulk;
           4★ and below are approved one by one.
         </p>
+      </div>
+
+      <div className="mb-6">
+        <DigestScheduleCard
+          initial={{ enabled: schedule.enabled, hours: schedule.hours, days: schedule.days, timezone: schedule.timezone }}
+          nextRun={nextDigestRun(schedule)}
+        />
       </div>
 
       <ReviewsInbox reviews={reviews} lastSync={lastSync} hasLocations={locations.length > 0} />
