@@ -97,30 +97,49 @@ function confirmCard(review: Review, clientName: string): OutgoingMessage {
   };
 }
 
-function groupMessage(batchId: string, clientName: string, reviews: Review[], confirming = false): OutgoingMessage {
+interface GroupPart {
+  part: number; // 1-based
+  parts: number;
+  total: number; // all 5★ ready for this client across every part
+  startIndex: number; // numbering continues across parts
+}
+
+/**
+ * One message of a client's 5★ list. Long lists are split to fit Telegram's
+ * 4096-char limit; only the last part carries the buttons, and they act on every part.
+ */
+function groupMessage(batchId: string, clientName: string, reviews: Review[], { part, parts, total, startIndex }: GroupPart): OutgoingMessage {
   const items = reviews.map((r, i) =>
     [
-      `<b>${i + 1}. ${h(r.reviewerName || 'Anonymous')}</b> · ${h(r.locationTitle)}`,
+      `<b>${startIndex + i}. ${h(r.reviewerName || 'Anonymous')}</b> · ${h(r.locationTitle)}`,
       r.comment ? `“${h(truncate(r.comment, 220))}”` : '<i>Rating only</i>',
       `↳ ${h(truncate(r.draft || '', 3000))}`, // full draft in practice; cap only guards the 4096-char message limit
     ].join('\n')
   );
-  const text = [`⭐⭐⭐⭐⭐ <b>${h(clientName)}</b> — ${reviews.length} five-star repl${reviews.length === 1 ? 'y' : 'ies'} ready`, '', items.join('\n\n')].join('\n');
+  const partLabel = parts > 1 ? ` (part ${part} of ${parts})` : '';
+  const header = `⭐⭐⭐⭐⭐ <b>${h(clientName)}</b> — ${total} five-star repl${total === 1 ? 'y' : 'ies'} ready${partLabel}`;
+  const text = [header, '', items.join('\n\n')].join('\n');
 
-  if (confirming) {
-    return {
-      text: `${text}\n\n❓ <b>Post all ${reviews.length} replies publicly on Google?</b>`,
-      buttons: [[
-        { text: `✅ Yes, post ${reviews.length}`, callback_data: `B:${batchId}` },
-        { text: '↩️ Cancel', callback_data: `k:${batchId}` },
-      ]],
-    };
-  }
+  if (part < parts) return { text: `${text}\n\n⬇️ <i>Continued in the next message.</i>` };
   return {
     text,
     buttons: [[
-      { text: `✅ Approve all ${reviews.length}`, callback_data: `b:${batchId}` },
+      { text: `✅ Approve all ${total}`, callback_data: `b:${batchId}` },
       { text: '🔍 One by one', callback_data: `x:${batchId}` },
+    ]],
+  };
+}
+
+function groupConfirmMessage(batchId: string, clientName: string, total: number, parts: number): OutgoingMessage {
+  return {
+    text: [
+      `⭐⭐⭐⭐⭐ <b>${h(clientName)}</b>`,
+      `❓ <b>Post all ${total} five-star replies publicly on Google?</b>`,
+      parts > 1 ? `<i>This includes every review in the ${parts} messages above.</i>` : '',
+    ].filter(Boolean).join('\n'),
+    buttons: [[
+      { text: `✅ Yes, post ${total}`, callback_data: `B:${batchId}` },
+      { text: '↩️ Cancel', callback_data: `k:${batchId}` },
     ]],
   };
 }
@@ -144,18 +163,18 @@ function chunkForTelegram(reviews: Review[]) {
   return chunks;
 }
 
-async function createBatch(clientName: string, reviewIds: string[]) {
+async function createBatch(clientName: string, reviewIds: string[], lastPartIds: string[], parts: number) {
   const batchId = crypto.randomBytes(6).toString('base64url');
-  await db.collection(BATCHES).doc(batchId).set({ clientName, reviewIds, createdAt: new Date().toISOString() });
+  await db.collection(BATCHES).doc(batchId).set({ clientName, reviewIds, lastPartIds, parts, createdAt: new Date().toISOString() });
   return batchId;
 }
 
 async function loadBatch(batchId: string) {
   const doc = await db.collection(BATCHES).doc(batchId).get();
   if (!doc.exists) return null;
-  const data = doc.data() as { clientName: string; reviewIds: string[] };
+  const data = doc.data() as { clientName: string; reviewIds: string[]; lastPartIds?: string[]; parts?: number };
   const reviews = (await Promise.all(data.reviewIds.map((id) => getStoredReview(id)))).filter((r): r is Review => Boolean(r));
-  return { clientName: data.clientName, reviews };
+  return { clientName: data.clientName, reviews, lastPartIds: data.lastPartIds || data.reviewIds, parts: data.parts || 1 };
 }
 
 // ---------- Digest ----------
@@ -194,10 +213,17 @@ export async function sendReviewDigest(options: { onlyUnsent: boolean; chatIds?:
   for (const [clientId, reviews] of byClient) {
     const clientName = names.get(clientId) || 'Client';
 
-    for (const chunk of chunkForTelegram(reviews.filter(isFiveReady))) {
-      const batchId = await createBatch(clientName, chunk.map((r) => r.id));
-      messages.push(groupMessage(batchId, clientName, chunk));
-      sentIds.push(...chunk.map((r) => r.id));
+    const fiveStar = reviews.filter(isFiveReady);
+    const chunks = chunkForTelegram(fiveStar);
+    if (chunks.length) {
+      // One batch per client: the last part's "Approve all" covers every part.
+      const batchId = await createBatch(clientName, fiveStar.map((r) => r.id), chunks[chunks.length - 1].map((r) => r.id), chunks.length);
+      let startIndex = 1;
+      chunks.forEach((chunk, i) => {
+        messages.push(groupMessage(batchId, clientName, chunk, { part: i + 1, parts: chunks.length, total: fiveStar.length, startIndex }));
+        startIndex += chunk.length;
+      });
+      sentIds.push(...fiveStar.map((r) => r.id));
     }
 
     const individual = reviews.filter((r) => !isFiveReady(r)).sort((a, b) => (a.rating || 6) - (b.rating || 6));
@@ -271,11 +297,18 @@ export async function handleCallback(query: CallbackQuery) {
         return answerCallback(query.id, 'Already handled.');
       }
       if (action === 'b') {
-        await editMessage(chatId, messageId, groupMessage(id, batch.clientName, ready, true));
+        await editMessage(chatId, messageId, groupConfirmMessage(id, batch.clientName, ready.length, batch.parts));
         return answerCallback(query.id);
       }
       if (action === 'k') {
-        await editMessage(chatId, messageId, groupMessage(id, batch.clientName, ready));
+        // Restore the last part (the message holding the buttons), skipping anything handled meanwhile.
+        const lastReady = ready.filter((r) => batch.lastPartIds.includes(r.id));
+        await editMessage(chatId, messageId, groupMessage(id, batch.clientName, lastReady, {
+          part: batch.parts,
+          parts: batch.parts,
+          total: ready.length,
+          startIndex: ready.length - lastReady.length + 1,
+        }));
         return answerCallback(query.id, 'Cancelled');
       }
       // B: confirmed — post each reply; ratings and status were re-checked above.
