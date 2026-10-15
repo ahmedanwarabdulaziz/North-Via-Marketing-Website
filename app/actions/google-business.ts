@@ -5,11 +5,12 @@ import { headers } from 'next/headers';
 import { revalidatePath } from 'next/cache';
 import { db } from '@/lib/firebase';
 import {
-  GBP_LOCATIONS,
   createConnectToken,
   disconnectClient,
-  syncClientLocations,
+  previewClientLocations,
+  saveClientLocationSelection,
 } from '@/lib/google-business';
+import { listClientProfiles } from '@/lib/admin-ops';
 import {
   GBP_REVIEWS,
   generateReplyDraft,
@@ -41,30 +42,34 @@ export async function getGbpConnectUrl(clientId: string, via: 'admin' | 'client_
   }
 }
 
-export async function syncGbpLocations(clientId: string) {
+export async function previewGbpLocations(clientId: string) {
   await requireAdmin();
   try {
-    const count = await syncClientLocations(clientId);
-    revalidatePath(`/admin/clients/${clientId}`);
-    return { success: true, count };
+    const [choices, clients] = await Promise.all([previewClientLocations(clientId), listClientProfiles()]);
+    const names = new Map(clients.map((c) => [c.id, c.brandName]));
+    return {
+      success: true,
+      locations: choices.map(({ locationId, title, address, selected, takenByClientId }) => ({
+        locationId,
+        title,
+        address,
+        selected,
+        takenBy: takenByClientId ? names.get(takenByClientId) || 'another client' : null,
+      })),
+    };
   } catch (error) {
     revalidatePath(`/admin/clients/${clientId}`);
     return { success: false, error: errorMessage(error) };
   }
 }
 
-export async function setGbpLocationLinked(clientId: string, locationId: string, linked: boolean) {
+export async function saveGbpLocations(clientId: string, locationIds: string[]) {
   await requireAdmin();
   try {
-    const ref = db.collection(GBP_LOCATIONS).doc(locationId);
-    const doc = await ref.get();
-    if (!doc.exists || doc.data()?.clientId !== clientId) {
-      return { success: false, error: 'Location not found for this client.' };
-    }
-    await ref.update({ linked, updatedAt: new Date().toISOString() });
+    const count = await saveClientLocationSelection(clientId, locationIds);
     revalidatePath(`/admin/clients/${clientId}`);
     revalidatePath('/admin/reviews');
-    return { success: true };
+    return { success: true, count };
   } catch (error) {
     return { success: false, error: errorMessage(error) };
   }

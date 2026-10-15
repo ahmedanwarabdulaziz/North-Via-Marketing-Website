@@ -2,8 +2,9 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { MapPin, RefreshCw, Unplug, Link2, Copy, Check, AlertTriangle, Star } from 'lucide-react';
-import { disconnectGbp, getGbpConnectUrl, setGbpLocationLinked, syncGbpLocations } from '@/app/actions/google-business';
+import { MapPin, ListChecks, Unplug, Link2, Copy, Check, AlertTriangle, Star } from 'lucide-react';
+import { disconnectGbp, getGbpConnectUrl } from '@/app/actions/google-business';
+import { LocationPickerModal } from './LocationPickerModal';
 import type { GbpLocation } from '@/types/database';
 
 interface Props {
@@ -19,6 +20,9 @@ export function ClientGbpCard({ clientId, connection, locations, notice }: Props
   const [error, setError] = useState<string | null>(null);
   const [clientLink, setClientLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const monitored = locations.filter((l) => l.linked);
+  // Right after connecting, open the picker straight away.
+  const [pickerOpen, setPickerOpen] = useState(notice === 'connected' && Boolean(connection) && monitored.length === 0);
 
   async function run(key: string, fn: () => Promise<{ success: boolean; error?: string }>) {
     setBusy(key);
@@ -60,7 +64,6 @@ export function ClientGbpCard({ clientId, connection, locations, notice }: Props
     run('disconnect', () => disconnectGbp(clientId));
   }
 
-  const linkedCount = locations.filter((l) => l.linked).length;
 
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-zinc-200 overflow-hidden">
@@ -74,7 +77,7 @@ export function ClientGbpCard({ clientId, connection, locations, notice }: Props
             <p className="text-sm text-zinc-500 mt-1">
               Connected as <span className="font-medium text-zinc-700">{connection.googleEmail}</span>
               {' · '}
-              {linkedCount} of {locations.length} location{locations.length === 1 ? '' : 's'} monitored
+              {monitored.length} location{monitored.length === 1 ? '' : 's'} monitored
             </p>
           ) : (
             <p className="text-sm text-zinc-500 mt-1">
@@ -86,12 +89,12 @@ export function ClientGbpCard({ clientId, connection, locations, notice }: Props
         {connection ? (
           <div className="flex items-center gap-2 shrink-0">
             <button
-              onClick={() => run('sync', () => syncGbpLocations(clientId))}
+              onClick={() => setPickerOpen(true)}
               disabled={busy !== null}
               className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-zinc-200 text-zinc-700 text-sm font-medium rounded-xl hover:bg-zinc-50 transition-colors disabled:opacity-50"
             >
-              <RefreshCw className={`w-4 h-4 ${busy === 'sync' ? 'animate-spin' : ''}`} />
-              Sync locations
+              <ListChecks className="w-4 h-4" />
+              Choose locations
             </button>
             <button
               onClick={handleDisconnect}
@@ -123,9 +126,9 @@ export function ClientGbpCard({ clientId, connection, locations, notice }: Props
         )}
       </div>
 
-      {notice === 'connected' && connection && locations.length === 0 && (
-        <div className="px-6 py-3 bg-emerald-50 text-emerald-700 text-sm border-b border-emerald-100">
-          Google account connected. Click <strong>Sync locations</strong> to pull in the client&apos;s business locations.
+      {connection && monitored.length === 0 && !pickerOpen && (
+        <div className="px-6 py-3 bg-amber-50 text-amber-800 text-sm border-b border-amber-100">
+          No locations are monitored yet. Click <strong>Choose locations</strong> to pick this client&apos;s business.
         </div>
       )}
       {notice === 'error' && (
@@ -167,9 +170,9 @@ export function ClientGbpCard({ clientId, connection, locations, notice }: Props
         </div>
       )}
 
-      {connection && locations.length > 0 && (
+      {connection && monitored.length > 0 && (
         <ul className="divide-y divide-zinc-100">
-          {locations.map((location) => (
+          {monitored.map((location) => (
             <li key={location.id} className="px-6 py-4 flex items-center justify-between gap-4">
               <div className="min-w-0">
                 <div className="font-medium text-zinc-900 truncate">{location.title}</div>
@@ -180,22 +183,21 @@ export function ClientGbpCard({ clientId, connection, locations, notice }: Props
                   </div>
                 )}
               </div>
-              <label className="inline-flex items-center gap-2 text-sm text-zinc-600 shrink-0 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={location.linked}
-                  disabled={busy !== null}
-                  onChange={(e) => {
-                    const linked = e.target.checked;
-                    run(`loc-${location.id}`, () => setGbpLocationLinked(clientId, location.id, linked));
-                  }}
-                  className="w-4 h-4 rounded border-zinc-300 text-blue-600 focus:ring-blue-500"
-                />
-                Monitor reviews
-              </label>
+              <span className="text-xs font-medium text-emerald-700 bg-emerald-50 px-2 py-1 rounded-full shrink-0">Monitoring reviews</span>
             </li>
           ))}
         </ul>
+      )}
+
+      {pickerOpen && connection && (
+        <LocationPickerModal
+          clientId={clientId}
+          onClose={() => setPickerOpen(false)}
+          onSaved={() => {
+            setPickerOpen(false);
+            router.refresh();
+          }}
+        />
       )}
     </div>
   );

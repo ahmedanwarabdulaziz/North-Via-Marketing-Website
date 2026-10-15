@@ -155,11 +155,16 @@ function formatAddress(address?: { addressLines?: string[]; locality?: string; a
   return [...(address.addressLines || []), address.locality, address.administrativeArea].filter(Boolean).join(', ');
 }
 
-/**
- * Pulls every location the client's Google account manages and upserts them.
- * Newly found locations start unlinked; existing link choices are preserved.
- */
-export async function syncClientLocations(clientId: string) {
+interface AvailableLocation {
+  locationId: string;
+  accountName: string;
+  locationName: string;
+  title: string;
+  address: string;
+}
+
+/** Every location the client's Google account can manage. Reads from Google only; saves nothing. */
+async function fetchAvailableLocations(clientId: string) {
   return withClientAuth(clientId, async (auth) => {
     const accountNames: string[] = [];
     let pageToken: string | undefined;
@@ -172,10 +177,7 @@ export async function syncClientLocations(clientId: string) {
       pageToken = res.data.nextPageToken;
     } while (pageToken);
 
-    const now = new Date().toISOString();
-    const batch = db.batch();
-    let count = 0;
-
+    const found: AvailableLocation[] = [];
     for (const accountName of accountNames) {
       pageToken = undefined;
       do {
@@ -183,41 +185,84 @@ export async function syncClientLocations(clientId: string) {
           url: `https://mybusinessbusinessinformation.googleapis.com/v1/${accountName}/locations`,
           params: { readMask: 'name,title,storefrontAddress', pageSize: 100, pageToken },
         });
-
         for (const location of res.data.locations || []) {
-          const locationId = String(location.name).split('/')[1];
-          const ref = db.collection(GBP_LOCATIONS).doc(locationId);
-          const existing = await ref.get();
-          const existingData = existing.data() as GbpLocation | undefined;
-
-          // A location already linked to another client is left alone.
-          if (existingData && existingData.clientId !== clientId && existingData.linked) continue;
-
-          const record: GbpLocation = {
-            clientId,
+          found.push({
+            locationId: String(location.name).split('/')[1],
             accountName,
             locationName: location.name,
             title: location.title || 'Untitled location',
-            address: formatAddress(location.storefrontAddress) || '', // Firestore rejects undefined; service-area businesses have no storefront
-            linked: existingData?.clientId === clientId ? existingData.linked : false,
-            replyMode: 'approval_required',
-            lastSyncedAt: now,
-            updatedAt: now,
-          };
-          batch.set(ref, record);
-          count++;
+            // Firestore rejects undefined; service-area businesses have no storefront
+            address: formatAddress(location.storefrontAddress) || '',
+          });
         }
         pageToken = res.data.nextPageToken;
       } while (pageToken);
     }
 
-    await batch.commit();
     await db.collection(GBP_CONNECTIONS).doc(clientId).set(
-      { status: 'connected', lastError: null, updatedAt: now },
+      { status: 'connected', lastError: null, updatedAt: new Date().toISOString() },
       { merge: true }
     );
-    return count;
+    return found.sort((a, b) => a.title.localeCompare(b.title));
   });
+}
+
+export interface LocationChoice extends AvailableLocation {
+  selected: boolean; // currently monitored for this client
+  takenByClientId?: string; // monitored for a different client, so it can't be picked here
+}
+
+/** Locations for the picker: what Google offers, marked with what's already chosen. */
+export async function previewClientLocations(clientId: string): Promise<LocationChoice[]> {
+  const available = await fetchAvailableLocations(clientId);
+  const snaps = available.length
+    ? await db.getAll(...available.map((l) => db.collection(GBP_LOCATIONS).doc(l.locationId)))
+    : [];
+  return available.map((location, i) => {
+    const stored = snaps[i].exists ? (snaps[i].data() as GbpLocation) : null;
+    return {
+      ...location,
+      selected: Boolean(stored && stored.clientId === clientId && stored.linked),
+      takenByClientId: stored && stored.clientId !== clientId && stored.linked ? stored.clientId : undefined,
+    };
+  });
+}
+
+/**
+ * Saves the picker: ticked locations are monitored for this client; this client's
+ * unticked ones stop being monitored. Details are re-read from Google, not trusted from the browser.
+ */
+export async function saveClientLocationSelection(clientId: string, selectedIds: string[]) {
+  const choices = await previewClientLocations(clientId);
+  const wanted = new Set(selectedIds);
+  const now = new Date().toISOString();
+  const batch = db.batch();
+  let monitored = 0;
+
+  for (const choice of choices) {
+    const ref = db.collection(GBP_LOCATIONS).doc(choice.locationId);
+    if (wanted.has(choice.locationId)) {
+      if (choice.takenByClientId) continue;
+      const record: GbpLocation = {
+        clientId,
+        accountName: choice.accountName,
+        locationName: choice.locationName,
+        title: choice.title,
+        address: choice.address,
+        linked: true,
+        replyMode: 'approval_required',
+        lastSyncedAt: now,
+        updatedAt: now,
+      };
+      batch.set(ref, record);
+      monitored++;
+    } else if (choice.selected) {
+      batch.update(ref, { linked: false, updatedAt: now });
+    }
+  }
+
+  await batch.commit();
+  return monitored;
 }
 
 export async function listClientLocations(clientId: string) {
