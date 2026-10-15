@@ -22,6 +22,7 @@ export async function POST(request: Request) {
     });
     await telegram('setMyCommands', {
       commands: [
+        { command: 'menu', description: 'Open the main menu (or just type x)' },
         { command: 'reviews', description: 'Show reviews waiting for approval' },
         { command: 'check', description: 'Check Google for new reviews now' },
       ],

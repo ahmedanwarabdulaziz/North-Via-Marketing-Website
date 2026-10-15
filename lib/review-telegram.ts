@@ -396,7 +396,37 @@ interface IncomingMessage {
   reply_to_message?: { text?: string };
 }
 
-export async function handleMessage(message: IncomingMessage) {
+/** "Show waiting reviews": everything pending, including reviews sent before. */
+export async function showWaitingReviews(chatId: number | string) {
+  return sendReviewDigest({ onlyUnsent: false, chatIds: [String(chatId)] });
+}
+
+/** "Check Google now": sync, draft, then send only what's new. */
+export async function checkReviewsNow(chatId: number | string) {
+  await sendMessage(chatId, { text: '🔎 Checking Google for new reviews…' });
+  const summary = await syncAllReviews();
+  return sendReviewDigest({ onlyUnsent: true, chatIds: [String(chatId)], summary });
+}
+
+/** Waiting counts per client, for the menu. */
+export async function reviewQueueOverview() {
+  const [queue, names] = await Promise.all([listReviewQueue(), clientNameMap()]);
+  const perClient = new Map<string, { name: string; fiveStar: number; oneByOne: number }>();
+  for (const r of queue.filter(isPending)) {
+    const entry = perClient.get(r.clientId) || { name: names.get(r.clientId) || 'Client', fiveStar: 0, oneByOne: 0 };
+    if (isFiveReady(r)) entry.fiveStar++;
+    else entry.oneByOne++;
+    perClient.set(r.clientId, entry);
+  }
+  const clients = Array.from(perClient.values()).sort((a, b) => b.fiveStar + b.oneByOne - (a.fiveStar + a.oneByOne));
+  return { total: clients.reduce((sum, c) => sum + c.fiveStar + c.oneByOne, 0), clients };
+}
+
+/**
+ * Handles review-specific messages: replies to an "Edit" prompt and the
+ * /reviews and /check commands. Returns false when the message isn't for this module.
+ */
+export async function handleReviewMessage(message: IncomingMessage): Promise<boolean> {
   const chatId = message.chat.id;
   const text = (message.text || '').trim();
 
@@ -404,31 +434,25 @@ export async function handleMessage(message: IncomingMessage) {
   const refMatch = message.reply_to_message?.text?.match(/ref:([A-Za-z0-9_-]{10})/);
   if (refMatch && text && !text.startsWith('/')) {
     const review = await findReviewByShortRef(refMatch[1]);
-    if (!review) return sendMessage(chatId, { text: 'Review not found.' });
-    if (!isPending(review)) return sendMessage(chatId, { text: 'This review was already handled.' });
-    await setReviewDraft(review.id, text);
-    const updated = await getStoredReview(review.id);
-    const clientName = (await clientNameMap()).get(review.clientId) || 'Client';
-    return sendMessage(chatId, reviewCard(updated!, clientName, '✏️ <i>Your edited reply. Tap Approve to post it.</i>'));
+    if (!review) await sendMessage(chatId, { text: 'Review not found.' });
+    else if (!isPending(review)) await sendMessage(chatId, { text: 'This review was already handled.' });
+    else {
+      await setReviewDraft(review.id, text);
+      const updated = await getStoredReview(review.id);
+      const clientName = (await clientNameMap()).get(review.clientId) || 'Client';
+      await sendMessage(chatId, reviewCard(updated!, clientName, '✏️ <i>Your edited reply. Tap Approve to post it.</i>'));
+    }
+    return true;
   }
 
   const command = text.split(/[\s@]/)[0].toLowerCase();
   if (command === '/reviews' || command === '/pending') { // /pending kept as an old alias
-    return sendReviewDigest({ onlyUnsent: false, chatIds: [String(chatId)] });
+    await showWaitingReviews(chatId);
+    return true;
   }
   if (command === '/check') {
-    await sendMessage(chatId, { text: '🔎 Checking Google for new reviews…' });
-    const summary = await syncAllReviews();
-    return sendReviewDigest({ onlyUnsent: true, chatIds: [String(chatId)], summary });
+    await checkReviewsNow(chatId);
+    return true;
   }
-  return sendMessage(chatId, {
-    text: [
-      '<b>North Via reviews bot</b>',
-      'Every day you get new Google reviews with AI-drafted replies.',
-      '5★ replies can be approved together; 4★ and below one at a time.',
-      '',
-      '/reviews — show everything waiting for approval',
-      '/check — check Google for new reviews now',
-    ].join('\n'),
-  });
+  return false;
 }
