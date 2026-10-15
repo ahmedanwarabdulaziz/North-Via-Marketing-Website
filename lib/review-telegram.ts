@@ -201,7 +201,7 @@ export async function sendReviewDigest(options: { onlyUnsent: boolean; chatIds?:
     '📋 <b>Google reviews</b>',
     options.summary ? `Checked ${options.summary.locationsChecked} location(s): ${options.summary.newReviews} new, ${options.summary.draftsCreated} drafted.` : '',
     toSend.length ? `${toSend.length} waiting for your approval below.` : '✅ Nothing new to approve.',
-    earlier > 0 ? `${earlier} sent earlier still waiting — send /pending to see them again.` : '',
+    earlier > 0 ? `${earlier} sent earlier still waiting — send /reviews to see them again.` : '',
   ].filter(Boolean).join('\n');
   messages.push({ text: header, buttons: [[{ text: 'Open reviews panel', url: PANEL_URL }]] });
 
@@ -237,7 +237,7 @@ export async function sendReviewDigest(options: { onlyUnsent: boolean; chatIds?:
       cards++;
     }
   }
-  if (overflow) messages.push({ text: `…and ${overflow} more. Send /pending later or open the panel.`, buttons: [[{ text: 'Open reviews panel', url: PANEL_URL }]] });
+  if (overflow) messages.push({ text: `…and ${overflow} more. Send /reviews later or open the panel.`, buttons: [[{ text: 'Open reviews panel', url: PANEL_URL }]] });
 
   for (const chatId of chatIds) {
     for (const message of messages) {
@@ -413,7 +413,7 @@ export async function handleMessage(message: IncomingMessage) {
   }
 
   const command = text.split(/[\s@]/)[0].toLowerCase();
-  if (command === '/pending') {
+  if (command === '/reviews' || command === '/pending') { // /pending kept as an old alias
     return sendReviewDigest({ onlyUnsent: false, chatIds: [String(chatId)] });
   }
   if (command === '/check') {
@@ -427,7 +427,7 @@ export async function handleMessage(message: IncomingMessage) {
       'Every day you get new Google reviews with AI-drafted replies.',
       '5★ replies can be approved together; 4★ and below one at a time.',
       '',
-      '/pending — show everything waiting for approval',
+      '/reviews — show everything waiting for approval',
       '/check — check Google for new reviews now',
     ].join('\n'),
   });

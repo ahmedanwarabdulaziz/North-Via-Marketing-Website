@@ -22,7 +22,7 @@ export async function POST(request: Request) {
     });
     await telegram('setMyCommands', {
       commands: [
-        { command: 'pending', description: 'Show reviews waiting for approval' },
+        { command: 'reviews', description: 'Show reviews waiting for approval' },
         { command: 'check', description: 'Check Google for new reviews now' },
       ],
     });
