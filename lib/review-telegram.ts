@@ -184,23 +184,35 @@ async function loadBatch(batchId: string) {
  * "Approve all", everything else as one card per review (worst first).
  * With onlyUnsent, reviews already delivered earlier are summarized, not resent.
  */
-export async function sendReviewDigest(options: { onlyUnsent: boolean; chatIds?: string[]; summary?: SyncSummary | null }) {
+export async function sendReviewDigest(options: {
+  onlyUnsent: boolean;
+  chatIds?: string[];
+  summary?: SyncSummary | null;
+  followUp?: boolean; // sent later the same day once held-back drafts are ready
+}) {
   const chatIds = options.chatIds ?? allowedChatIds();
   if (chatIds.length === 0) throw new Error('TELEGRAM_ALLOWED_CHAT_IDS is not configured.');
 
   const [queue, names] = await Promise.all([listReviewQueue(), clientNameMap()]);
   // shortRef is derived from the id, so reviews stored before it existed get one here.
   const pending = queue.filter(isPending).map((r) => ({ ...r, shortRef: r.shortRef || reviewShortRef(r.id) }));
-  const toSend = options.onlyUnsent ? pending.filter((r) => !r.telegramSentAt) : pending;
-  const earlier = pending.length - toSend.length;
+  const unsent = options.onlyUnsent ? pending.filter((r) => !r.telegramSentAt) : pending;
+  // Automatic digests only send reviews that have a draft; the rest follow once drafted.
+  const toSend = options.onlyUnsent ? unsent.filter((r) => r.draft) : unsent;
+  const stillDrafting = unsent.length - toSend.length;
+  const earlier = pending.length - unsent.length;
+
+  // A follow-up with nothing new to show would just be noise.
+  if (options.followUp && toSend.length === 0) return { messagesSent: 0, reviewsSent: 0 };
 
   const messages: OutgoingMessage[] = [];
   const sentIds: string[] = [];
 
   const header = [
-    '📋 <b>Google reviews</b>',
+    options.followUp ? '✍️ <b>More review replies are ready</b>' : '📋 <b>Google reviews</b>',
     options.summary ? `Checked ${options.summary.locationsChecked} location(s): ${options.summary.newReviews} new, ${options.summary.draftsCreated} drafted.` : '',
     toSend.length ? `${toSend.length} waiting for your approval below.` : '✅ Nothing new to approve.',
+    stillDrafting > 0 ? `✍️ ${stillDrafting} more are still being drafted — they'll be sent here once ready.` : '',
     earlier > 0 ? `${earlier} sent earlier still waiting — send /reviews to see them again.` : '',
   ].filter(Boolean).join('\n');
   messages.push({ text: header, buttons: [[{ text: 'Open reviews panel', url: PANEL_URL }]] });

@@ -93,3 +93,10 @@ export function nextDigestRun(schedule: DigestSchedule, from = new Date()) {
   }
   return null;
 }
+
+/** True when today's scheduled digest (in the schedule's time zone) has already gone out. */
+export async function digestSentToday(now = new Date()) {
+  const schedule = await getDigestSchedule();
+  if (!schedule.enabled || !schedule.lastRunKey) return false;
+  return schedule.lastRunKey.startsWith(localParts(now, schedule.timezone).dateKey);
+}

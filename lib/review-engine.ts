@@ -14,6 +14,16 @@ const MAX_REPLY_LENGTH = 4000;
 const DEFAULT_MAX_DRAFTS_PER_RUN = 20;
 // Stop drafting after this long so the request finishes inside the serverless time limit.
 const DRAFTING_TIME_BUDGET_MS = 35_000;
+// Gemini's free tier allows ~15 requests/minute; spacing calls avoids 429s.
+// Set GEMINI_REPLY_PACE_MS=0 once billing is enabled on the key.
+const AI_PACE_MS = Number(process.env.GEMINI_REPLY_PACE_MS ?? 4300);
+let lastAiCallAt = 0;
+
+async function paceAiCall() {
+  const wait = lastAiCallAt + AI_PACE_MS - Date.now();
+  if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+  lastAiCallAt = Date.now();
+}
 
 const STAR_VALUES: Record<string, number> = { ONE: 1, TWO: 2, THREE: 3, FOUR: 4, FIVE: 5 };
 
@@ -122,6 +132,7 @@ export async function generateReplyDraft(
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error('GEMINI_API_KEY is not configured.');
 
+  await paceAiCall();
   const genAI = new GoogleGenerativeAI(apiKey);
   const systemInstruction = buildSystemPrompt(settings, businessName, review.rating, Boolean(review.comment.trim()));
   const reviewBlock = [
@@ -353,6 +364,55 @@ export async function setReviewDraft(reviewId: string, draft: string) {
 
 export async function skipStoredReview(reviewId: string) {
   await db.collection(GBP_REVIEWS).doc(reviewId).update({ status: 'skipped', updatedAt: new Date().toISOString() });
+}
+
+/**
+ * Drafts replies for reviews still waiting for one (deferred by the per-run cap or
+ * a rate limit). Runs on n8n's hourly wake-ups, so a backlog clears within hours.
+ */
+export async function draftBacklog(options: { timeBudgetMs?: number } = {}) {
+  const deadline = Date.now() + (options.timeBudgetMs ?? 40_000);
+  const snapshot = await db.collection(GBP_REVIEWS).where('status', '==', 'needs_draft').get();
+  const waiting = snapshot.docs
+    .map((d) => ({ ...(d.data() as GbpStoredReview), id: d.id }))
+    // Complaints first, then newest.
+    .sort((a, b) => (a.rating || 6) - (b.rating || 6) || b.createTime.localeCompare(a.createTime));
+
+  const settingsCache = new Map<string, GbpReplySettings>();
+  const nameCache = new Map<string, string>();
+  let drafted = 0;
+
+  for (const review of waiting) {
+    // Leave room for the pacing wait plus one AI call inside the time budget.
+    if (Date.now() + AI_PACE_MS + 8000 > deadline) break;
+
+    if (!settingsCache.has(review.clientId)) {
+      settingsCache.set(review.clientId, await getReplySettings(review.clientId));
+      const client = await db.collection('clients').doc(review.clientId).get();
+      nameCache.set(review.clientId, (client.data()?.brandName as string) || review.locationTitle);
+    }
+
+    try {
+      const draft = await generateReplyDraft(settingsCache.get(review.clientId)!, nameCache.get(review.clientId)!, review);
+      await db.collection(GBP_REVIEWS).doc(review.id).update({
+        draft,
+        status: 'draft_ready',
+        draftGeneratedAt: new Date().toISOString(),
+        draftError: null,
+        telegramSentAt: null,
+        updatedAt: new Date().toISOString(),
+      });
+      drafted++;
+    } catch (error) {
+      await db.collection(GBP_REVIEWS).doc(review.id).update({
+        draftError: error instanceof Error ? error.message : String(error),
+        updatedAt: new Date().toISOString(),
+      });
+      if (error instanceof AiBusyError) break;
+    }
+  }
+
+  return { drafted, remaining: waiting.length - drafted };
 }
 
 export async function regenerateReviewDraft(reviewId: string) {
