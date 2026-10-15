@@ -1,15 +1,26 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { decrypt } from '@/lib/session';
+import { ADMIN_SESSION_COOKIE, isAdminSessionToken } from '@/lib/admin-auth';
 
-// This function can be marked `async` if using `await` inside
+const LOGIN_PATH = '/admin/login';
+
 export async function proxy(request: NextRequest) {
-  // Authentication has been temporarily disabled while we rebuild the admin panel from scratch.
-  // We will re-implement the secure login flow later.
-  return NextResponse.next();
+  const { pathname } = request.nextUrl;
+  const authenticated = await isAdminSessionToken(request.cookies.get(ADMIN_SESSION_COOKIE)?.value);
+
+  if (pathname === LOGIN_PATH) {
+    return authenticated ? NextResponse.redirect(new URL('/admin', request.url)) : NextResponse.next();
+  }
+
+  if (authenticated) return NextResponse.next();
+
+  if (pathname.startsWith('/api/')) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  return NextResponse.redirect(new URL(LOGIN_PATH, request.url));
 }
 
-// See "Matching Paths" below to learn more
 export const config = {
-  matcher: '/admin/:path*',
+  matcher: ['/admin/:path*', '/api/admin/:path*', '/api/gemini/:path*'],
 };

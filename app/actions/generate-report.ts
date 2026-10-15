@@ -1,8 +1,10 @@
 'use server';
 
+import { requireAdmin } from '@/lib/admin-auth';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 export async function generateExecutiveSummary(stream: any, clientName: string, timeframe: string, bounds?: any, crmClient?: Partial<import('@/types/database').ClientProfile>, editorInstruction?: string, currentDraft?: any) {
+  await requireAdmin();
   const { metrics, pastMetrics, campaigns, searchTerms, devices, locations } = stream;
   if (!process.env.GEMINI_API_KEY) {
     return { success: false, error: 'GEMINI_API_KEY is missing from .env.local' };
@@ -191,6 +193,7 @@ export async function generateOverallConclusion(
     avgCpc: number;
   }
 ) {
+  await requireAdmin();
   if (!process.env.GEMINI_API_KEY) {
     return { success: false, error: 'GEMINI_API_KEY is missing' };
   }

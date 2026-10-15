@@ -1,5 +1,6 @@
 'use server';
 
+import { requireAdmin } from '@/lib/admin-auth';
 import { db } from '@/lib/firebase';
 import { revalidatePath } from 'next/cache';
 
@@ -8,6 +9,7 @@ export async function updateClientProfile(customerId: string, data: {
   clientContactName?: string;
   aiPromptNotes?: string;
 }) {
+  await requireAdmin();
   try {
     const snapshot = await db.collection('google_ads_accounts')
       .where('customerId', '==', customerId)

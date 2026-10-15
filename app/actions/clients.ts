@@ -1,5 +1,6 @@
 'use server';
 
+import { requireAdmin } from '@/lib/admin-auth';
 import { db } from '@/lib/firebase';
 import { ClientProfile } from '@/types/database';
 import { revalidatePath } from 'next/cache';
@@ -12,6 +13,7 @@ function removeUndefinedValues<T extends Record<string, unknown>>(payload: T) {
 }
 
 export async function createOrUpdateClient(data: Partial<ClientProfile>) {
+  await requireAdmin();
   try {
     const timestamp = new Date().toISOString();
     
@@ -54,6 +56,7 @@ export async function createOrUpdateClient(data: Partial<ClientProfile>) {
 }
 
 export async function deleteClientProfile(clientId: string) {
+  await requireAdmin();
   try {
     await db.collection('clients').doc(clientId).delete();
     revalidatePath('/admin/clients');
@@ -65,6 +68,7 @@ export async function deleteClientProfile(clientId: string) {
 }
 
 export async function deleteClientProfileFromForm(formData: FormData) {
+  await requireAdmin();
   const clientId = valueAsString(formData.get('clientId'));
   if (!clientId) {
     return { success: false, error: 'Client id is required.' };
@@ -77,6 +81,7 @@ function valueAsString(value: FormDataEntryValue | null) {
 }
 
 export async function saveClientFromForm(formData: FormData) {
+  await requireAdmin();
   const id = valueAsString(formData.get('id'));
   const brandName = valueAsString(formData.get('brandName'));
   const ownerName = valueAsString(formData.get('ownerName'));

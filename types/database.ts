@@ -195,3 +195,46 @@ export interface AdminInvoiceItem {
   createdAt: string;
   updatedAt: string;
 }
+
+// Google Business Profile (reviews system)
+// One connection per client: the client (or admin on their behalf) authorizes
+// their own Google account. Background workflows (n8n) reuse these records.
+export interface GbpConnection {
+  clientId: string;
+  googleEmail: string;
+  encryptedRefreshToken: string;
+  scopes: string[];
+  status: 'connected' | 'error';
+  lastError?: string;
+  connectedVia: 'admin' | 'client_link';
+  connectedAt: string;
+  updatedAt: string;
+}
+
+export type GbpReplyMode = 'approval_required';
+
+export interface GbpLocation {
+  id?: string; // numeric location id
+  clientId: string;
+  accountName: string; // accounts/123
+  locationName: string; // locations/456
+  title: string;
+  address?: string;
+  linked: boolean; // included in review monitoring
+  replyMode: GbpReplyMode;
+  lastSyncedAt: string;
+  updatedAt: string;
+}
+
+export type GbpStarRating = 'ONE' | 'TWO' | 'THREE' | 'FOUR' | 'FIVE' | 'STAR_RATING_UNSPECIFIED';
+
+export interface GbpReview {
+  name: string; // accounts/x/locations/y/reviews/z
+  reviewId: string;
+  reviewer?: { displayName?: string; profilePhotoUrl?: string; isAnonymous?: boolean };
+  starRating: GbpStarRating;
+  comment?: string;
+  createTime: string;
+  updateTime: string;
+  reviewReply?: { comment: string; updateTime: string };
+}

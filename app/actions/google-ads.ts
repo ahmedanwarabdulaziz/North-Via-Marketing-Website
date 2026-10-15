@@ -1,9 +1,11 @@
 'use server';
 
+import { requireAdmin } from '@/lib/admin-auth';
 import { db } from '@/lib/firebase';
 import { revalidatePath } from 'next/cache';
 
 export async function disconnectGoogleAds() {
+  await requireAdmin();
   try {
     // Shred the connection securely 
     await db.collection('google_connections').doc('master_admin_connection').delete();
@@ -27,6 +29,7 @@ export async function disconnectGoogleAds() {
 }
 
 export async function checkGoogleAdsConnection() {
+  await requireAdmin();
   try {
     const doc = await db.collection('google_connections').doc('master_admin_connection').get();
     return { isConnected: doc.exists };
@@ -36,6 +39,7 @@ export async function checkGoogleAdsConnection() {
 }
 
 export async function syncAdsAccounts() {
+  await requireAdmin();
   try {
     const { listAccessibleCustomers } = await import('@/lib/google-ads');
     const clients = await listAccessibleCustomers();
@@ -78,6 +82,7 @@ export async function syncAdsAccounts() {
 }
 
 export async function selectDefaultAdsAccount(customerId: string) {
+  await requireAdmin();
   try {
     // We only permit one single account to be toggled as True simultaneously
     const allDocs = await db.collection('google_ads_accounts').get();
@@ -99,6 +104,7 @@ export async function selectDefaultAdsAccount(customerId: string) {
 }
 
 export async function assignAdsAccountToClient(customerId: string, clientId: string | null) {
+  await requireAdmin();
   try {
     const batch = db.batch();
     

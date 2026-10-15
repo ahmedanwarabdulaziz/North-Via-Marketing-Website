@@ -1,5 +1,6 @@
 'use server';
 
+import { requireAdmin } from '@/lib/admin-auth';
 import nodemailer from 'nodemailer';
 import { db } from '@/lib/firebase';
 import { ClientProfile } from '@/types/database';
@@ -14,6 +15,7 @@ export async function dispatchClientReportEmail(payload: {
   resolvedStreams?: Array<any>;
   crmClient?: any;
 }) {
+  await requireAdmin();
   try {
     const doc = await db.collection('clients').doc(payload.clientId).get();
     if (!doc.exists) return { success: false, error: 'Client not found' };
@@ -201,6 +203,7 @@ export async function sendPdfReportEmailAction(payload: {
     cost: number;
   }>;
 }) {
+  await requireAdmin();
   try {
     const doc = await db.collection('clients').doc(payload.clientId).get();
     if (!doc.exists) {
@@ -392,6 +395,7 @@ export async function generatePdfReportAction(payload: {
     cost: number;
   }>;
 }) {
+  await requireAdmin();
   try {
     const doc = await db.collection('clients').doc(payload.clientId).get();
     if (!doc.exists) {

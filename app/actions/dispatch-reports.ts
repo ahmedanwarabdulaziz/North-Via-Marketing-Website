@@ -1,5 +1,6 @@
 'use server';
 
+import { requireAdmin } from '@/lib/admin-auth';
 import { db } from '@/lib/firebase';
 import { generateExecutiveSummary } from './generate-report';
 import { dispatchClientReportEmail } from './email-report';
@@ -11,6 +12,7 @@ export async function generateDraftInsights(
   bounds: any,
   crmClient?: any
 ) {
+  await requireAdmin();
   try {
     const draftResults = [];
     
@@ -45,6 +47,7 @@ export async function regenerateSingleDraft(
   editorInstruction: string,
   currentDraft: string
 ) {
+  await requireAdmin();
   try {
     const { account } = stream;
     const { summary, error } = await generateExecutiveSummary(
@@ -65,6 +68,7 @@ export async function storeSnapshotAndDispatchEmail(
   bounds: any,
   crmClient?: any
 ) {
+  await requireAdmin();
   try {
     let totalCost = 0;
     let totalConversions = 0;

@@ -3,11 +3,47 @@ import { google } from 'googleapis';
 import { db } from '@/lib/firebase';
 import { encryptString } from '@/lib/encryption';
 import { GoogleConnection } from '@/types/database';
+import { completeGbpConnection, verifyConnectToken } from '@/lib/google-business';
+import { isAdminAuthenticated } from '@/lib/admin-auth';
+
+// Business Profile authorizations always carry a signed `state`; Google Ads ones never do.
+async function handleBusinessProfileCallback(request: Request, code: string | null, state: string) {
+  const verified = await verifyConnectToken(state);
+  if (!verified) {
+    return NextResponse.redirect(new URL('/connect/google?status=expired', request.url));
+  }
+
+  const { clientId, via } = verified;
+  const doneUrl = (status: 'connected' | 'error') =>
+    via === 'admin'
+      ? new URL(`/admin/clients/${clientId}?gbp=${status}`, request.url)
+      : new URL(`/connect/google?status=${status === 'connected' ? 'success' : 'error'}`, request.url);
+
+  if (!code) return NextResponse.redirect(doneUrl('error'));
+
+  try {
+    await completeGbpConnection(code, clientId, via);
+    return NextResponse.redirect(doneUrl('connected'));
+  } catch (error) {
+    console.error('Business Profile callback error:', error);
+    return NextResponse.redirect(doneUrl('error'));
+  }
+}
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const code = searchParams.get('code');
+    const state = searchParams.get('state');
+
+    if (state) {
+      return handleBusinessProfileCallback(request, code, state);
+    }
+
+    // The Google Ads master connection may only be replaced by a signed-in admin.
+    if (!(await isAdminAuthenticated())) {
+      return NextResponse.redirect(new URL('/admin/login', request.url));
+    }
 
     if (!code) {
       return NextResponse.redirect(new URL('/admin/settings?error=NoAuthCode', request.url));

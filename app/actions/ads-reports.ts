@@ -1,5 +1,6 @@
 'use server';
 
+import { requireAdmin } from '@/lib/admin-auth';
 import { getAdsClient } from '@/lib/google-ads';
 import { calculateAdsReportWindow } from '@/lib/date-utils';
 import {
@@ -9,6 +10,7 @@ import {
 } from '@/lib/ads-report';
 
 export async function fetchCustomerMetrics(customerId: string, startDate: string, endDate: string, campaignId?: string, campaignIds?: string[]) {
+  await requireAdmin();
   try {
     const { client, refreshToken } = await getAdsClient();
     const customer = client.Customer({
@@ -86,6 +88,7 @@ export async function fetchCustomerMetrics(customerId: string, startDate: string
 }
 
 export async function fetchCampaignMetrics(customerId: string, startDate: string, endDate: string) {
+  await requireAdmin();
   try {
     const { client, refreshToken } = await getAdsClient();
     const customer = client.Customer({
@@ -127,6 +130,7 @@ export async function fetchCampaignMetrics(customerId: string, startDate: string
 }
 
 export async function fetchSearchTermMetrics(customerId: string, startDate: string, endDate: string, campaignId?: string, campaignIds?: string[]) {
+  await requireAdmin();
   try {
     const { client, refreshToken } = await getAdsClient();
     const customer = client.Customer({
@@ -185,6 +189,7 @@ export async function fetchSearchTermMetrics(customerId: string, startDate: stri
 }
 
 export async function fetchAdMetrics(customerId: string, startDate: string, endDate: string, campaignId?: string, campaignIds?: string[]) {
+  await requireAdmin();
   try {
     const { client, refreshToken } = await getAdsClient();
     const customer = client.Customer({
@@ -262,6 +267,7 @@ export async function fetchAdMetrics(customerId: string, startDate: string, endD
 }
 
 export async function fetchDeviceMetrics(customerId: string, startDate: string, endDate: string, campaignId?: string, campaignIds?: string[]) {
+  await requireAdmin();
   try {
     const { client, refreshToken } = await getAdsClient();
     const customer = client.Customer({ customer_id: customerId, refresh_token: refreshToken });
@@ -320,6 +326,7 @@ export async function fetchDeviceMetrics(customerId: string, startDate: string, 
 }
 
 export async function fetchGeographicMetrics(customerId: string, startDate: string, endDate: string, campaignId?: string, campaignIds?: string[]) {
+  await requireAdmin();
   try {
     const { client, refreshToken } = await getAdsClient();
     const customer = client.Customer({ customer_id: customerId, refresh_token: refreshToken });
@@ -403,6 +410,7 @@ export async function fetchProfessionalAdsReport(
   customerId: string,
   periodDays: AdsReportPeriod
 ): Promise<{ success: true; data: AdsReportData } | { success: false; error: string }> {
+  await requireAdmin();
   try {
     const window = calculateAdsReportWindow(periodDays);
     const [

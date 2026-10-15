@@ -1,5 +1,6 @@
 'use server';
 
+import { requireAdmin } from '@/lib/admin-auth';
 import nodemailer from 'nodemailer';
 import { revalidatePath } from 'next/cache';
 import { db } from '@/lib/firebase';
@@ -268,6 +269,7 @@ async function ensureNextInvoiceDraft(invoice: AdminInvoiceItem) {
 }
 
 export async function createAdminTask(formData: FormData) {
+  await requireAdmin();
   try {
     const title = valueAsString(formData.get('title'));
     if (!title) return { success: false, error: 'Title is required.' };
@@ -296,6 +298,7 @@ export async function createAdminTask(formData: FormData) {
 }
 
 export async function updateAdminTaskStatus(formData: FormData) {
+  await requireAdmin();
   try {
     const id = valueAsString(formData.get('id'));
     const status = valueAsString(formData.get('status'));
@@ -315,6 +318,7 @@ export async function updateAdminTaskStatus(formData: FormData) {
 }
 
 export async function createAdminFollowUp(formData: FormData) {
+  await requireAdmin();
   try {
     const clientName = valueAsString(formData.get('clientName'));
     const reason = valueAsString(formData.get('reason'));
@@ -351,6 +355,7 @@ export async function createAdminFollowUp(formData: FormData) {
 }
 
 export async function updateAdminFollowUpStatus(formData: FormData) {
+  await requireAdmin();
   try {
     const id = valueAsString(formData.get('id'));
     const status = valueAsString(formData.get('status')) as FollowUpStatus;
@@ -375,6 +380,7 @@ export async function updateAdminFollowUpStatus(formData: FormData) {
 }
 
 export async function createAdminReportItem(formData: FormData) {
+  await requireAdmin();
   try {
     const clientName = valueAsString(formData.get('clientName'));
     if (!clientName) return { success: false, error: 'Client name is required.' };
@@ -403,6 +409,7 @@ export async function createAdminReportItem(formData: FormData) {
 }
 
 export async function updateAdminReportStatus(formData: FormData) {
+  await requireAdmin();
   try {
     const id = valueAsString(formData.get('id'));
     const status = valueAsString(formData.get('status')) as ReportItemStatus;
@@ -427,6 +434,7 @@ export async function updateAdminReportStatus(formData: FormData) {
 }
 
 export async function createAdminInvoiceItem(formData: FormData) {
+  await requireAdmin();
   try {
     const clientId = valueAsString(formData.get('clientId'));
     const billingMonth = valueAsString(formData.get('billingMonth')) || currentMonthKey();
@@ -475,6 +483,7 @@ export async function createAdminInvoiceItem(formData: FormData) {
 }
 
 export async function saveAdminInvoiceItem(formData: FormData) {
+  await requireAdmin();
   try {
     const id = valueAsString(formData.get('id'));
     if (!id) {
@@ -556,6 +565,7 @@ export async function saveAdminInvoiceItem(formData: FormData) {
 }
 
 export async function updateAdminInvoiceStatus(formData: FormData) {
+  await requireAdmin();
   try {
     const id = valueAsString(formData.get('id'));
     const status = valueAsString(formData.get('status')) as InvoiceItemStatus;
@@ -580,6 +590,7 @@ export async function updateAdminInvoiceStatus(formData: FormData) {
 }
 
 export async function sendAdminInvoiceEmail(formData: FormData) {
+  await requireAdmin();
   try {
     const id = valueAsString(formData.get('id'));
     if (!id) return { success: false, error: 'Invoice id is required.' };

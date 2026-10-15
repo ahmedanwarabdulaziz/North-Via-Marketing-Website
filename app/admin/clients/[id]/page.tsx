@@ -2,16 +2,30 @@ import { getClientProfileById } from '@/lib/admin-ops';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { Edit3, ArrowLeft, Building2, User, Mail, Globe } from 'lucide-react';
+import { getGbpConnection, listClientLocations } from '@/lib/google-business';
+import { ClientGbpCard } from '@/components/admin/ClientGbpCard';
 
 export const dynamic = 'force-dynamic';
 
-export default async function ClientDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function ClientDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ gbp?: string }>;
+}) {
   const { id } = await params;
+  const { gbp } = await searchParams;
   const client = await getClientProfileById(id);
   
   if (!client) {
     notFound();
   }
+
+  const [gbpConnection, gbpLocations] = await Promise.all([
+    getGbpConnection(id).catch(() => null),
+    listClientLocations(id).catch(() => []),
+  ]);
 
 
   return (
@@ -43,6 +57,22 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
       </div>
 
       <div className="space-y-6">
+        <ClientGbpCard
+          clientId={id}
+          connection={
+            gbpConnection
+              ? {
+                  googleEmail: gbpConnection.googleEmail,
+                  status: gbpConnection.status,
+                  lastError: gbpConnection.lastError,
+                  connectedAt: gbpConnection.connectedAt,
+                }
+              : null
+          }
+          locations={gbpLocations}
+          notice={gbp === 'connected' || gbp === 'error' ? gbp : undefined}
+        />
+
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-zinc-200">
           <h3 className="font-semibold text-zinc-900 flex items-center gap-2 mb-4">
             <Building2 className="w-5 h-5 text-zinc-400" />
