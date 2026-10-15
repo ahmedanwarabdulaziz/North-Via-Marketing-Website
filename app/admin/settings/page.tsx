@@ -2,6 +2,7 @@ import { checkGoogleAdsConnection } from '@/app/actions/google-ads';
 import { db } from '@/lib/firebase';
 import { listClientProfiles } from '@/lib/admin-ops';
 import { GoogleAdsManager } from '@/components/admin/GoogleAdsManager';
+import { TelegramBotCard } from '@/components/admin/TelegramBotCard';
 import { Settings } from 'lucide-react';
 import type { GoogleAdsAccount } from '@/types/database';
 
@@ -30,6 +31,8 @@ export default async function SettingsPage() {
         </h1>
         <p className="text-zinc-500 mt-2">Manage your integrations, global configurations, and preferences.</p>
       </div>
+
+      <TelegramBotCard />
 
       <GoogleAdsManager 
         isConnected={isConnected} 

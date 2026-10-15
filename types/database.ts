@@ -285,6 +285,8 @@ export interface GbpStoredReview {
   existingReply?: string;
   postedReply?: string;
   postedAt?: string;
+  shortRef?: string; // compact id for Telegram buttons (callback data max 64 bytes)
+  telegramSentAt?: string | null;
   firstSeenAt: string;
   updatedAt: string;
 }

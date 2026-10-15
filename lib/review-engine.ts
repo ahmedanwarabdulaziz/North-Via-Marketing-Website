@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { db } from './firebase';
 import { GBP_LOCATIONS, fetchLocationReviews, listLinkedLocations, publishReviewReply } from './google-business';
@@ -191,6 +192,11 @@ function toStored(review: GbpReview) {
   };
 }
 
+/** Stable 10-char id derived from the review id; Google's ids are too long for Telegram buttons. */
+export function reviewShortRef(reviewId: string) {
+  return crypto.createHash('sha256').update(reviewId).digest('base64url').slice(0, 10);
+}
+
 function reviewIdOf(review: GbpReview) {
   return review.reviewId || review.name.split('/').pop()!;
 }
@@ -250,6 +256,7 @@ export async function syncAllReviews(options: { maxDrafts?: number } = {}): Prom
         clientId: location.clientId,
         locationId: location.id!,
         locationTitle: location.title,
+        shortRef: reviewShortRef(reviewIdOf(review)),
         firstSeenAt: existing?.firstSeenAt || now,
         updatedAt: now,
       };
@@ -282,7 +289,7 @@ export async function syncAllReviews(options: { maxDrafts?: number } = {}): Prom
       try {
         const draft = await generateReplyDraft(settings, businessNames.get(location.clientId)!, base);
         draftsCreated++;
-        batch.set(ref, { ...base, status: 'draft_ready', draft, draftGeneratedAt: now, draftError: null }, { merge: true });
+        batch.set(ref, { ...base, status: 'draft_ready', draft, draftGeneratedAt: now, draftError: null, telegramSentAt: null }, { merge: true });
       } catch (error) {
         if (error instanceof AiBusyError) {
           aiBusy = true;
@@ -324,6 +331,28 @@ export async function syncAllReviews(options: { maxDrafts?: number } = {}): Prom
 export async function getStoredReview(reviewId: string) {
   const doc = await db.collection(GBP_REVIEWS).doc(reviewId).get();
   return doc.exists ? ({ ...(doc.data() as GbpStoredReview), id: doc.id }) : null;
+}
+
+export async function findReviewByShortRef(shortRef: string) {
+  const snapshot = await db.collection(GBP_REVIEWS).where('shortRef', '==', shortRef).limit(1).get();
+  const doc = snapshot.docs[0];
+  return doc ? ({ ...(doc.data() as GbpStoredReview), id: doc.id }) : null;
+}
+
+export async function setReviewDraft(reviewId: string, draft: string) {
+  const text = draft.trim().slice(0, MAX_REPLY_LENGTH);
+  if (!text) throw new Error('Reply cannot be empty.');
+  await db.collection(GBP_REVIEWS).doc(reviewId).update({
+    draft: text,
+    status: 'draft_ready',
+    draftError: null,
+    updatedAt: new Date().toISOString(),
+  });
+  return text;
+}
+
+export async function skipStoredReview(reviewId: string) {
+  await db.collection(GBP_REVIEWS).doc(reviewId).update({ status: 'skipped', updatedAt: new Date().toISOString() });
 }
 
 export async function regenerateReviewDraft(reviewId: string) {

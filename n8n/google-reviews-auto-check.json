@@ -1,19 +1,21 @@
 {
-  "name": "Google Reviews – auto check & draft",
+  "name": "Google Reviews – daily Telegram digest",
   "nodes": [
     {
       "parameters": {
         "rule": {
           "interval": [
             {
-              "field": "minutes",
-              "minutesInterval": 30
+              "field": "days",
+              "daysInterval": 1,
+              "triggerAtHour": 9,
+              "triggerAtMinute": 0
             }
           ]
         }
       },
       "id": "a1f0c6c2-6d1e-4c38-9a51-1b2f0f6a0001",
-      "name": "Every 30 minutes",
+      "name": "Every day at 9:00",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
       "position": [0, 0]
@@ -21,20 +23,20 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://www.northviamarketing.com/api/reviews/sync",
+        "url": "https://www.northviamarketing.com/api/reviews/digest",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "options": {
-          "timeout": 70000
+          "timeout": 90000
         }
       },
       "id": "a1f0c6c2-6d1e-4c38-9a51-1b2f0f6a0002",
-      "name": "Check reviews & draft replies",
+      "name": "Check reviews, draft & send to Telegram",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [240, 0],
+      "position": [260, 0],
       "retryOnFail": true,
-      "maxTries": 2,
+      "maxTries": 3,
       "waitBetweenTries": 5000,
       "credentials": {
         "httpHeaderAuth": {
@@ -42,66 +44,11 @@
           "name": "NVM Reviews API"
         }
       }
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "loose"
-          },
-          "conditions": [
-            {
-              "id": "a1f0c6c2-6d1e-4c38-9a51-1b2f0f6a0010",
-              "leftValue": "={{ $json.summary.draftsCreated }}",
-              "rightValue": 0,
-              "operator": {
-                "type": "number",
-                "operation": "gt"
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "id": "a1f0c6c2-6d1e-4c38-9a51-1b2f0f6a0003",
-      "name": "New drafts?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [480, 0]
-    },
-    {
-      "parameters": {
-        "assignments": {
-          "assignments": [
-            {
-              "id": "a1f0c6c2-6d1e-4c38-9a51-1b2f0f6a0020",
-              "name": "message",
-              "value": "=⭐ {{ $json.summary.draftsCreated }} new review repl{{ $json.summary.draftsCreated === 1 ? 'y' : 'ies' }} drafted.\n5★ ready for bulk approval: {{ $json.summary.awaitingApproval.fiveStar }}\n4★ & below to check one by one: {{ $json.summary.awaitingApproval.needsReview }}\nhttps://www.northviamarketing.com/admin/reviews",
-              "type": "string"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "id": "a1f0c6c2-6d1e-4c38-9a51-1b2f0f6a0004",
-      "name": "Build notification (connect Telegram next)",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.4,
-      "position": [720, -100]
     }
   ],
   "connections": {
-    "Every 30 minutes": {
-      "main": [[{ "node": "Check reviews & draft replies", "type": "main", "index": 0 }]]
-    },
-    "Check reviews & draft replies": {
-      "main": [[{ "node": "New drafts?", "type": "main", "index": 0 }]]
-    },
-    "New drafts?": {
-      "main": [[{ "node": "Build notification (connect Telegram next)", "type": "main", "index": 0 }], []]
+    "Every day at 9:00": {
+      "main": [[{ "node": "Check reviews, draft & send to Telegram", "type": "main", "index": 0 }]]
     }
   },
   "settings": {

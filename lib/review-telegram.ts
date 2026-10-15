@@ -1,0 +1,401 @@
+import crypto from 'crypto';
+import { db } from './firebase';
+import { listClientProfiles } from './admin-ops';
+import {
+  GBP_REVIEWS,
+  findReviewByShortRef,
+  getStoredReview,
+  listReviewQueue,
+  postApprovedReply,
+  reviewShortRef,
+  regenerateReviewDraft,
+  setReviewDraft,
+  skipStoredReview,
+  syncAllReviews,
+  type SyncSummary,
+} from './review-engine';
+import {
+  OutgoingMessage,
+  allowedChatIds,
+  answerCallback,
+  editMessage,
+  escapeHtml as h,
+  sendMessage,
+  truncate,
+} from './telegram';
+import type { GbpStoredReview } from '@/types/database';
+
+// Telegram review approvals.
+// Button data (max 64 bytes) is "<action>:<id>" where id is a review shortRef or a batch id:
+//   a/A approve → confirm   e edit   g regenerate   s skip   c cancel
+//   b/B bulk 5★ → confirm   k cancel bulk   x show batch one by one
+const BATCHES = 'gbp_telegram_batches';
+const MAX_CARDS_PER_DIGEST = 25;
+const PANEL_URL = 'https://www.northviamarketing.com/admin/reviews';
+
+type Review = GbpStoredReview & { id: string };
+
+const DATE = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Toronto', dateStyle: 'medium' });
+const stars = (n: number) => (n > 0 ? '★'.repeat(n) + '☆'.repeat(5 - n) : 'No rating');
+const isPending = (r: GbpStoredReview) => r.status === 'draft_ready' || r.status === 'needs_draft';
+const isFiveReady = (r: GbpStoredReview) => r.rating === 5 && r.status === 'draft_ready' && Boolean(r.draft);
+
+async function clientNameMap() {
+  const clients = await listClientProfiles();
+  return new Map(clients.map((c) => [c.id, c.brandName]));
+}
+
+// ---------- Message builders ----------
+
+function reviewCard(review: Review, clientName: string, note?: string): OutgoingMessage {
+  const ref = review.shortRef!;
+  const lines = [
+    `${stars(review.rating)}  <b>${h(clientName)}</b> · ${h(review.locationTitle)}`,
+    `<b>${h(review.reviewerName || 'Anonymous')}</b> · ${DATE.format(new Date(review.createTime))}`,
+    '',
+    review.comment ? `“${h(truncate(review.comment, 1500))}”` : '<i>Rating only, no written review.</i>',
+    '',
+  ];
+
+  if (review.status === 'posted') {
+    lines.push('✅ <b>Posted on Google:</b>', h(truncate(review.postedReply || review.draft || '', 1800)));
+    return { text: lines.join('\n') };
+  }
+  if (review.status === 'skipped') {
+    lines.push('⏭ <b>Skipped</b> — no reply will be posted.');
+    return { text: lines.join('\n') };
+  }
+  if (review.status === 'replied') {
+    lines.push('💬 Already has a reply on Google.');
+    return { text: lines.join('\n') };
+  }
+
+  if (review.draft) {
+    lines.push('<b>Draft reply:</b>', h(truncate(review.draft, 1800)));
+  } else {
+    lines.push(`⚠️ <i>No draft yet${review.draftError ? ` (${h(truncate(review.draftError, 150))})` : ''}. Tap Regenerate or Edit.</i>`);
+  }
+  if (note) lines.push('', note);
+
+  const firstRow = review.draft
+    ? [{ text: '✅ Approve', callback_data: `a:${ref}` }, { text: '✏️ Edit', callback_data: `e:${ref}` }]
+    : [{ text: '✏️ Write reply', callback_data: `e:${ref}` }];
+  return {
+    text: lines.join('\n'),
+    buttons: [firstRow, [{ text: '🔄 Regenerate', callback_data: `g:${ref}` }, { text: '⏭ Skip', callback_data: `s:${ref}` }]],
+  };
+}
+
+function confirmCard(review: Review, clientName: string): OutgoingMessage {
+  const card = reviewCard(review, clientName);
+  return {
+    text: `${card.text}\n\n❓ <b>Post this reply publicly on Google?</b>`,
+    buttons: [[
+      { text: '✅ Yes, post it', callback_data: `A:${review.shortRef}` },
+      { text: '↩️ Cancel', callback_data: `c:${review.shortRef}` },
+    ]],
+  };
+}
+
+function groupMessage(batchId: string, clientName: string, reviews: Review[], confirming = false): OutgoingMessage {
+  const items = reviews.map((r, i) =>
+    [
+      `<b>${i + 1}. ${h(r.reviewerName || 'Anonymous')}</b> · ${h(r.locationTitle)}`,
+      r.comment ? `“${h(truncate(r.comment, 220))}”` : '<i>Rating only</i>',
+      `↳ ${h(truncate(r.draft || '', 3000))}`, // full draft in practice; cap only guards the 4096-char message limit
+    ].join('\n')
+  );
+  const text = [`⭐⭐⭐⭐⭐ <b>${h(clientName)}</b> — ${reviews.length} five-star repl${reviews.length === 1 ? 'y' : 'ies'} ready`, '', items.join('\n\n')].join('\n');
+
+  if (confirming) {
+    return {
+      text: `${text}\n\n❓ <b>Post all ${reviews.length} replies publicly on Google?</b>`,
+      buttons: [[
+        { text: `✅ Yes, post ${reviews.length}`, callback_data: `B:${batchId}` },
+        { text: '↩️ Cancel', callback_data: `k:${batchId}` },
+      ]],
+    };
+  }
+  return {
+    text,
+    buttons: [[
+      { text: `✅ Approve all ${reviews.length}`, callback_data: `b:${batchId}` },
+      { text: '🔍 One by one', callback_data: `x:${batchId}` },
+    ]],
+  };
+}
+
+/** Splits 5★ reviews into groups that fit comfortably in one Telegram message (4096 chars). */
+function chunkForTelegram(reviews: Review[]) {
+  const chunks: Review[][] = [];
+  let current: Review[] = [];
+  let size = 0;
+  for (const r of reviews) {
+    const estimate = 120 + Math.min(r.comment.length, 220) + (r.draft || '').length;
+    if (current.length && (size + estimate > 3600 || current.length >= 8)) {
+      chunks.push(current);
+      current = [];
+      size = 0;
+    }
+    current.push(r);
+    size += estimate;
+  }
+  if (current.length) chunks.push(current);
+  return chunks;
+}
+
+async function createBatch(clientName: string, reviewIds: string[]) {
+  const batchId = crypto.randomBytes(6).toString('base64url');
+  await db.collection(BATCHES).doc(batchId).set({ clientName, reviewIds, createdAt: new Date().toISOString() });
+  return batchId;
+}
+
+async function loadBatch(batchId: string) {
+  const doc = await db.collection(BATCHES).doc(batchId).get();
+  if (!doc.exists) return null;
+  const data = doc.data() as { clientName: string; reviewIds: string[] };
+  const reviews = (await Promise.all(data.reviewIds.map((id) => getStoredReview(id)))).filter((r): r is Review => Boolean(r));
+  return { clientName: data.clientName, reviews };
+}
+
+// ---------- Digest ----------
+
+/**
+ * Sends pending reviews to the allowed chats: 5★ grouped per client with
+ * "Approve all", everything else as one card per review (worst first).
+ * With onlyUnsent, reviews already delivered earlier are summarized, not resent.
+ */
+export async function sendReviewDigest(options: { onlyUnsent: boolean; chatIds?: string[]; summary?: SyncSummary | null }) {
+  const chatIds = options.chatIds ?? allowedChatIds();
+  if (chatIds.length === 0) throw new Error('TELEGRAM_ALLOWED_CHAT_IDS is not configured.');
+
+  const [queue, names] = await Promise.all([listReviewQueue(), clientNameMap()]);
+  // shortRef is derived from the id, so reviews stored before it existed get one here.
+  const pending = queue.filter(isPending).map((r) => ({ ...r, shortRef: r.shortRef || reviewShortRef(r.id) }));
+  const toSend = options.onlyUnsent ? pending.filter((r) => !r.telegramSentAt) : pending;
+  const earlier = pending.length - toSend.length;
+
+  const messages: OutgoingMessage[] = [];
+  const sentIds: string[] = [];
+
+  const header = [
+    '📋 <b>Google reviews</b>',
+    options.summary ? `Checked ${options.summary.locationsChecked} location(s): ${options.summary.newReviews} new, ${options.summary.draftsCreated} drafted.` : '',
+    toSend.length ? `${toSend.length} waiting for your approval below.` : '✅ Nothing new to approve.',
+    earlier > 0 ? `${earlier} sent earlier still waiting — send /pending to see them again.` : '',
+  ].filter(Boolean).join('\n');
+  messages.push({ text: header, buttons: [[{ text: 'Open reviews panel', url: PANEL_URL }]] });
+
+  const byClient = new Map<string, Review[]>();
+  for (const r of toSend) byClient.set(r.clientId, [...(byClient.get(r.clientId) || []), r]);
+
+  let cards = 0;
+  let overflow = 0;
+  for (const [clientId, reviews] of byClient) {
+    const clientName = names.get(clientId) || 'Client';
+
+    for (const chunk of chunkForTelegram(reviews.filter(isFiveReady))) {
+      const batchId = await createBatch(clientName, chunk.map((r) => r.id));
+      messages.push(groupMessage(batchId, clientName, chunk));
+      sentIds.push(...chunk.map((r) => r.id));
+    }
+
+    const individual = reviews.filter((r) => !isFiveReady(r)).sort((a, b) => (a.rating || 6) - (b.rating || 6));
+    for (const r of individual) {
+      if (cards >= MAX_CARDS_PER_DIGEST) {
+        overflow++;
+        continue;
+      }
+      messages.push(reviewCard(r, clientName));
+      sentIds.push(r.id);
+      cards++;
+    }
+  }
+  if (overflow) messages.push({ text: `…and ${overflow} more. Send /pending later or open the panel.`, buttons: [[{ text: 'Open reviews panel', url: PANEL_URL }]] });
+
+  for (const chatId of chatIds) {
+    for (const message of messages) {
+      await sendMessage(chatId, message);
+      await new Promise((resolve) => setTimeout(resolve, 60)); // stay well under Telegram's per-chat rate limit
+    }
+  }
+
+  if (sentIds.length) {
+    const batch = db.batch();
+    const now = new Date().toISOString();
+    sentIds.forEach((id) => batch.update(db.collection(GBP_REVIEWS).doc(id), { telegramSentAt: now, shortRef: reviewShortRef(id) }));
+    await batch.commit();
+  }
+
+  return { messagesSent: messages.length * chatIds.length, reviewsSent: sentIds.length };
+}
+
+/** Daily job: check Google for new reviews, draft replies, then send what's new. */
+export async function runDailyDigest() {
+  const summary = await syncAllReviews();
+  const delivery = await sendReviewDigest({ onlyUnsent: true, summary });
+  return { summary, delivery };
+}
+
+// ---------- Button and message handling ----------
+
+interface CallbackQuery {
+  id: string;
+  data?: string;
+  message?: { message_id: number; chat: { id: number } };
+}
+
+export async function handleCallback(query: CallbackQuery) {
+  const chatId = query.message?.chat.id;
+  const messageId = query.message?.message_id;
+  const [action, id] = (query.data || '').split(':');
+  if (!chatId || !messageId || !action || !id) return answerCallback(query.id);
+
+  try {
+    // Bulk 5★ actions
+    if ('bBkx'.includes(action)) {
+      const batch = await loadBatch(id);
+      if (!batch) return answerCallback(query.id, 'This list has expired.');
+      const ready = batch.reviews.filter(isFiveReady);
+
+      if (action === 'x') {
+        await answerCallback(query.id);
+        const names = await clientNameMap();
+        for (const r of batch.reviews.filter(isPending)) {
+          await sendMessage(chatId, reviewCard({ ...r, shortRef: r.shortRef || reviewShortRef(r.id) }, names.get(r.clientId) || batch.clientName));
+        }
+        return;
+      }
+      if (ready.length === 0) {
+        await editMessage(chatId, messageId, { text: `⭐⭐⭐⭐⭐ <b>${h(batch.clientName)}</b> — nothing left to approve in this list.` });
+        return answerCallback(query.id, 'Already handled.');
+      }
+      if (action === 'b') {
+        await editMessage(chatId, messageId, groupMessage(id, batch.clientName, ready, true));
+        return answerCallback(query.id);
+      }
+      if (action === 'k') {
+        await editMessage(chatId, messageId, groupMessage(id, batch.clientName, ready));
+        return answerCallback(query.id, 'Cancelled');
+      }
+      // B: confirmed — post each reply; ratings and status were re-checked above.
+      await answerCallback(query.id, `Posting ${ready.length}…`);
+      let posted = 0;
+      const failed: string[] = [];
+      for (const r of ready) {
+        try {
+          await postApprovedReply(r.id, r.draft!);
+          posted++;
+        } catch (error) {
+          failed.push(`${r.reviewerName || 'Anonymous'}: ${error instanceof Error ? error.message : 'failed'}`);
+        }
+      }
+      await editMessage(chatId, messageId, {
+        text: [
+          `⭐⭐⭐⭐⭐ <b>${h(batch.clientName)}</b>`,
+          `✅ Posted ${posted} repl${posted === 1 ? 'y' : 'ies'} on Google.`,
+          ...failed.map((f) => `⚠️ ${h(truncate(f, 200))}`),
+        ].join('\n'),
+      });
+      return;
+    }
+
+    const review = await findReviewByShortRef(id);
+    if (!review) return answerCallback(query.id, 'Review not found.');
+    const clientName = (await clientNameMap()).get(review.clientId) || 'Client';
+
+    if (!isPending(review) && action !== 'c') {
+      await editMessage(chatId, messageId, reviewCard(review, clientName));
+      return answerCallback(query.id, 'Already handled.');
+    }
+
+    switch (action) {
+      case 'a':
+        await editMessage(chatId, messageId, confirmCard(review, clientName));
+        return answerCallback(query.id);
+      case 'c':
+        await editMessage(chatId, messageId, reviewCard(review, clientName));
+        return answerCallback(query.id, 'Cancelled');
+      case 'A': {
+        if (!review.draft) return answerCallback(query.id, 'No draft to post.');
+        await answerCallback(query.id, 'Posting…');
+        await postApprovedReply(review.id, review.draft);
+        const updated = await getStoredReview(review.id);
+        await editMessage(chatId, messageId, reviewCard(updated!, clientName));
+        return;
+      }
+      case 's':
+        await skipStoredReview(review.id);
+        await editMessage(chatId, messageId, reviewCard({ ...review, status: 'skipped' }, clientName));
+        return answerCallback(query.id, 'Skipped');
+      case 'g': {
+        await answerCallback(query.id, 'Writing a new draft…');
+        await regenerateReviewDraft(review.id);
+        const updated = await getStoredReview(review.id);
+        await editMessage(chatId, messageId, reviewCard(updated!, clientName, '🔄 <i>New draft generated.</i>'));
+        return;
+      }
+      case 'e':
+        await answerCallback(query.id);
+        await sendMessage(chatId, {
+          text: [
+            `✏️ New reply for <b>${h(review.reviewerName || 'Anonymous')}</b> (${h(clientName)}).`,
+            'Reply to <b>this message</b> with the exact text to use. You will see it again before anything is posted.',
+            '',
+            `<code>ref:${review.shortRef}</code>`,
+          ].join('\n'),
+          forceReply: true,
+        });
+        return;
+      default:
+        return answerCallback(query.id);
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Something went wrong';
+    await answerCallback(query.id, truncate(message, 180));
+    await sendMessage(chatId, { text: `⚠️ ${h(truncate(message, 500))}` }).catch(() => undefined);
+  }
+}
+
+interface IncomingMessage {
+  text?: string;
+  chat: { id: number };
+  reply_to_message?: { text?: string };
+}
+
+export async function handleMessage(message: IncomingMessage) {
+  const chatId = message.chat.id;
+  const text = (message.text || '').trim();
+
+  // A reply to an "Edit" prompt sets a new draft and shows the card again for approval.
+  const refMatch = message.reply_to_message?.text?.match(/ref:([A-Za-z0-9_-]{10})/);
+  if (refMatch && text && !text.startsWith('/')) {
+    const review = await findReviewByShortRef(refMatch[1]);
+    if (!review) return sendMessage(chatId, { text: 'Review not found.' });
+    if (!isPending(review)) return sendMessage(chatId, { text: 'This review was already handled.' });
+    await setReviewDraft(review.id, text);
+    const updated = await getStoredReview(review.id);
+    const clientName = (await clientNameMap()).get(review.clientId) || 'Client';
+    return sendMessage(chatId, reviewCard(updated!, clientName, '✏️ <i>Your edited reply. Tap Approve to post it.</i>'));
+  }
+
+  const command = text.split(/[\s@]/)[0].toLowerCase();
+  if (command === '/pending') {
+    return sendReviewDigest({ onlyUnsent: false, chatIds: [String(chatId)] });
+  }
+  if (command === '/check') {
+    await sendMessage(chatId, { text: '🔎 Checking Google for new reviews…' });
+    const summary = await syncAllReviews();
+    return sendReviewDigest({ onlyUnsent: true, chatIds: [String(chatId)], summary });
+  }
+  return sendMessage(chatId, {
+    text: [
+      '<b>North Via reviews bot</b>',
+      'Every day you get new Google reviews with AI-drafted replies.',
+      '5★ replies can be approved together; 4★ and below one at a time.',
+      '',
+      '/pending — show everything waiting for approval',
+      '/check — check Google for new reviews now',
+    ].join('\n'),
+  });
+}
