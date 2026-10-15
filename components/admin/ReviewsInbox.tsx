@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Star, RefreshCw, Send, SkipForward, Sparkles, CheckCircle2, AlertTriangle, MessageSquare, Pencil } from 'lucide-react';
 import { approveReview, regenerateDraft, skipReview } from '@/app/actions/google-business';
@@ -17,6 +18,12 @@ interface SyncInfo {
 }
 
 type Tab = 'five' | 'review' | 'posted' | 'skipped';
+
+// Fixed locale and zone so server-rendered and browser-rendered dates match (avoids hydration errors).
+const DATE_FORMAT = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Toronto', dateStyle: 'medium' });
+const DATE_TIME_FORMAT = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Toronto', dateStyle: 'medium', timeStyle: 'short' });
+const formatDate = (iso: string) => DATE_FORMAT.format(new Date(iso));
+const formatDateTime = (iso: string) => DATE_TIME_FORMAT.format(new Date(iso));
 
 function Stars({ value }: { value: number }) {
   return (
@@ -36,7 +43,7 @@ function ReviewHeader({ review }: { review: InboxReview }) {
         <div className="font-medium text-zinc-900 mt-0.5">{review.reviewerName || 'Anonymous'}</div>
         <div className="flex items-center gap-2 mt-1">
           <Stars value={review.rating} />
-          <span className="text-xs text-zinc-500">{new Date(review.createTime).toLocaleDateString()}</span>
+          <span className="text-xs text-zinc-500">{formatDate(review.createTime)}</span>
         </div>
       </div>
     </div>
@@ -214,7 +221,7 @@ function HistoryList({ reviews }: { reviews: InboxReview[] }) {
           <ReviewText comment={review.comment} />
           {review.postedReply && (
             <div className="mt-3 pl-3 border-l-2 border-zinc-200 text-sm text-zinc-600 whitespace-pre-line">
-              <div className="text-xs text-zinc-400 mb-1">Posted {review.postedAt ? new Date(review.postedAt).toLocaleString() : ''}</div>
+              <div className="text-xs text-zinc-400 mb-1">Posted {review.postedAt ? formatDateTime(review.postedAt) : ''}</div>
               {review.postedReply}
             </div>
           )}
@@ -240,10 +247,19 @@ export function ReviewsInbox({ reviews, lastSync, hasLocations }: { reviews: Inb
   const [checking, setChecking] = useState(false);
   const [checkError, setCheckError] = useState<string | null>(null);
 
-  const clients = useMemo(
-    () => Array.from(new Map(reviews.map((r) => [r.clientId, r.clientName])).entries()).sort((a, b) => a[1].localeCompare(b[1])),
-    [reviews]
-  );
+  const isPending = (r: InboxReview) => r.status === 'draft_ready' || r.status === 'needs_draft';
+
+  // Clients with something waiting come first, then alphabetical.
+  const clients = useMemo(() => {
+    const map = new Map<string, { id: string; name: string; pending: number }>();
+    for (const r of reviews) {
+      const entry = map.get(r.clientId) || { id: r.clientId, name: r.clientName, pending: 0 };
+      if (isPending(r)) entry.pending++;
+      map.set(r.clientId, entry);
+    }
+    return Array.from(map.values()).sort((a, b) => b.pending - a.pending || a.name.localeCompare(b.name));
+  }, [reviews]);
+  const totalPending = clients.reduce((sum, c) => sum + c.pending, 0);
 
   const groups = useMemo(() => {
     const scoped = clientFilter ? reviews.filter((r) => r.clientId === clientFilter) : reviews;
@@ -252,7 +268,7 @@ export function ReviewsInbox({ reviews, lastSync, hasLocations }: { reviews: Inb
       five: scoped.filter(isFiveReady),
       // Lowest ratings first so complaints are handled before praise.
       review: scoped
-        .filter((r) => (r.status === 'draft_ready' || r.status === 'needs_draft') && !isFiveReady(r))
+        .filter((r) => isPending(r) && !isFiveReady(r))
         .sort((a, b) => (a.rating || 6) - (b.rating || 6) || b.createTime.localeCompare(a.createTime)),
       posted: scoped.filter((r) => r.status === 'posted').sort((a, b) => (b.postedAt || '').localeCompare(a.postedAt || '')),
       skipped: scoped.filter((r) => r.status === 'skipped'),
@@ -288,7 +304,7 @@ export function ReviewsInbox({ reviews, lastSync, hasLocations }: { reviews: Inb
         <div className="text-sm text-zinc-600">
           {lastSync ? (
             <>
-              Last checked <span className="font-medium text-zinc-900">{new Date(lastSync.finishedAt).toLocaleString()}</span>
+              Last checked <span className="font-medium text-zinc-900">{formatDateTime(lastSync.finishedAt)}</span>
               {' · '}{lastSync.newReviews} new · {lastSync.draftsCreated} drafted
               {lastSync.draftsDeferred > 0 && <> · {lastSync.draftsDeferred} queued for next run</>}
             </>
@@ -312,45 +328,82 @@ export function ReviewsInbox({ reviews, lastSync, hasLocations }: { reviews: Inb
         </button>
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-3 sm:items-center justify-between">
-        <div className="flex gap-2 overflow-x-auto">
-          {tabs.map(([key, label, count]) => (
+      {clients.length > 0 && (
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {[{ id: '', name: 'All clients', pending: totalPending }, ...clients].map((client) => (
             <button
-              key={key}
-              onClick={() => setTab(key)}
-              className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors whitespace-nowrap ${
-                tab === key ? 'bg-zinc-900 text-white' : 'bg-white border border-zinc-200 text-zinc-600 hover:bg-zinc-50'
+              key={client.id || 'all'}
+              onClick={() => setClientFilter(client.id)}
+              className={`shrink-0 text-left px-4 py-2.5 rounded-xl border transition-colors ${
+                clientFilter === client.id ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-500/10' : 'border-zinc-200 bg-white hover:bg-zinc-50'
               }`}
             >
-              {label} <span className={tab === key ? 'text-zinc-300' : 'text-zinc-400'}>{count}</span>
+              <div className={`text-sm font-medium ${clientFilter === client.id ? 'text-blue-700' : 'text-zinc-900'}`}>{client.name}</div>
+              <div className={`text-xs mt-0.5 ${client.pending ? 'text-amber-600' : 'text-zinc-400'}`}>
+                {client.pending ? `${client.pending} to approve` : 'All caught up'}
+              </div>
             </button>
           ))}
         </div>
-        {clients.length > 1 && (
-          <select
-            value={clientFilter}
-            onChange={(e) => setClientFilter(e.target.value)}
-            className="text-sm bg-white border border-zinc-200 rounded-lg px-3 py-2"
+      )}
+
+      <div className="flex gap-2 overflow-x-auto">
+        {tabs.map(([key, label, count]) => (
+          <button
+            key={key}
+            onClick={() => setTab(key)}
+            className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors whitespace-nowrap ${
+              tab === key ? 'bg-zinc-900 text-white' : 'bg-white border border-zinc-200 text-zinc-600 hover:bg-zinc-50'
+            }`}
           >
-            <option value="">All clients</option>
-            {clients.map(([id, name]) => (
-              <option key={id} value={id}>{name}</option>
-            ))}
-          </select>
-        )}
+            {label} <span className={tab === key ? 'text-zinc-300' : 'text-zinc-400'}>{count}</span>
+          </button>
+        ))}
       </div>
 
-      {tab === 'five' && <FiveStarQueue key={groups.five.map((r) => r.id).join()} reviews={groups.five} />}
-      {tab === 'review' &&
-        (groups.review.length === 0 ? (
-          <Empty text="No reviews need individual approval." />
-        ) : (
-          <div className="space-y-4">
-            {groups.review.map((review) => <ApprovalCard key={`${review.id}-${review.draftGeneratedAt}`} review={review} />)}
+      {(() => {
+        const list = groups[tab];
+        if (list.length === 0) {
+          return (
+            <Empty
+              text={
+                tab === 'five' ? 'No 5★ drafts waiting. Nice.'
+                : tab === 'review' ? 'No reviews need individual approval.'
+                : 'Nothing here yet.'
+              }
+            />
+          );
+        }
+        // "All clients": one section per client, so each client's queue (and 5★ bulk approve) stays separate.
+        const sections = clientFilter
+          ? [{ id: clientFilter, name: list[0].clientName, items: list }]
+          : clients
+              .map((c) => ({ id: c.id, name: c.name, items: list.filter((r) => r.clientId === c.id) }))
+              .filter((section) => section.items.length > 0);
+
+        return (
+          <div className="space-y-10">
+            {sections.map((section) => (
+              <section key={section.id} className="space-y-4">
+                {!clientFilter && (
+                  <div className="flex items-center justify-between gap-3 border-b border-zinc-200 pb-2">
+                    <h2 className="text-lg font-semibold text-zinc-900">
+                      {section.name} <span className="text-sm font-normal text-zinc-400">{section.items.length}</span>
+                    </h2>
+                    <Link href={`/admin/clients/${section.id}`} className="text-xs font-medium text-blue-600 hover:text-blue-700 shrink-0">
+                      Reply style & settings →
+                    </Link>
+                  </div>
+                )}
+                {tab === 'five' && <FiveStarQueue key={section.items.map((r) => r.id).join()} reviews={section.items} />}
+                {tab === 'review' &&
+                  section.items.map((review) => <ApprovalCard key={`${review.id}-${review.draftGeneratedAt}`} review={review} />)}
+                {(tab === 'posted' || tab === 'skipped') && <HistoryList reviews={section.items} />}
+              </section>
+            ))}
           </div>
-        ))}
-      {tab === 'posted' && <HistoryList reviews={groups.posted} />}
-      {tab === 'skipped' && <HistoryList reviews={groups.skipped} />}
+        );
+      })()}
     </div>
   );
 }
