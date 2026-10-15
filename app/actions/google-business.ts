@@ -8,15 +8,16 @@ import {
   GBP_LOCATIONS,
   createConnectToken,
   disconnectClient,
-  fetchLocationReviews,
-  listLinkedLocations,
-  publishReviewReply,
   syncClientLocations,
 } from '@/lib/google-business';
-import { listClientProfiles } from '@/lib/admin-ops';
-import type { GbpLocation, GbpReview } from '@/types/database';
-
-const MAX_REPLY_LENGTH = 4000;
+import {
+  GBP_REVIEWS,
+  generateReplyDraft,
+  postApprovedReply,
+  regenerateReviewDraft,
+  saveReplySettings,
+} from '@/lib/review-engine';
+import type { GbpReplySettings } from '@/types/database';
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Unexpected error';
@@ -80,51 +81,62 @@ export async function disconnectGbp(clientId: string) {
   }
 }
 
-export interface ReviewInboxLocation {
-  location: GbpLocation & { id: string };
-  clientName: string;
-  averageRating: number;
-  totalReviewCount: number;
-  reviews: GbpReview[];
-  error?: string;
-}
-
-/** Live pull of reviews for every linked location. */
-export async function loadReviewInbox(): Promise<ReviewInboxLocation[]> {
+export async function saveReplyStyle(settings: GbpReplySettings) {
   await requireAdmin();
-  const [locations, clients] = await Promise.all([listLinkedLocations(), listClientProfiles()]);
-  const clientNames = new Map(clients.map((c) => [c.id, c.brandName]));
-
-  return Promise.all(
-    locations.map(async (location) => {
-      const clientName = clientNames.get(location.clientId) || 'Unknown client';
-      try {
-        const data = await fetchLocationReviews(location);
-        return { location, clientName, ...data };
-      } catch (error) {
-        return { location, clientName, averageRating: 0, totalReviewCount: 0, reviews: [], error: errorMessage(error) };
-      }
-    })
-  );
-}
-
-/**
- * Posts a public reply. The admin's click on "Approve & post" is the approval;
- * there is no automatic posting path.
- */
-export async function approveAndPostReply(locationId: string, reviewName: string, comment: string) {
-  await requireAdmin();
-  const text = comment.trim();
-  if (!text) return { success: false, error: 'Reply cannot be empty.' };
-  if (text.length > MAX_REPLY_LENGTH) return { success: false, error: `Reply must be under ${MAX_REPLY_LENGTH} characters.` };
-
   try {
-    const doc = await db.collection(GBP_LOCATIONS).doc(locationId).get();
-    if (!doc.exists) return { success: false, error: 'Location not found.' };
-    const location = doc.data() as GbpLocation;
-    if (!location.linked) return { success: false, error: 'This location is not enabled for review management.' };
+    await saveReplySettings({ ...settings, clientId: settings.clientId });
+    revalidatePath(`/admin/clients/${settings.clientId}`);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: errorMessage(error) };
+  }
+}
 
-    await publishReviewReply(location, reviewName, text);
+const SAMPLE_REVIEWS = {
+  positive: { reviewerName: 'Sarah M.', rating: 5, comment: 'Amazing experience from start to finish. The team was friendly and everything was exactly what we hoped for. Will definitely be back!' },
+  negative: { reviewerName: 'James', rating: 2, comment: 'Waited almost 40 minutes and nobody updated us. The staff seemed overwhelmed. Disappointing compared to last time.' },
+};
+
+/** Generates a sample reply with unsaved settings so the style can be tried before saving. */
+export async function previewReplyStyle(settings: GbpReplySettings, sample: 'positive' | 'negative') {
+  await requireAdmin();
+  try {
+    const client = await db.collection('clients').doc(settings.clientId).get();
+    const businessName = (client.data()?.brandName as string) || 'the business';
+    const reply = await generateReplyDraft(settings, businessName, SAMPLE_REVIEWS[sample]);
+    return { success: true, reply, review: SAMPLE_REVIEWS[sample] };
+  } catch (error) {
+    return { success: false, error: errorMessage(error) };
+  }
+}
+
+export async function regenerateDraft(reviewId: string) {
+  await requireAdmin();
+  try {
+    const draft = await regenerateReviewDraft(reviewId);
+    revalidatePath('/admin/reviews');
+    return { success: true, draft };
+  } catch (error) {
+    return { success: false, error: errorMessage(error) };
+  }
+}
+
+/** One-by-one approval: the admin's click is the approval. */
+export async function approveReview(reviewId: string, reply: string) {
+  await requireAdmin();
+  try {
+    await postApprovedReply(reviewId, reply);
+    revalidatePath('/admin/reviews');
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: errorMessage(error) };
+  }
+}
+
+export async function skipReview(reviewId: string) {
+  await requireAdmin();
+  try {
+    await db.collection(GBP_REVIEWS).doc(reviewId).update({ status: 'skipped', updatedAt: new Date().toISOString() });
     revalidatePath('/admin/reviews');
     return { success: true };
   } catch (error) {

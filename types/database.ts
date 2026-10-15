@@ -238,3 +238,53 @@ export interface GbpReview {
   updateTime: string;
   reviewReply?: { comment: string; updateTime: string };
 }
+
+// Per-client voice for AI-drafted review replies.
+export type ReplyTone = 'warm_friendly' | 'professional' | 'upbeat_casual' | 'refined_luxury';
+export type ReplyLength = 'short' | 'medium' | 'detailed';
+export type ReplyLanguage = 'match_reviewer' | 'english' | 'arabic' | 'french';
+
+export interface GbpReplySettings {
+  clientId: string;
+  tone: ReplyTone;
+  length: ReplyLength;
+  language: ReplyLanguage;
+  signOff?: string; // e.g. "— Sara, Owner"
+  useReviewerName: boolean;
+  mentionBusinessName: boolean;
+  allowEmojis: boolean;
+  negativeContact?: string; // how unhappy reviewers can reach the business offline
+  highlights?: string; // services or values worth mentioning naturally
+  avoid?: string; // words/topics never to use
+  extraInstructions?: string;
+  updatedAt: string;
+}
+
+export type GbpReviewStatus =
+  | 'draft_ready'   // AI draft waiting for approval
+  | 'needs_draft'   // draft missing or failed; regenerate or write manually
+  | 'posted'        // reply published from this panel
+  | 'replied'       // already had a reply on Google (posted elsewhere)
+  | 'skipped';      // admin chose not to reply
+
+export interface GbpStoredReview {
+  id?: string; // review id
+  clientId: string;
+  locationId: string;
+  locationTitle: string;
+  reviewName: string;
+  reviewerName: string;
+  rating: number; // 0 when unspecified
+  comment: string;
+  createTime: string;
+  updateTime: string;
+  status: GbpReviewStatus;
+  draft?: string;
+  draftGeneratedAt?: string;
+  draftError?: string;
+  existingReply?: string;
+  postedReply?: string;
+  postedAt?: string;
+  firstSeenAt: string;
+  updatedAt: string;
+}

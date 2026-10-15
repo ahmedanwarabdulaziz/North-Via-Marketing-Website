@@ -2,19 +2,25 @@
 
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Star, MapPin, AlertTriangle, Send, CheckCircle2, MessageSquare } from 'lucide-react';
-import { approveAndPostReply, type ReviewInboxLocation } from '@/app/actions/google-business';
-import type { GbpReview, GbpStarRating } from '@/types/database';
+import { Star, RefreshCw, Send, SkipForward, Sparkles, CheckCircle2, AlertTriangle, MessageSquare, Pencil } from 'lucide-react';
+import { approveReview, regenerateDraft, skipReview } from '@/app/actions/google-business';
+import type { GbpStoredReview } from '@/types/database';
 
-const STARS: Record<GbpStarRating, number> = {
-  ONE: 1, TWO: 2, THREE: 3, FOUR: 4, FIVE: 5, STAR_RATING_UNSPECIFIED: 0,
-};
+export type InboxReview = GbpStoredReview & { id: string; clientName: string };
 
-type Filter = 'unreplied' | 'negative' | 'all';
+interface SyncInfo {
+  finishedAt: string;
+  newReviews: number;
+  draftsCreated: number;
+  draftsDeferred: number;
+  errors: Array<{ location: string; error: string }>;
+}
+
+type Tab = 'five' | 'review' | 'posted' | 'skipped';
 
 function Stars({ value }: { value: number }) {
   return (
-    <span className="inline-flex" aria-label={`${value} out of 5 stars`}>
+    <span className="inline-flex" aria-label={value ? `${value} out of 5 stars` : 'No rating'}>
       {[1, 2, 3, 4, 5].map((i) => (
         <Star key={i} className={`w-4 h-4 ${i <= value ? 'fill-amber-400 text-amber-400' : 'text-zinc-200'}`} />
       ))}
@@ -22,185 +28,329 @@ function Stars({ value }: { value: number }) {
   );
 }
 
-function ReviewCard({ review, locationId }: { review: GbpReview; locationId: string }) {
-  const router = useRouter();
-  const [draft, setDraft] = useState('');
-  const [posting, setPosting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [posted, setPosted] = useState(false);
-  const rating = STARS[review.starRating] ?? 0;
+function ReviewHeader({ review }: { review: InboxReview }) {
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0">
+        <div className="text-xs font-medium text-blue-600 truncate">{review.clientName} · {review.locationTitle}</div>
+        <div className="font-medium text-zinc-900 mt-0.5">{review.reviewerName || 'Anonymous'}</div>
+        <div className="flex items-center gap-2 mt-1">
+          <Stars value={review.rating} />
+          <span className="text-xs text-zinc-500">{new Date(review.createTime).toLocaleDateString()}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
 
-  async function handleApprove() {
-    if (!confirm('Post this reply publicly on Google? It will be visible to everyone.')) return;
-    setPosting(true);
+function ReviewText({ comment }: { comment: string }) {
+  return (
+    <p className="text-sm text-zinc-700 mt-3 whitespace-pre-line">
+      {comment || <span className="italic text-zinc-400">Rating only, no written review.</span>}
+    </p>
+  );
+}
+
+/** One-by-one approval card with editable draft. */
+function ApprovalCard({ review }: { review: InboxReview }) {
+  const router = useRouter();
+  const [draft, setDraft] = useState(review.draft || '');
+  const [busy, setBusy] = useState<'post' | 'regen' | 'skip' | null>(null);
+  const [error, setError] = useState<string | null>(review.status === 'needs_draft' ? review.draftError || null : null);
+
+  async function act(kind: 'post' | 'regen' | 'skip') {
+    if (kind === 'post' && !confirm('Post this reply publicly on Google?')) return;
+    setBusy(kind);
     setError(null);
-    const result = await approveAndPostReply(locationId, review.name, draft);
-    setPosting(false);
-    if (result.success) {
-      setPosted(true);
-      router.refresh();
-    } else {
-      setError(result.error || 'Failed to post reply.');
+    const result =
+      kind === 'post' ? await approveReview(review.id, draft)
+      : kind === 'regen' ? await regenerateDraft(review.id)
+      : await skipReview(review.id);
+    setBusy(null);
+    if (!result.success) {
+      setError(result.error || 'Something went wrong.');
+      return;
     }
+    if (kind === 'regen' && 'draft' in result && typeof result.draft === 'string') setDraft(result.draft);
+    router.refresh();
   }
 
+  const negative = review.rating > 0 && review.rating <= 2;
+
   return (
-    <div className={`p-5 rounded-xl border ${rating > 0 && rating <= 2 ? 'border-red-200 bg-red-50/30' : 'border-zinc-200 bg-white'}`}>
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <div className="font-medium text-zinc-900">{review.reviewer?.displayName || 'Anonymous'}</div>
-          <div className="flex items-center gap-2 mt-1">
-            <Stars value={rating} />
-            <span className="text-xs text-zinc-500">{new Date(review.createTime).toLocaleDateString()}</span>
-          </div>
+    <div className={`p-5 rounded-2xl border ${negative ? 'border-red-200 bg-red-50/30' : 'border-zinc-200 bg-white'}`}>
+      <ReviewHeader review={review} />
+      <ReviewText comment={review.comment} />
+      <div className="mt-4">
+        <div className="text-xs font-medium text-zinc-500 mb-1.5 flex items-center gap-1">
+          <Sparkles className="w-3.5 h-3.5" /> {review.draft ? 'AI draft, edit freely' : 'No draft yet'}
         </div>
-        {review.reviewReply || posted ? (
-          <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-50 px-2 py-1 rounded-full">
-            <CheckCircle2 className="w-3.5 h-3.5" /> Replied
-          </span>
-        ) : (
-          <span className="text-xs font-medium text-amber-700 bg-amber-50 px-2 py-1 rounded-full">Needs reply</span>
-        )}
+        <textarea
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          rows={4}
+          placeholder="Write a reply or click Regenerate…"
+          className="w-full text-sm bg-white border border-zinc-200 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+        />
+      </div>
+      {error && <div className="text-sm text-red-600 mt-2">{error}</div>}
+      <div className="flex flex-wrap gap-2 justify-end mt-3">
+        <button onClick={() => act('skip')} disabled={busy !== null} className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-zinc-600 rounded-lg hover:bg-zinc-100 disabled:opacity-50">
+          <SkipForward className="w-4 h-4" /> Skip
+        </button>
+        <button onClick={() => act('regen')} disabled={busy !== null} className="inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-zinc-200 text-zinc-700 text-sm font-medium rounded-lg hover:bg-zinc-50 disabled:opacity-50">
+          <RefreshCw className={`w-4 h-4 ${busy === 'regen' ? 'animate-spin' : ''}`} /> Regenerate
+        </button>
+        <button onClick={() => act('post')} disabled={busy !== null || !draft.trim()} className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50">
+          <Send className="w-4 h-4" /> {busy === 'post' ? 'Posting…' : 'Approve & post'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function FiveStarQueue({ reviews }: { reviews: InboxReview[] }) {
+  const router = useRouter();
+  const [selected, setSelected] = useState<Set<string>>(() => new Set(reviews.map((r) => r.id)));
+  const [editing, setEditing] = useState<Set<string>>(new Set());
+  const [posting, setPosting] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const bulkIds = reviews.filter((r) => selected.has(r.id) && !editing.has(r.id)).map((r) => r.id);
+
+  function toggle(id: string) {
+    setSelected((s) => {
+      const next = new Set(s);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function approveSelected() {
+    if (!confirm(`Post ${bulkIds.length} five-star repl${bulkIds.length === 1 ? 'y' : 'ies'} publicly on Google?`)) return;
+    setPosting(true);
+    setMessage(null);
+    const res = await fetch('/api/admin/reviews/approve-five-star', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reviewIds: bulkIds }),
+    });
+    const data = await res.json().catch(() => ({}));
+    setPosting(false);
+    if (!res.ok) {
+      setMessage(data.error || 'Bulk approval failed.');
+    } else {
+      const failed = (data.results || []).filter((r: { success: boolean }) => !r.success).length;
+      setMessage(`Posted ${data.posted} repl${data.posted === 1 ? 'y' : 'ies'}${failed ? `, ${failed} failed` : ''}.`);
+    }
+    router.refresh();
+  }
+
+  if (reviews.length === 0) return <Empty text="No 5★ drafts waiting. Nice." />;
+
+  return (
+    <div className="space-y-4">
+      <div className="sticky top-0 z-10 bg-zinc-50/95 backdrop-blur py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <label className="inline-flex items-center gap-2 text-sm text-zinc-700">
+          <input
+            type="checkbox"
+            checked={selected.size === reviews.length}
+            onChange={(e) => setSelected(e.target.checked ? new Set(reviews.map((r) => r.id)) : new Set())}
+            className="w-4 h-4 rounded border-zinc-300 text-blue-600"
+          />
+          Select all ({reviews.length})
+        </label>
+        <div className="flex items-center gap-3">
+          {message && <span className="text-sm text-zinc-600">{message}</span>}
+          <button
+            onClick={approveSelected}
+            disabled={posting || bulkIds.length === 0}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 disabled:opacity-50"
+          >
+            <CheckCircle2 className="w-4 h-4" />
+            {posting ? 'Posting…' : `Approve ${bulkIds.length} selected`}
+          </button>
+        </div>
       </div>
 
-      <p className="text-sm text-zinc-700 mt-3 whitespace-pre-line">
-        {review.comment || <span className="italic text-zinc-400">Rating only, no written review.</span>}
-      </p>
-
-      {review.reviewReply && (
-        <div className="mt-3 pl-3 border-l-2 border-zinc-200 text-sm text-zinc-600">
-          <div className="text-xs font-medium text-zinc-400 mb-1">Owner reply</div>
-          {review.reviewReply.comment}
-        </div>
-      )}
-
-      {!review.reviewReply && !posted && (
-        <div className="mt-4 space-y-2">
-          <textarea
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            rows={3}
-            placeholder="Write a reply draft…"
-            className="w-full text-sm bg-white border border-zinc-200 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-          />
-          {error && <div className="text-sm text-red-600">{error}</div>}
-          <div className="flex justify-end">
-            <button
-              onClick={handleApprove}
-              disabled={posting || !draft.trim()}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
-            >
-              <Send className="w-4 h-4" />
-              {posting ? 'Posting…' : 'Approve & post'}
-            </button>
+      {reviews.map((review) =>
+        editing.has(review.id) ? (
+          <ApprovalCard key={review.id} review={review} />
+        ) : (
+          <div key={review.id} className="p-5 rounded-2xl border border-zinc-200 bg-white flex gap-4">
+            <input
+              type="checkbox"
+              checked={selected.has(review.id)}
+              onChange={() => toggle(review.id)}
+              className="w-4 h-4 mt-1 rounded border-zinc-300 text-blue-600 shrink-0"
+              aria-label="Include in bulk approval"
+            />
+            <div className="flex-1 min-w-0">
+              <ReviewHeader review={review} />
+              <ReviewText comment={review.comment} />
+              <div className="mt-3 pl-3 border-l-2 border-emerald-300 text-sm text-zinc-800 whitespace-pre-line">{review.draft}</div>
+              <button
+                onClick={() => setEditing((s) => new Set(s).add(review.id))}
+                className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-zinc-500 hover:text-zinc-900"
+              >
+                <Pencil className="w-3.5 h-3.5" /> Edit this one
+              </button>
+            </div>
           </div>
-        </div>
+        )
       )}
     </div>
   );
 }
 
-export function ReviewsInbox({ inbox }: { inbox: ReviewInboxLocation[] }) {
-  const [filter, setFilter] = useState<Filter>('unreplied');
+function HistoryList({ reviews }: { reviews: InboxReview[] }) {
+  if (reviews.length === 0) return <Empty text="Nothing here yet." />;
+  return (
+    <div className="space-y-3">
+      {reviews.slice(0, 50).map((review) => (
+        <div key={review.id} className="p-5 rounded-2xl border border-zinc-200 bg-white">
+          <ReviewHeader review={review} />
+          <ReviewText comment={review.comment} />
+          {review.postedReply && (
+            <div className="mt-3 pl-3 border-l-2 border-zinc-200 text-sm text-zinc-600 whitespace-pre-line">
+              <div className="text-xs text-zinc-400 mb-1">Posted {review.postedAt ? new Date(review.postedAt).toLocaleString() : ''}</div>
+              {review.postedReply}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
 
-  const totals = useMemo(() => {
-    const all = inbox.flatMap((l) => l.reviews);
+function Empty({ text }: { text: string }) {
+  return (
+    <div className="bg-white rounded-2xl border border-zinc-200 p-10 text-center text-sm text-zinc-500">
+      <MessageSquare className="w-8 h-8 text-zinc-300 mx-auto mb-2" />
+      {text}
+    </div>
+  );
+}
+
+export function ReviewsInbox({ reviews, lastSync, hasLocations }: { reviews: InboxReview[]; lastSync: SyncInfo | null; hasLocations: boolean }) {
+  const router = useRouter();
+  const [tab, setTab] = useState<Tab>('five');
+  const [clientFilter, setClientFilter] = useState('');
+  const [checking, setChecking] = useState(false);
+  const [checkError, setCheckError] = useState<string | null>(null);
+
+  const clients = useMemo(
+    () => Array.from(new Map(reviews.map((r) => [r.clientId, r.clientName])).entries()).sort((a, b) => a[1].localeCompare(b[1])),
+    [reviews]
+  );
+
+  const groups = useMemo(() => {
+    const scoped = clientFilter ? reviews.filter((r) => r.clientId === clientFilter) : reviews;
+    const isFiveReady = (r: InboxReview) => r.rating === 5 && r.status === 'draft_ready';
     return {
-      unreplied: all.filter((r) => !r.reviewReply).length,
-      negative: all.filter((r) => !r.reviewReply && (STARS[r.starRating] ?? 0) > 0 && STARS[r.starRating] <= 2).length,
+      five: scoped.filter(isFiveReady),
+      // Lowest ratings first so complaints are handled before praise.
+      review: scoped
+        .filter((r) => (r.status === 'draft_ready' || r.status === 'needs_draft') && !isFiveReady(r))
+        .sort((a, b) => (a.rating || 6) - (b.rating || 6) || b.createTime.localeCompare(a.createTime)),
+      posted: scoped.filter((r) => r.status === 'posted').sort((a, b) => (b.postedAt || '').localeCompare(a.postedAt || '')),
+      skipped: scoped.filter((r) => r.status === 'skipped'),
     };
-  }, [inbox]);
+  }, [reviews, clientFilter]);
 
-  function visible(reviews: GbpReview[]) {
-    if (filter === 'all') return reviews;
-    const unreplied = reviews.filter((r) => !r.reviewReply);
-    if (filter === 'unreplied') return unreplied;
-    return unreplied.filter((r) => (STARS[r.starRating] ?? 0) > 0 && STARS[r.starRating] <= 2);
+  async function checkNow() {
+    setChecking(true);
+    setCheckError(null);
+    const res = await fetch('/api/admin/reviews/sync', { method: 'POST' });
+    const data = await res.json().catch(() => ({}));
+    setChecking(false);
+    if (!res.ok) setCheckError(data.error || 'Check failed.');
+    router.refresh();
   }
 
-  if (inbox.length === 0) {
+  if (!hasLocations) {
     return (
-      <div className="bg-white rounded-2xl border border-zinc-200 p-12 text-center">
-        <MessageSquare className="w-10 h-10 text-zinc-300 mx-auto mb-3" />
-        <h3 className="text-lg font-medium text-zinc-900">No locations are being monitored yet</h3>
-        <p className="text-zinc-500 mt-1 max-w-md mx-auto text-sm">
-          Open a client, connect their Google Business Profile, sync locations, and tick &quot;Monitor reviews&quot;.
-        </p>
-      </div>
+      <Empty text='No locations are monitored yet. Open a client, connect their Google Business Profile, sync locations and tick "Monitor reviews".' />
     );
   }
 
+  const tabs: Array<[Tab, string, number]> = [
+    ['five', '5★ ready', groups.five.length],
+    ['review', '4★ & below', groups.review.length],
+    ['posted', 'Posted', groups.posted.length],
+    ['skipped', 'Skipped', groups.skipped.length],
+  ];
+
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-        <div className="bg-white rounded-2xl border border-zinc-200 p-5">
-          <div className="text-xs font-medium text-zinc-500 uppercase tracking-wider">Locations</div>
-          <div className="text-2xl font-semibold text-zinc-900 mt-1">{inbox.length}</div>
+      <div className="bg-white rounded-2xl border border-zinc-200 p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="text-sm text-zinc-600">
+          {lastSync ? (
+            <>
+              Last checked <span className="font-medium text-zinc-900">{new Date(lastSync.finishedAt).toLocaleString()}</span>
+              {' · '}{lastSync.newReviews} new · {lastSync.draftsCreated} drafted
+              {lastSync.draftsDeferred > 0 && <> · {lastSync.draftsDeferred} queued for next run</>}
+            </>
+          ) : (
+            'Not checked yet.'
+          )}
+          {lastSync?.errors?.map((e) => (
+            <div key={e.location} className="flex items-start gap-1.5 text-red-600 mt-1">
+              <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" /> {e.location}: {e.error}
+            </div>
+          ))}
+          {checkError && <div className="text-red-600 mt-1">{checkError}</div>}
         </div>
-        <div className="bg-white rounded-2xl border border-zinc-200 p-5">
-          <div className="text-xs font-medium text-zinc-500 uppercase tracking-wider">Awaiting reply</div>
-          <div className="text-2xl font-semibold text-amber-600 mt-1">{totals.unreplied}</div>
-        </div>
-        <div className="bg-white rounded-2xl border border-zinc-200 p-5">
-          <div className="text-xs font-medium text-zinc-500 uppercase tracking-wider">1–2 star, unreplied</div>
-          <div className="text-2xl font-semibold text-red-600 mt-1">{totals.negative}</div>
-        </div>
+        <button
+          onClick={checkNow}
+          disabled={checking}
+          className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-white border border-zinc-200 text-zinc-700 text-sm font-medium rounded-xl hover:bg-zinc-50 disabled:opacity-50 shrink-0"
+        >
+          <RefreshCw className={`w-4 h-4 ${checking ? 'animate-spin' : ''}`} />
+          {checking ? 'Checking…' : 'Check now'}
+        </button>
       </div>
 
-      <div className="flex gap-2 overflow-x-auto">
-        {([
-          ['unreplied', 'Needs reply'],
-          ['negative', 'Negative first'],
-          ['all', 'All recent'],
-        ] as const).map(([key, label]) => (
-          <button
-            key={key}
-            onClick={() => setFilter(key)}
-            className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors whitespace-nowrap ${
-              filter === key ? 'bg-zinc-900 text-white' : 'bg-white border border-zinc-200 text-zinc-600 hover:bg-zinc-50'
-            }`}
+      <div className="flex flex-col sm:flex-row gap-3 sm:items-center justify-between">
+        <div className="flex gap-2 overflow-x-auto">
+          {tabs.map(([key, label, count]) => (
+            <button
+              key={key}
+              onClick={() => setTab(key)}
+              className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors whitespace-nowrap ${
+                tab === key ? 'bg-zinc-900 text-white' : 'bg-white border border-zinc-200 text-zinc-600 hover:bg-zinc-50'
+              }`}
+            >
+              {label} <span className={tab === key ? 'text-zinc-300' : 'text-zinc-400'}>{count}</span>
+            </button>
+          ))}
+        </div>
+        {clients.length > 1 && (
+          <select
+            value={clientFilter}
+            onChange={(e) => setClientFilter(e.target.value)}
+            className="text-sm bg-white border border-zinc-200 rounded-lg px-3 py-2"
           >
-            {label}
-          </button>
-        ))}
+            <option value="">All clients</option>
+            {clients.map(([id, name]) => (
+              <option key={id} value={id}>{name}</option>
+            ))}
+          </select>
+        )}
       </div>
 
-      {inbox.map(({ location, clientName, averageRating, totalReviewCount, reviews, error }) => {
-        const shown = visible(reviews);
-        return (
-          <section key={location.id} className="bg-white rounded-2xl shadow-sm border border-zinc-200 overflow-hidden">
-            <div className="p-5 border-b border-zinc-100 bg-zinc-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <div className="min-w-0">
-                <div className="text-xs font-medium text-blue-600">{clientName}</div>
-                <h2 className="font-semibold text-zinc-900 truncate">{location.title}</h2>
-                {location.address && (
-                  <div className="text-xs text-zinc-500 flex items-center gap-1 mt-0.5 truncate">
-                    <MapPin className="w-3 h-3 shrink-0" /> {location.address}
-                  </div>
-                )}
-              </div>
-              {!error && (
-                <div className="flex items-center gap-2 text-sm text-zinc-600 shrink-0">
-                  <Stars value={Math.round(averageRating)} />
-                  <span className="font-medium text-zinc-900">{averageRating.toFixed(1)}</span>
-                  <span>({totalReviewCount})</span>
-                </div>
-              )}
-            </div>
-            <div className="p-5 space-y-4">
-              {error ? (
-                <div className="flex items-start gap-2 text-sm text-red-700">
-                  <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" /> {error}
-                </div>
-              ) : shown.length === 0 ? (
-                <div className="text-sm text-zinc-500">Nothing here — all caught up.</div>
-              ) : (
-                shown.map((review) => <ReviewCard key={review.name} review={review} locationId={location.id} />)
-              )}
-            </div>
-          </section>
-        );
-      })}
+      {tab === 'five' && <FiveStarQueue key={groups.five.map((r) => r.id).join()} reviews={groups.five} />}
+      {tab === 'review' &&
+        (groups.review.length === 0 ? (
+          <Empty text="No reviews need individual approval." />
+        ) : (
+          <div className="space-y-4">
+            {groups.review.map((review) => <ApprovalCard key={`${review.id}-${review.draftGeneratedAt}`} review={review} />)}
+          </div>
+        ))}
+      {tab === 'posted' && <HistoryList reviews={groups.posted} />}
+      {tab === 'skipped' && <HistoryList reviews={groups.skipped} />}
     </div>
   );
 }
