@@ -198,7 +198,7 @@ export async function syncClientLocations(clientId: string) {
             accountName,
             locationName: location.name,
             title: location.title || 'Untitled location',
-            address: formatAddress(location.storefrontAddress),
+            address: formatAddress(location.storefrontAddress) || '', // Firestore rejects undefined; service-area businesses have no storefront
             linked: existingData?.clientId === clientId ? existingData.linked : false,
             replyMode: 'approval_required',
             lastSyncedAt: now,
