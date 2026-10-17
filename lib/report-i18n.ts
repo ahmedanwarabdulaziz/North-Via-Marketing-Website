@@ -25,6 +25,14 @@ export const REPORT_TEXT = {
     avgRating: 'Average rating',
     answered: 'Answered',
     ratingMix: 'Ratings this period',
+    ads: 'Google Ads',
+    spend: 'Ad spend',
+    clicks: 'Clicks',
+    impressions: 'Impressions',
+    ctr: 'Click-through rate',
+    conversions: 'Conversions',
+    cpa: 'Cost per conversion',
+    campaigns: 'Top campaigns',
     websites: 'Website health',
     uptime: 'Uptime',
     incidents: 'Outages',
@@ -63,6 +71,14 @@ export const REPORT_TEXT = {
     avgRating: 'متوسط التقييم',
     answered: 'تم الرد عليها',
     ratingMix: 'توزيع التقييمات',
+    ads: 'إعلانات جوجل',
+    spend: 'الإنفاق الإعلاني',
+    clicks: 'النقرات',
+    impressions: 'مرات الظهور',
+    ctr: 'نسبة النقر',
+    conversions: 'التحويلات',
+    cpa: 'تكلفة التحويل',
+    campaigns: 'أهم الحملات',
     websites: 'صحة الموقع',
     uptime: 'مدة التشغيل',
     incidents: 'مرات التوقف',
@@ -127,6 +143,13 @@ export function reportWhatsAppText(data: ReportData, lang: ReportLanguage, url: 
     lines.push(
       `⭐ *${t.reviews}* — ${t.newReviews}: ${n(r.newReviews.current)}${change(r.newReviews)}` +
         (r.averageRating.current !== null ? ` · ${t.avgRating}: ${numberFormat(lang).format(r.averageRating.current)}★` : '')
+    );
+  }
+  if (data.ads) {
+    const a = data.ads;
+    const cur = (v: number | null) => (v === null ? '—' : new Intl.NumberFormat('en-CA', { style: 'currency', currency: a.currency, maximumFractionDigits: v >= 100 ? 0 : 2 }).format(v));
+    lines.push(
+      `📈 *${t.ads}* — ${t.spend}: ${cur(a.spend.current)}${change(a.spend)} · ${t.clicks}: ${n(a.clicks.current)}${change(a.clicks)} · ${t.conversions}: ${n(a.conversions.current)}${change(a.conversions)}`
     );
   }
   if (data.websites && data.websites.uptime.current !== null) {

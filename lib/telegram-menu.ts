@@ -10,6 +10,7 @@ import { reportWhatsAppText } from './report-i18n';
 import { whatsAppNumber, whatsAppShareLink } from './whatsapp-share';
 import { listClientProfiles } from './admin-ops';
 import { listDocs } from './data/store';
+import { adsScreenText } from './ads-telegram';
 
 // Main bot menu. Button data is "m:<screen>" or "m:<screen>:<action>".
 // To add a new area (e.g. Tasks, Invoices), add a section here and a screen below.
@@ -34,6 +35,10 @@ const SECTIONS: MenuSection[] = [
       const waiting = (await listCommentQueue()).length;
       return `📱 Facebook & Instagram${waiting ? ` (${waiting} comments)` : ''}`;
     },
+  },
+  {
+    id: 'ad',
+    label: async () => '📈 Google Ads',
   },
   {
     id: 'rp',
@@ -230,6 +235,15 @@ export async function handleMenuCallback(query: { id: string; data?: string; mes
       return answerCallback(query.id);
     }
 
+    if (screen === 'ad') {
+      await answerCallback(query.id, 'Loading Google Ads…');
+      await editMessage(chatId, messageId, {
+        text: await adsScreenText(),
+        buttons: [[{ text: '🔄 Refresh', callback_data: 'm:ad' }, { text: '⬅️ Back to menu', callback_data: 'm:home' }]],
+      });
+      return;
+    }
+
     if (screen === 'rp') {
       const [, , , clientId, days, lang] = (query.data || '').split(':');
       const client = clientId ? (await listClientProfiles()).find((c) => c.id === clientId) : undefined;
@@ -239,12 +253,13 @@ export async function handleMenuCallback(query: { id: string; data?: string; mes
       }
       if (action === 'g' && client && (days === '7' || days === '30') && (lang === 'en' || lang === 'ar')) {
         await answerCallback(query.id, 'Preparing the report…');
-        const { id, url, report } = await createClientReport(client.id, Number(days) as ReportDays, lang);
+        const { id, url, report, warnings } = await createClientReport(client.id, Number(days) as ReportDays, lang);
         const phone = whatsAppNumber(client.mobileNumber);
         await sendMessage(chatId, {
           text: [
             `📊 <b>Report ready</b> · ${h(client.brandName)}`,
             phone ? `📲 Sends to ${h(client.mobileNumber || '')}` : '📲 No valid mobile number saved for this client: you’ll pick the WhatsApp chat.',
+            ...warnings.map((w) => `⚠️ ${h(w)}`),
             '',
             h(reportWhatsAppText(report.data, report.language, url)),
           ].join('\n'),

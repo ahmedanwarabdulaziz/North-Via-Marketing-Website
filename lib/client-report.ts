@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { addDoc, getDoc, listDocs } from './data/store';
 import { cairoDay } from './social-sync';
+import { costPerConversion, ctr, describeAdsError, fetchClientAds } from './ads-metrics';
 import type {
   ClientProfile,
   GbpStoredReview,
@@ -66,6 +67,17 @@ export interface ReportData {
     averageRating: Compared; // of the period's new reviews
     answered: Compared;
     stars: number[]; // count of 5★…1★ this period
+  } | null;
+  ads: {
+    currency: string;
+    accounts: string[];
+    spend: Compared;
+    clicks: Compared;
+    impressions: Compared;
+    ctr: Compared; // %
+    conversions: Compared;
+    costPerConversion: Compared;
+    campaigns: Array<{ name: string; cost: number; clicks: number; conversions: number }>;
   } | null;
   websites: {
     uptime: Compared; // % across all monitored pages
@@ -266,26 +278,53 @@ async function websitesSection(clientId: string, w: ReturnType<typeof windows>) 
   };
 }
 
+async function adsSection(clientId: string, w: ReturnType<typeof windows>): Promise<ReportData['ads']> {
+  const [cur, prev] = await Promise.all([
+    fetchClientAds(clientId, w.labels.periodStart, w.labels.periodEnd),
+    fetchClientAds(clientId, w.labels.previousStart, w.labels.previousEnd),
+  ]);
+  if (!cur || !prev) return null;
+  const round2 = (n: number | null) => (n === null ? null : Math.round(n * 100) / 100);
+  return {
+    currency: cur.currency,
+    accounts: cur.accounts.map((a) => a.name),
+    spend: { current: round2(cur.totals.cost), previous: round2(prev.totals.cost) },
+    clicks: { current: cur.totals.clicks, previous: prev.totals.clicks },
+    impressions: { current: cur.totals.impressions, previous: prev.totals.impressions },
+    ctr: { current: round2(ctr(cur.totals)), previous: round2(ctr(prev.totals)) },
+    conversions: { current: round1(cur.totals.conversions), previous: round1(prev.totals.conversions) },
+    costPerConversion: { current: round2(costPerConversion(cur.totals)), previous: round2(costPerConversion(prev.totals)) },
+    campaigns: cur.campaigns.slice(0, 5).map((c) => ({ name: c.name, cost: round2(c.cost)!, clicks: c.clicks, conversions: round1(c.conversions) })),
+  };
+}
+
 // ---------- Public API ----------
 
-export async function buildReportData(clientId: string, days: ReportDays): Promise<ReportData> {
+export async function buildReportData(clientId: string, days: ReportDays): Promise<{ data: ReportData; warnings: string[] }> {
   const client = await getDoc<ClientProfile>('clients', clientId);
   if (!client) throw new Error('Client not found.');
   const w = windows(days);
+  const warnings: string[] = [];
+  // A Google Ads failure leaves Ads out of the report instead of blocking it.
+  const ads = adsSection(clientId, w).catch((error) => {
+    warnings.push(`Google Ads not included: ${describeAdsError(error)}`);
+    return null;
+  });
   const [social, reviews, websites] = await Promise.all([socialSection(clientId, w), reviewsSection(clientId, w), websitesSection(clientId, w)]);
-  return { clientName: client.brandName, days, ...w.labels, generatedAt: new Date().toISOString(), social, reviews, websites };
+  const data: ReportData = { clientName: client.brandName, days, ...w.labels, generatedAt: new Date().toISOString(), social, reviews, ads: await ads, websites };
+  return { data, warnings };
 }
 
 export async function createClientReport(clientId: string, days: ReportDays, language: ReportLanguage) {
-  const data = await buildReportData(clientId, days);
-  if (!data.social && !data.reviews && !data.websites) {
-    throw new Error('Nothing to report yet: connect Facebook/Instagram, Google reviews or a website for this client first.');
+  const { data, warnings } = await buildReportData(clientId, days);
+  if (!data.social && !data.reviews && !data.ads && !data.websites) {
+    throw new Error(warnings[0] || 'Nothing to report yet: connect Facebook/Instagram, Google reviews, Google Ads or a website for this client first.');
   }
   // 128 random bits: the link is the only key to the report.
   const id = crypto.randomBytes(16).toString('base64url');
   const report: StoredReport = { clientId, periodDays: days, language, periodStart: data.periodStart, periodEnd: data.periodEnd, data, createdAt: new Date().toISOString() };
   await addDoc('client_reports', report, id);
-  return { id, url: `${SITE}/r/${id}`, report };
+  return { id, url: `${SITE}/r/${id}`, report, warnings };
 }
 
 export async function getClientReport(id: string) {
