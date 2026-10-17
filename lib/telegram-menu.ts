@@ -236,10 +236,18 @@ export async function handleMenuCallback(query: { id: string; data?: string; mes
     }
 
     if (screen === 'ad') {
-      await answerCallback(query.id, 'Loading Google Ads…');
+      // m:ad = last 7 days, m:ad:30 = last 30 days; the open period is marked ✓.
+      const days = action === '30' ? 30 : 7;
+      await answerCallback(query.id, `Loading the last ${days} days…`);
       await editMessage(chatId, messageId, {
-        text: await adsScreenText(),
-        buttons: [[{ text: '🔄 Refresh', callback_data: 'm:ad' }, { text: '⬅️ Back to menu', callback_data: 'm:home' }]],
+        text: await adsScreenText(days),
+        buttons: [
+          [
+            { text: `${days === 7 ? '✓ ' : ''}📅 7 days`, callback_data: 'm:ad:7' },
+            { text: `${days === 30 ? '✓ ' : ''}🗓 30 days`, callback_data: 'm:ad:30' },
+          ],
+          [{ text: '⬅️ Back to menu', callback_data: 'm:home' }],
+        ],
       });
       return;
     }

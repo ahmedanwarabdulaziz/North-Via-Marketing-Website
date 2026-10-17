@@ -15,20 +15,20 @@ const arrow = (cur: number, prev: number) => {
 };
 
 /**
- * Last 7 days vs the 7 before, per client with linked ad accounts. Telegram allows
- * 4096 characters per message, so with many clients the keyword lists get shorter.
+ * Last 7 (or 30) days vs the same length before, per client with linked ad accounts.
+ * Telegram allows 4096 characters per message, so with many clients the keyword lists get shorter.
  */
-export async function adsScreenText() {
+export async function adsScreenText(days: 7 | 30 = 7) {
   for (const keywordLimit of [10, 5, 3]) {
-    const text = await adsScreenTextWith(keywordLimit);
+    const text = await adsScreenTextWith(keywordLimit, days);
     if (text.length <= 3900 || keywordLimit === 3) return text.slice(0, 4000);
   }
   return '';
 }
 
-async function adsScreenTextWith(keywordLimit: number) {
+async function adsScreenTextWith(keywordLimit: number, days: 7 | 30) {
   const clients = await clientsWithAds();
-  const lines = ['📈 <b>Google Ads</b>', `<i>Last 7 days vs the 7 before</i>`, ''];
+  const lines = ['📈 <b>Google Ads</b>', `<i>Last ${days} days vs the ${days} before</i>`, ''];
   if (!clients.length) {
     lines.push('No ad accounts are linked to clients yet.', 'Link them on each client page (Google Ads card → Choose ad accounts).');
     return lines.join('\n');
@@ -36,9 +36,9 @@ async function adsScreenTextWith(keywordLimit: number) {
   for (const c of clients) {
     try {
       const [cur, prev, keywords] = await Promise.all([
-        fetchClientAds(c.id, day(7), day(1)),
-        fetchClientAds(c.id, day(14), day(8)),
-        fetchClientKeywords(c.id, day(7), day(1)).catch(() => ({ source: 'keywords' as const, items: [] })),
+        fetchClientAds(c.id, day(days), day(1)),
+        fetchClientAds(c.id, day(days * 2), day(days + 1)),
+        fetchClientKeywords(c.id, day(days), day(1)).catch(() => ({ source: 'keywords' as const, items: [] })),
       ]);
       if (!cur || !prev) continue;
       const cpa = costPerConversion(cur.totals);
