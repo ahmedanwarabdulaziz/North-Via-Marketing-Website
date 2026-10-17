@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { handleCallback, handleReviewMessage } from '@/lib/review-telegram';
 import { handleMenuCallback, sendMenu } from '@/lib/telegram-menu';
+import { handleSocialCallback, handleSocialMessage } from '@/lib/social-telegram';
 import { isAllowedChat, sendMessage } from '@/lib/telegram';
 
 export const dynamic = 'force-dynamic';
@@ -30,14 +31,17 @@ export async function POST(request: Request) {
     if (update.callback_query) {
       const chatId = update.callback_query.message?.chat?.id;
       if (isAllowedChat(chatId)) {
-        if (String(update.callback_query.data || '').startsWith('m:')) await handleMenuCallback(update.callback_query);
+        const data = String(update.callback_query.data || '');
+        if (data.startsWith('m:')) await handleMenuCallback(update.callback_query);
+        else if (data.startsWith('sc:')) await handleSocialCallback(update.callback_query);
         else await handleCallback(update.callback_query);
       }
     } else if (update.message?.chat) {
       const chatId = update.message.chat.id;
       if (isAllowedChat(chatId)) {
-        // Review commands and edit replies first; anything else (x, menu, /start…) opens the menu.
-        const handled = await handleReviewMessage(update.message);
+        // Comment and review commands and edit replies first; anything else (x, menu, /start…) opens the menu.
+        // Comments go first: their edit marker "cref:" also contains the reviews' "ref:".
+        const handled = (await handleSocialMessage(update.message)) || (await handleReviewMessage(update.message));
         if (!handled) await sendMenu(chatId);
       } else if (update.message.chat.type === 'private') {
         // Lets the owner discover their chat id during setup; reveals nothing else.

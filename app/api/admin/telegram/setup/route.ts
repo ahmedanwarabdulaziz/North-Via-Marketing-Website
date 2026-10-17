@@ -25,6 +25,7 @@ export async function POST(request: Request) {
         { command: 'menu', description: 'Open the main menu (or just type x)' },
         { command: 'reviews', description: 'Show reviews waiting for approval' },
         { command: 'check', description: 'Check Google for new reviews now' },
+        { command: 'comments', description: 'Show Facebook & Instagram comments waiting' },
       ],
     });
     const info = await telegram<{ url: string; pending_update_count: number; last_error_message?: string }>('getWebhookInfo', {});

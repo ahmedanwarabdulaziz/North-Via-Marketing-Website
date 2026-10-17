@@ -71,6 +71,26 @@ const TABLES = {
     pk: 'id',
     fields: ['websiteId', 'clientId', 'ok', 'statusCode', 'responseMs', 'error', 'checkedAt'],
   },
+  meta_connections: {
+    pk: 'id',
+    fields: ['connectedVia', 'clientId', 'metaUserId', 'metaUserName', 'encryptedUserToken', 'tokenExpiresAt', 'scopes', 'status', 'lastError', 'connectedAt', 'updatedAt'],
+  },
+  social_accounts: {
+    pk: 'id',
+    fields: ['connectionId', 'clientId', 'pageName', 'encryptedPageToken', 'igUserId', 'igUsername', 'linked', 'linkedAt', 'lastSyncedAt', 'lastError', 'updatedAt'],
+  },
+  social_follower_snapshots: {
+    pk: 'id',
+    fields: ['accountId', 'clientId', 'day', 'fbFollowers', 'igFollowers', 'capturedAt'],
+  },
+  social_posts: {
+    pk: 'id',
+    fields: ['accountId', 'clientId', 'platform', 'message', 'permalink', 'createdTime', 'reach', 'views', 'likes', 'commentsCount', 'lastSyncedAt', 'updatedAt'],
+  },
+  social_comments: {
+    pk: 'id',
+    fields: ['accountId', 'clientId', 'platform', 'postId', 'postPermalink', 'postExcerpt', 'authorName', 'authorId', 'message', 'createdTime', 'status', 'riskLevel', 'riskCategory', 'riskReason', 'draft', 'draftGeneratedAt', 'draftError', 'postedReply', 'postedAt', 'hiddenAt', 'shortRef', 'telegramSentAt', 'riskAlertedAt', 'firstSeenAt', 'updatedAt'],
+  },
 } as const;
 
 export type Table = keyof typeof TABLES;

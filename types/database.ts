@@ -323,3 +323,94 @@ export interface WebsiteCheck {
   error?: string;
   checkedAt: string;
 }
+
+// Facebook & Instagram (Meta)
+export interface MetaConnection {
+  id?: string;
+  connectedVia: 'admin' | 'client_link';
+  clientId?: string; // set when a client connected through a link
+  metaUserId: string;
+  metaUserName: string;
+  encryptedUserToken: string;
+  tokenExpiresAt?: string;
+  scopes: string[];
+  status: 'connected' | 'error';
+  lastError?: string;
+  connectedAt: string;
+  updatedAt: string;
+}
+
+export interface SocialAccount {
+  id?: string; // Facebook Page id
+  connectionId: string;
+  clientId?: string; // unassigned until picked on a client's page
+  pageName: string;
+  encryptedPageToken: string;
+  igUserId?: string;
+  igUsername?: string;
+  linked: boolean; // monitored for its client
+  linkedAt?: string;
+  lastSyncedAt?: string;
+  lastError?: string;
+  updatedAt: string;
+}
+
+export interface SocialFollowerSnapshot {
+  id?: string; // `${accountId}:${day}`
+  accountId: string;
+  clientId: string;
+  day: string; // YYYY-MM-DD, Cairo
+  fbFollowers?: number;
+  igFollowers?: number;
+  capturedAt: string;
+}
+
+export type SocialPlatform = 'facebook' | 'instagram';
+
+export interface SocialPost {
+  id?: string;
+  accountId: string;
+  clientId: string;
+  platform: SocialPlatform;
+  message?: string;
+  permalink?: string;
+  createdTime: string;
+  reach?: number; // Instagram reach; Facebook unique media views
+  views?: number;
+  likes?: number;
+  commentsCount?: number;
+  lastSyncedAt: string;
+  updatedAt: string;
+}
+
+export type SocialCommentStatus = 'draft_ready' | 'needs_draft' | 'posted' | 'replied' | 'skipped' | 'hidden';
+export type SocialRiskLevel = 'none' | 'watch' | 'high';
+
+export interface SocialComment {
+  id?: string;
+  accountId: string;
+  clientId: string;
+  platform: SocialPlatform;
+  postId: string;
+  postPermalink?: string;
+  postExcerpt?: string;
+  authorName?: string;
+  authorId?: string;
+  message: string;
+  createdTime: string;
+  status: SocialCommentStatus;
+  riskLevel?: SocialRiskLevel;
+  riskCategory?: string;
+  riskReason?: string;
+  draft?: string;
+  draftGeneratedAt?: string;
+  draftError?: string;
+  postedReply?: string;
+  postedAt?: string;
+  hiddenAt?: string;
+  shortRef: string;
+  telegramSentAt?: string;
+  riskAlertedAt?: string;
+  firstSeenAt: string;
+  updatedAt: string;
+}

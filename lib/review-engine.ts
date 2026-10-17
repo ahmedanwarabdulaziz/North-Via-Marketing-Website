@@ -19,7 +19,7 @@ const DRAFTING_TIME_BUDGET_MS = 35_000;
 const AI_PACE_MS = Number(process.env.GEMINI_REPLY_PACE_MS ?? 4300);
 let lastAiCallAt = 0;
 
-async function paceAiCall() {
+export async function paceAiCall() {
   const wait = lastAiCallAt + AI_PACE_MS - Date.now();
   if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
   lastAiCallAt = Date.now();
@@ -124,7 +124,7 @@ function buildSystemPrompt(settings: GbpReplySettings, businessName: string, rat
 /** Thrown when every model is rate-limited or overloaded; callers should retry on a later run. */
 export class AiBusyError extends Error {}
 
-function isBusyError(error: unknown) {
+export function isBusyError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
   return /\b(429|503)\b|quota|high demand|overloaded/i.test(message);
 }

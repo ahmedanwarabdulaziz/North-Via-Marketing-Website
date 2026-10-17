@@ -8,6 +8,9 @@ import { ReplyStyleCard } from '@/components/admin/ReplyStyleCard';
 import { getReplySettings } from '@/lib/review-engine';
 import { WebsitesCard } from '@/components/admin/WebsitesCard';
 import { listClientWebsites } from '@/lib/website-monitor';
+import { ClientSocialCard } from '@/components/admin/ClientSocialCard';
+import { getMetaConnections, listClientAccounts, metaConfigured } from '@/lib/meta';
+import { socialOverview } from '@/lib/social-sync';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,21 +19,24 @@ export default async function ClientDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ gbp?: string }>;
+  searchParams: Promise<{ gbp?: string; meta?: string }>;
 }) {
   const { id } = await params;
-  const { gbp } = await searchParams;
+  const { gbp, meta } = await searchParams;
   const client = await getClientProfileById(id);
   
   if (!client) {
     notFound();
   }
 
-  const [gbpConnection, gbpLocations, replySettings, websites] = await Promise.all([
+  const [gbpConnection, gbpLocations, replySettings, websites, socialAccounts, metaConnections, socialStats] = await Promise.all([
     getGbpConnection(id).catch(() => null),
     listClientLocations(id).catch(() => []),
     getReplySettings(id),
     listClientWebsites(id).catch(() => []),
+    listClientAccounts(id).catch(() => []),
+    getMetaConnections().catch(() => []),
+    socialOverview().then((all) => all.find((s) => s.clientId === id) || null).catch(() => null),
   ]);
 
 
@@ -80,6 +86,15 @@ export default async function ClientDetailPage({
         />
 
         {gbpConnection && <ReplyStyleCard initial={replySettings} />}
+
+        <ClientSocialCard
+          clientId={id}
+          configured={metaConfigured()}
+          adminConnected={metaConnections.some((c) => c.id === 'admin')}
+          accounts={socialAccounts.map((a) => ({ id: a.id, pageName: a.pageName, igUsername: a.igUsername, lastError: a.lastError }))}
+          stats={socialStats ? { fb: socialStats.fb, ig: socialStats.ig, latest: socialStats.latest, waiting: socialStats.waiting } : null}
+          notice={meta === 'connected' || meta === 'error' ? meta : undefined}
+        />
 
         <WebsitesCard clientId={id} initial={websites} suggestedUrl={client.websiteUrl || undefined} />
 

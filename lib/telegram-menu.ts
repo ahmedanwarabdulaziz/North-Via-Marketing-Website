@@ -3,6 +3,8 @@ import { DIGEST_TIMEZONES } from './digest-schedule-options';
 import { checkReviewsNow, reviewQueueOverview, showWaitingReviews } from './review-telegram';
 import { InlineButton, OutgoingMessage, answerCallback, editMessage, escapeHtml as h, sendMessage } from './telegram';
 import { runWebsiteChecks, websiteOverview, websitesScreenText } from './website-monitor';
+import { listCommentQueue } from './social-sync';
+import { checkSocialNow, showWaitingComments, socialStatsLines } from './social-telegram';
 
 // Main bot menu. Button data is "m:<screen>" or "m:<screen>:<action>".
 // To add a new area (e.g. Tasks, Invoices), add a section here and a screen below.
@@ -19,6 +21,13 @@ const SECTIONS: MenuSection[] = [
     label: async () => {
       const { total } = await reviewQueueOverview();
       return `⭐ Google Reviews${total ? ` (${total} waiting)` : ''}`;
+    },
+  },
+  {
+    id: 'sm',
+    label: async () => {
+      const waiting = (await listCommentQueue()).length;
+      return `📱 Facebook & Instagram${waiting ? ` (${waiting} comments)` : ''}`;
     },
   },
   {
@@ -88,6 +97,26 @@ async function reviewsScreen(note?: string): Promise<OutgoingMessage> {
   };
 }
 
+async function socialScreen(note?: string): Promise<OutgoingMessage> {
+  const lines = await socialStatsLines(true);
+  const text = [
+    '📱 <b>Facebook & Instagram</b>',
+    '',
+    ...(lines.length ? lines : ['No pages connected yet.', 'Connect them on each client’s page in the panel.']),
+    'Checked hourly · risky comments are alerted right away.',
+  ].join('\n').trim();
+  return {
+    text: note ? `${text}\n\n${note}` : text,
+    buttons: [
+      [
+        { text: '📋 Show waiting comments', callback_data: 'm:sm:show' },
+        { text: '🔎 Check now', callback_data: 'm:sm:check' },
+      ],
+      [{ text: '⬅️ Back to menu', callback_data: 'm:home' }],
+    ],
+  };
+}
+
 async function websitesScreen(note?: string): Promise<OutgoingMessage> {
   const { text, panelUrl } = await websitesScreenText();
   return {
@@ -139,6 +168,22 @@ export async function handleMenuCallback(query: { id: string; data?: string; mes
         return answerCallback(query.id, action === 'pause' ? 'Paused' : 'Resumed');
       }
       await editMessage(chatId, messageId, await reviewsScreen());
+      return answerCallback(query.id);
+    }
+
+    if (screen === 'sm') {
+      if (action === 'show') {
+        await answerCallback(query.id, 'Sending waiting comments…');
+        await showWaitingComments(chatId);
+        return;
+      }
+      if (action === 'check') {
+        await answerCallback(query.id, 'Checking Facebook and Instagram…');
+        await checkSocialNow(chatId);
+        await editMessage(chatId, messageId, await socialScreen('🔎 <i>Checked just now.</i>'));
+        return;
+      }
+      await editMessage(chatId, messageId, await socialScreen());
       return answerCallback(query.id);
     }
 
