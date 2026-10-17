@@ -23,6 +23,7 @@ import {
   sendMessage,
   truncate,
 } from './telegram';
+import { whatsAppShareLink } from './whatsapp-share';
 import type { GbpStoredReview } from '@/types/database';
 
 // Telegram review approvals.
@@ -47,8 +48,11 @@ async function clientNameMap() {
 
 // ---------- Message builders ----------
 
+const whatsAppRow = (kind: 'r' | 'b', id: string) => [{ text: '📲 Forward to WhatsApp', url: whatsAppShareLink(kind, id) }];
+
 function reviewCard(review: Review, clientName: string, note?: string): OutgoingMessage {
   const ref = review.shortRef!;
+  const share = [whatsAppRow('r', ref)];
   const lines = [
     `${stars(review.rating)}  <b>${h(clientName)}</b> · ${h(review.locationTitle)}`,
     `<b>${h(review.reviewerName || 'Anonymous')}</b> · ${DATE.format(new Date(review.createTime))}`,
@@ -59,15 +63,15 @@ function reviewCard(review: Review, clientName: string, note?: string): Outgoing
 
   if (review.status === 'posted') {
     lines.push('✅ <b>Posted on Google:</b>', h(truncate(review.postedReply || review.draft || '', 1800)));
-    return { text: lines.join('\n') };
+    return { text: lines.join('\n'), buttons: share };
   }
   if (review.status === 'skipped') {
     lines.push('⏭ <b>Skipped</b> — no reply will be posted.');
-    return { text: lines.join('\n') };
+    return { text: lines.join('\n'), buttons: share };
   }
   if (review.status === 'replied') {
     lines.push('💬 Already has a reply on Google.');
-    return { text: lines.join('\n') };
+    return { text: lines.join('\n'), buttons: share };
   }
 
   if (review.draft) {
@@ -82,7 +86,7 @@ function reviewCard(review: Review, clientName: string, note?: string): Outgoing
     : [{ text: '✏️ Write reply', callback_data: `e:${ref}` }];
   return {
     text: lines.join('\n'),
-    buttons: [firstRow, [{ text: '🔄 Regenerate', callback_data: `g:${ref}` }, { text: '⏭ Skip', callback_data: `s:${ref}` }]],
+    buttons: [firstRow, [{ text: '🔄 Regenerate', callback_data: `g:${ref}` }, { text: '⏭ Skip', callback_data: `s:${ref}` }], ...share],
   };
 }
 
@@ -126,7 +130,7 @@ function groupMessage(batchId: string, clientName: string, reviews: Review[], { 
     buttons: [[
       { text: `✅ Approve all ${total}`, callback_data: `b:${batchId}` },
       { text: '🔍 One by one', callback_data: `x:${batchId}` },
-    ]],
+    ], whatsAppRow('b', batchId)],
   };
 }
 
@@ -174,6 +178,44 @@ async function loadBatch(batchId: string) {
   if (!data) return null;
   const reviews = (await Promise.all(data.reviewIds.map((id) => getStoredReview(id)))).filter((r): r is Review => Boolean(r));
   return { clientName: data.clientName, reviews, lastPartIds: data.lastPartIds || data.reviewIds, parts: data.parts || 1 };
+}
+
+// ---------- WhatsApp text ----------
+
+/** Plain text (WhatsApp formatting) for a review card, from the current data. */
+function reviewWhatsAppText(review: Review, clientName: string) {
+  const reply =
+    review.status === 'posted' ? ['*Posted reply:*', review.postedReply || review.draft || '']
+    : review.status === 'replied' ? ['*Reply on Google:*', review.existingReply || '']
+    : review.draft ? ['*Draft reply:*', review.draft]
+    : ['_No reply drafted yet._'];
+  return [
+    `${stars(review.rating)}  *${clientName}* · ${review.locationTitle || ''}`,
+    `${review.reviewerName || 'Anonymous'} · ${DATE.format(new Date(review.createTime))}`,
+    '',
+    review.comment ? `“${review.comment}”` : '_Rating only, no written review._',
+    '',
+    ...reply,
+  ].join('\n');
+}
+
+/** Text behind a "Forward to WhatsApp" button, or null if the review or list is gone. */
+export async function whatsAppTextFor(kind: 'r' | 'b', id: string) {
+  const names = await clientNameMap();
+  if (kind === 'r') {
+    const review = await findReviewByShortRef(id);
+    return review ? reviewWhatsAppText(review, names.get(review.clientId) || 'Client') : null;
+  }
+  const batch = await loadBatch(id);
+  if (!batch) return null;
+  const items = batch.reviews.map((r, i) =>
+    [
+      `*${i + 1}. ${r.reviewerName || 'Anonymous'}* · ${r.locationTitle || ''}`,
+      r.comment ? `“${r.comment}”` : '_Rating only_',
+      `↳ ${r.status === 'posted' ? r.postedReply || r.draft || '' : r.draft || '_No draft yet_'}`,
+    ].join('\n')
+  );
+  return [`⭐⭐⭐⭐⭐ *${batch.clientName}* — ${batch.reviews.length} five-star review${batch.reviews.length === 1 ? '' : 's'}`, '', items.join('\n\n')].join('\n');
 }
 
 // ---------- Digest ----------
