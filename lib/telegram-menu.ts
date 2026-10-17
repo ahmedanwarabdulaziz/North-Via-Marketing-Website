@@ -11,6 +11,7 @@ import { whatsAppShareLink } from './whatsapp-share';
 import { listClientProfiles } from './admin-ops';
 import { listDocs } from './data/store';
 import { adsScreenText } from './ads-telegram';
+import { analyticsScreenText } from './analytics-telegram';
 
 // Main bot menu. Button data is "m:<screen>" or "m:<screen>:<action>".
 // To add a new area (e.g. Tasks, Invoices), add a section here and a screen below.
@@ -39,6 +40,10 @@ const SECTIONS: MenuSection[] = [
   {
     id: 'ad',
     label: async () => '📈 Google Ads',
+  },
+  {
+    id: 'an',
+    label: async () => '🧭 Website analytics',
   },
   {
     id: 'rp',
@@ -245,6 +250,23 @@ export async function handleMenuCallback(query: { id: string; data?: string; mes
           [
             { text: `${days === 7 ? '✓ ' : ''}📅 7 days`, callback_data: 'm:ad:7' },
             { text: `${days === 30 ? '✓ ' : ''}🗓 30 days`, callback_data: 'm:ad:30' },
+          ],
+          [{ text: '⬅️ Back to menu', callback_data: 'm:home' }],
+        ],
+      });
+      return;
+    }
+
+    if (screen === 'an') {
+      // m:an = last 7 days (saved daily at 10 AM), m:an:30 = last 30 days (read live).
+      const days = action === '30' ? 30 : 7;
+      await answerCallback(query.id, `Loading the last ${days} days…`);
+      await editMessage(chatId, messageId, {
+        text: await analyticsScreenText(days),
+        buttons: [
+          [
+            { text: `${days === 7 ? '✓ ' : ''}📅 7 days`, callback_data: 'm:an:7' },
+            { text: `${days === 30 ? '✓ ' : ''}🗓 30 days`, callback_data: 'm:an:30' },
           ],
           [{ text: '⬅️ Back to menu', callback_data: 'm:home' }],
         ],
