@@ -16,10 +16,8 @@ import { ClientAdsCard } from '@/components/admin/ClientAdsCard';
 import { clientAdsCard } from '@/lib/ads-metrics';
 import { ClientTabs, type ClientTab, type OverviewTile } from '@/components/admin/ClientTabs';
 import { ClientAnalyticsCard } from '@/components/admin/ClientAnalyticsCard';
-import { analyticsConnected, describeGaError, fetchGa4 } from '@/lib/ga4';
+import { analyticsConnected, describeGaError, getGa4Summary, refreshGa4Summary } from '@/lib/ga4';
 import { listClaritySnapshots } from '@/lib/clarity';
-import { cairoDay } from '@/lib/social-sync';
-import { MIN_CONVERSIONS_TO_SHOW } from '@/lib/ads-thresholds';
 
 export const dynamic = 'force-dynamic';
 
@@ -55,21 +53,15 @@ export default async function ClientDetailPage({
   ]);
 
   // ---------- Website analytics (GA4 last 7 days vs the 7 before, latest Clarity day) ----------
-  const day = (offset: number) => cairoDay(new Date(Date.now() - offset * 86_400_000));
   const [gaConnected, claritySnapshots] = await Promise.all([analyticsConnected().catch(() => false), listClaritySnapshots(id).catch(() => [])]);
+  // GA4 is refreshed once a day at 10 AM Cairo; fetched live only when there's no
+  // saved summary yet for this property (e.g. right after choosing it).
   let gaStats = null;
   let gaError: string | undefined;
   if (gaConnected && client.ga4PropertyId) {
     try {
-      const [cur, prev] = await fetchGa4(client.ga4PropertyId, [{ start: day(7), end: day(1) }, { start: day(14), end: day(8) }]);
-      gaStats = {
-        visitors: cur.totals.visitors,
-        visitorsBefore: prev.totals.visitors,
-        sessions: cur.totals.sessions,
-        engagementRate: cur.totals.engagementRate,
-        keyEvents: cur.totals.keyEvents >= MIN_CONVERSIONS_TO_SHOW ? cur.totals.keyEvents : null,
-        topSource: cur.channels[0]?.name,
-      };
+      const saved = await getGa4Summary(id);
+      gaStats = saved?.propertyId === client.ga4PropertyId ? saved : await refreshGa4Summary(id, client.ga4PropertyId);
     } catch (error) {
       gaError = describeGaError(error);
     }

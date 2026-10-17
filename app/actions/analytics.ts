@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { requireAdmin } from '@/lib/admin-auth';
-import { describeGaError, listGa4Properties, setClientGa4Property } from '@/lib/ga4';
+import { describeGaError, listGa4Properties, refreshGa4Summary, setClientGa4Property } from '@/lib/ga4';
 import { removeClarityToken, saveClarityToken } from '@/lib/clarity';
 
 const message = (error: unknown) => (error instanceof Error ? error.message : 'Unexpected error');
@@ -20,6 +20,8 @@ export async function saveGaProperty(clientId: string, propertyId: string | null
   await requireAdmin();
   try {
     await setClientGa4Property(clientId, propertyId);
+    // Fill the card now instead of waiting for tomorrow's 10 AM refresh.
+    if (propertyId) await refreshGa4Summary(clientId, propertyId).catch(() => undefined);
     revalidatePath(`/admin/clients/${clientId}`);
     return { success: true };
   } catch (error) {

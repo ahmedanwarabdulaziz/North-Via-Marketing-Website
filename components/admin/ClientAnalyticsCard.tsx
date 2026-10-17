@@ -101,7 +101,7 @@ export function ClientAnalyticsCard({ clientId, gaConnected, propertyId, gaStats
               Google Analytics (GA4)
             </h3>
             <p className="text-sm text-zinc-500 mt-1">
-              {propertyId ? `Property ${propertyId} · website visitors, sources, top pages and key events in reports.` : 'Website visitors, where they come from, top pages and key events.'}
+              {propertyId ? `Property ${propertyId} · updated daily at 10 AM Cairo · visitors, sources, top pages and key events in reports.` : 'Website visitors, where they come from, top pages and key events.'}
             </p>
           </div>
           <div className="flex flex-col sm:items-end gap-2 shrink-0">
@@ -201,10 +201,10 @@ export function ClientAnalyticsCard({ clientId, gaConnected, propertyId, gaStats
                   <Box label="Rage clicks" value={clarityLatest.rageClickPct !== undefined ? `${clarityLatest.rageClickPct.toFixed(1)}%` : '—'} sub="of sessions" />
                   <Box label="Dead clicks" value={clarityLatest.deadClickPct !== undefined ? `${clarityLatest.deadClickPct.toFixed(1)}%` : '—'} sub="of sessions" />
                 </div>
-                <p className="mt-3 text-xs text-zinc-500">Last saved {clarityLatest.day}. A new snapshot is saved every morning.</p>
+                <p className="mt-3 text-xs text-zinc-500">Last saved {clarityLatest.day}. A new snapshot is saved every day at 10 AM Cairo.</p>
               </>
             ) : (
-              <p className="text-sm text-zinc-500">Connected. The first daily snapshot arrives tomorrow morning.</p>
+              <p className="text-sm text-zinc-500">Connected. The next daily snapshot is saved at 10 AM Cairo.</p>
             )}
           </div>
         ) : (

@@ -10,7 +10,7 @@ import { allowedChatIds, escapeHtml as h, sendMessage } from './telegram';
 
 const API = 'https://www.clarity.ms/export-data/api/v1/project-live-insights';
 const DAILY = 'clarity_daily' as const;
-const CAPTURE_FROM_HOUR = 6; // Cairo; the snapshot is taken on the first hourly run after this
+const CAPTURE_FROM_HOUR = 10; // Cairo; the snapshot is taken on the first hourly run at or after 10 AM
 
 export interface ClaritySnapshot {
   clientId: string;
@@ -109,7 +109,7 @@ export async function listClaritySnapshots(clientId: string) {
 
 // ---------- Daily capture and alerts (run on n8n's hourly call) ----------
 
-/** One snapshot per client per Cairo day, taken on the first hourly run after 6 AM. */
+/** One snapshot per client per Cairo day, taken on the first hourly run at or after 10 AM. */
 export async function captureClarityDaily(now = new Date()) {
   const hour = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Africa/Cairo', hour: '2-digit', hourCycle: 'h23' }).format(now));
   if (hour < CAPTURE_FROM_HOUR) return { captured: 0, alerts: 0, errors: [] as string[] };

@@ -6,6 +6,7 @@ import { runWebsiteChecks } from '@/lib/website-monitor';
 import { syncSocial } from '@/lib/social-sync';
 import { sendCommentDigest, sendRiskAlerts } from '@/lib/social-telegram';
 import { captureClarityDaily } from '@/lib/clarity';
+import { captureGa4Daily } from '@/lib/ga4';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -29,8 +30,10 @@ export async function POST(request: Request) {
         console.error('Website checks failed:', error);
         return { error: error instanceof Error ? error.message : 'Website checks failed' };
       });
-      // One Clarity snapshot per client each morning (its API keeps only ~3 days).
-      const clarityRun = captureClarityDaily().catch((error) => ({ error: error instanceof Error ? error.message : 'Clarity capture failed' }));
+      // Clarity snapshot and GA4 summary once a day, on the first run at or after 10 AM Cairo.
+      const clarityRun = Promise.all([captureClarityDaily(), captureGa4Daily()])
+        .then(([clarity, ga4]) => ({ ...clarity, ga4 }))
+        .catch((error) => ({ error: error instanceof Error ? error.message : 'Daily analytics capture failed' }));
       const socialRun = syncSocial({ timeBudgetMs: 30_000 })
         .then(async (summary) => ({ ...summary, risky: summary.risky.length, alerted: await sendRiskAlerts(summary.risky) }))
         .catch((error) => {

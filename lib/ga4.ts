@@ -1,5 +1,6 @@
 import { google } from 'googleapis';
-import { getDoc, updateDoc } from './data/store';
+import { getDoc, getSetting, listDocs, setSetting, updateDoc } from './data/store';
+import { MIN_CONVERSIONS_TO_SHOW } from './ads-thresholds';
 import { decryptString } from './encryption';
 import { googleRedirectUri } from './google-oauth';
 
@@ -132,4 +133,74 @@ export async function fetchGa4(propertyId: string, ranges: Array<{ start: string
           : [],
     };
   });
+}
+
+// ---------- Daily summary (10 AM Cairo, from n8n's hourly call) ----------
+
+
+export interface Ga4Summary {
+  visitors: number;
+  visitorsBefore: number;
+  sessions: number;
+  engagementRate: number;
+  keyEvents: number | null; // null when below the threshold worth showing
+  topSource?: string;
+  propertyId: string;
+  capturedAt: string;
+}
+
+const GA_DAILY_FROM_HOUR = 10;
+const cairo = (date: Date) => {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hourCycle: 'h23' })
+      .formatToParts(date)
+      .map((p) => [p.type, p.value])
+  );
+  return { day: `${parts.year}-${parts.month}-${parts.day}`, hour: Number(parts.hour) };
+};
+const cairoDayOffset = (offset: number) => cairo(new Date(Date.now() - offset * 86_400_000)).day;
+
+/** Last 7 days vs the 7 before for one property, saved for the client page. */
+export async function refreshGa4Summary(clientId: string, propertyId: string) {
+  const [cur, prev] = await fetchGa4(propertyId, [
+    { start: cairoDayOffset(7), end: cairoDayOffset(1) },
+    { start: cairoDayOffset(14), end: cairoDayOffset(8) },
+  ]);
+  const summary: Ga4Summary = {
+    visitors: cur.totals.visitors,
+    visitorsBefore: prev.totals.visitors,
+    sessions: cur.totals.sessions,
+    engagementRate: cur.totals.engagementRate,
+    keyEvents: cur.totals.keyEvents >= MIN_CONVERSIONS_TO_SHOW ? cur.totals.keyEvents : null,
+    topSource: cur.channels[0]?.name,
+    propertyId,
+    capturedAt: new Date().toISOString(),
+  };
+  await setSetting(`ga4_summary:${clientId}`, summary);
+  return summary;
+}
+
+export async function getGa4Summary(clientId: string) {
+  return getSetting<Ga4Summary>(`ga4_summary:${clientId}`);
+}
+
+/** Once per Cairo day, on the first hourly run at or after 10 AM. */
+export async function captureGa4Daily(now = new Date()) {
+  const { day, hour } = cairo(now);
+  if (hour < GA_DAILY_FROM_HOUR) return { refreshed: 0, errors: [] as string[] };
+  const marker = await getSetting<{ day?: string }>('ga4_daily_run');
+  if (marker?.day === day || !(await analyticsConnected())) return { refreshed: 0, errors: [] as string[] };
+  const clients = (await listDocs<{ brandName: string; ga4PropertyId?: string }>('clients')).filter((c) => c.ga4PropertyId);
+  let refreshed = 0;
+  const errors: string[] = [];
+  for (const c of clients) {
+    try {
+      await refreshGa4Summary(c.id, c.ga4PropertyId!);
+      refreshed++;
+    } catch (error) {
+      errors.push(`${c.brandName}: ${describeGaError(error)}`);
+    }
+  }
+  await setSetting('ga4_daily_run', { day, refreshed, errors });
+  return { refreshed, errors };
 }
