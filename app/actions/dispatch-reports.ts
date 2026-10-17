@@ -1,7 +1,7 @@
 'use server';
 
 import { requireAdmin } from '@/lib/admin-auth';
-import { db } from '@/lib/firebase';
+import { addDoc } from '@/lib/data/store';
 import { generateExecutiveSummary } from './generate-report';
 import { dispatchClientReportEmail } from './email-report';
 
@@ -15,17 +15,17 @@ export async function generateDraftInsights(
   await requireAdmin();
   try {
     const draftResults = [];
-    
+
     for (const stream of streams) {
       const { account } = stream;
       const { summary, error } = await generateExecutiveSummary(
         stream, account.descriptiveName, timeframe, bounds, crmClient
       );
-      
-      draftResults.push({ 
-        customerId: account.customerId, 
-        summary: summary || {}, 
-        summaryError: error 
+
+      draftResults.push({
+        customerId: account.customerId,
+        summary: summary || {},
+        summaryError: error
       });
 
       // Inject a 1.5 second architectural delay between nodes to prevent Gemini Free-Tier burst rate limits
@@ -63,7 +63,7 @@ export async function regenerateSingleDraft(
 // 2. Used to permanently save the structurally verified UI array into the database and email it natively!
 export async function storeSnapshotAndDispatchEmail(
   clientId: string,
-  resolvedStreams: Array<any>, 
+  resolvedStreams: Array<any>,
   timeframe: string,
   bounds: any,
   crmClient?: any
@@ -95,8 +95,7 @@ export async function storeSnapshotAndDispatchEmail(
       fetchedAt: new Date().toISOString()
     };
 
-    const docRef = await db.collection('ads_reports_snapshots').add(snapshotPayload);
-    const snapshotId = docRef.id;
+    const snapshotId = await addDoc('ads_reports_snapshots', snapshotPayload);
 
     const emailRes = await dispatchClientReportEmail({
       clientId: clientId,

@@ -1,5 +1,5 @@
 import { checkGoogleAdsConnection } from '@/app/actions/google-ads';
-import { db } from '@/lib/firebase';
+import { listDocs } from '@/lib/data/store';
 import { listClientProfiles } from '@/lib/admin-ops';
 import { GoogleAdsManager } from '@/components/admin/GoogleAdsManager';
 import { TelegramBotCard } from '@/components/admin/TelegramBotCard';
@@ -10,14 +10,10 @@ export const dynamic = 'force-dynamic';
 
 export default async function SettingsPage() {
   const { isConnected } = await checkGoogleAdsConnection();
-  
+
   let accounts: GoogleAdsAccount[] = [];
   if (isConnected) {
-    const snapshot = await db.collection('google_ads_accounts').get();
-    accounts = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    })) as GoogleAdsAccount[];
+    accounts = await listDocs<GoogleAdsAccount>('google_ads_accounts');
   }
 
   const clients = await listClientProfiles();
@@ -34,10 +30,10 @@ export default async function SettingsPage() {
 
       <TelegramBotCard />
 
-      <GoogleAdsManager 
-        isConnected={isConnected} 
-        accounts={accounts} 
-        clients={clients} 
+      <GoogleAdsManager
+        isConnected={isConnected}
+        accounts={accounts}
+        clients={clients}
       />
     </div>
   );

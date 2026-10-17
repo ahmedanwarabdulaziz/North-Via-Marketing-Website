@@ -1,12 +1,12 @@
 import crypto from 'crypto';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { db } from './firebase';
+import { getDoc, getDocs, getSetting, listDocs, setDoc, setDocs, setSetting, updateDoc } from './data/store';
 import { GBP_LOCATIONS, fetchLocationReviews, listLinkedLocations, publishReviewReply } from './google-business';
 import { LANGUAGE_OPTIONS, LENGTH_OPTIONS, TONE_OPTIONS, defaultReplySettings } from './review-reply-options';
 import type { GbpLocation, GbpReplySettings, GbpReview, GbpStoredReview } from '@/types/database';
 
-export const GBP_REVIEWS = 'gbp_reviews';
-export const GBP_REPLY_SETTINGS = 'gbp_reply_settings';
+export const GBP_REVIEWS = 'gbp_reviews' as const;
+export const GBP_REPLY_SETTINGS = 'gbp_reply_settings' as const;
 export const GBP_SYNC_STATUS = 'gbp_sync_status';
 
 const MAX_REPLY_LENGTH = 4000;
@@ -28,8 +28,8 @@ async function paceAiCall() {
 const STAR_VALUES: Record<string, number> = { ONE: 1, TWO: 2, THREE: 3, FOUR: 4, FIVE: 5 };
 
 export async function getReplySettings(clientId: string): Promise<GbpReplySettings> {
-  const doc = await db.collection(GBP_REPLY_SETTINGS).doc(clientId).get();
-  return { ...defaultReplySettings(clientId), ...(doc.exists ? (doc.data() as GbpReplySettings) : {}) };
+  const stored = await getDoc<GbpReplySettings>(GBP_REPLY_SETTINGS, clientId);
+  return { ...defaultReplySettings(clientId), ...(stored || {}) };
 }
 
 function pick<T extends string>(value: unknown, allowed: Array<{ value: T }>, fallback: T): T {
@@ -58,7 +58,12 @@ export async function saveReplySettings(input: GbpReplySettings) {
     extraInstructions: text(input.extraInstructions, 800),
     updatedAt: new Date().toISOString(),
   };
-  await db.collection(GBP_REPLY_SETTINGS).doc(settings.clientId).set(settings);
+  await setDoc(GBP_REPLY_SETTINGS, settings.clientId, settings);
+}
+
+async function clientBrandName(clientId: string) {
+  const client = await getDoc<{ brandName?: string }>('clients', clientId);
+  return client?.brandName || '';
 }
 
 // ---------- AI drafting ----------
@@ -248,19 +253,18 @@ export async function syncAllReviews(options: { maxDrafts?: number } = {}): Prom
 
     if (!settingsCache.has(location.clientId)) {
       settingsCache.set(location.clientId, await getReplySettings(location.clientId));
-      const client = await db.collection('clients').doc(location.clientId).get();
-      businessNames.set(location.clientId, (client.data()?.brandName as string) || location.title);
+      businessNames.set(location.clientId, (await clientBrandName(location.clientId)) || location.title);
     }
     const settings = settingsCache.get(location.clientId)!;
 
-    // One batched read and one batched write per location keeps Firestore round-trips constant.
-    const refs = reviews.map((review) => db.collection(GBP_REVIEWS).doc(reviewIdOf(review)));
-    const snaps = refs.length ? await db.getAll(...refs) : [];
-    const batch = db.batch();
+    // One batched read and one batched write per location keeps database round-trips constant.
+    const stored = await getDocs<GbpStoredReview>(GBP_REVIEWS, reviews.map(reviewIdOf));
+    const writes: Array<{ id: string; data: object }> = [];
+    const write = (id: string, data: object) => writes.push({ id, data });
 
-    for (const [i, review] of reviews.entries()) {
-      const ref = refs[i];
-      const existing = snaps[i].exists ? (snaps[i].data() as GbpStoredReview) : null;
+    for (const review of reviews) {
+      const ref = reviewIdOf(review);
+      const existing = stored.get(ref) || null;
       const now = new Date().toISOString();
       const base = {
         ...toStored(review),
@@ -274,11 +278,11 @@ export async function syncAllReviews(options: { maxDrafts?: number } = {}): Prom
       if (!existing) newReviews++;
 
       if (review.reviewReply) {
-        batch.set(ref, {
+        write(ref, {
           ...base,
           status: existing?.status === 'posted' ? 'posted' : 'replied',
           existingReply: review.reviewReply.comment,
-        }, { merge: true });
+        });
         continue;
       }
 
@@ -287,37 +291,36 @@ export async function syncAllReviews(options: { maxDrafts?: number } = {}): Prom
 
       const needsDraft = !existing?.draft || reviewChanged || existing.status === 'posted' || existing.status === 'replied';
       if (!needsDraft) {
-        batch.set(ref, base, { merge: true });
+        write(ref, base);
         continue;
       }
 
       if (aiBusy || draftsCreated >= maxDrafts || Date.now() > deadline) {
         draftsDeferred++;
-        batch.set(ref, { ...base, status: 'needs_draft', draftError: null }, { merge: true });
+        write(ref, { ...base, status: 'needs_draft', draftError: null });
         continue;
       }
 
       try {
         const draft = await generateReplyDraft(settings, businessNames.get(location.clientId)!, base);
         draftsCreated++;
-        batch.set(ref, { ...base, status: 'draft_ready', draft, draftGeneratedAt: now, draftError: null, telegramSentAt: null }, { merge: true });
+        write(ref, { ...base, status: 'draft_ready', draft, draftGeneratedAt: now, draftError: null, telegramSentAt: null });
       } catch (error) {
         if (error instanceof AiBusyError) {
           aiBusy = true;
           draftsDeferred++;
         }
-        batch.set(ref, {
+        write(ref, {
           ...base,
           status: 'needs_draft',
           draftError: error instanceof Error ? error.message : String(error),
-        }, { merge: true });
+        });
       }
     }
-    await batch.commit();
+    await setDocs(GBP_REVIEWS, writes, { merge: true });
   }
 
-  const pending = await db.collection(GBP_REVIEWS).where('status', 'in', ['draft_ready', 'needs_draft']).get();
-  const pendingReviews = pending.docs.map((d) => d.data() as GbpStoredReview);
+  const pendingReviews = await listDocs<GbpStoredReview>(GBP_REVIEWS, { where: { status: ['draft_ready', 'needs_draft'] } });
 
   const summary: SyncSummary = {
     startedAt,
@@ -333,27 +336,25 @@ export async function syncAllReviews(options: { maxDrafts?: number } = {}): Prom
     errors,
   };
 
-  await db.collection(GBP_SYNC_STATUS).doc('latest').set(summary);
+  await setSetting(GBP_SYNC_STATUS, summary);
   return summary;
 }
 
 // ---------- Review actions ----------
 
 export async function getStoredReview(reviewId: string) {
-  const doc = await db.collection(GBP_REVIEWS).doc(reviewId).get();
-  return doc.exists ? ({ ...(doc.data() as GbpStoredReview), id: doc.id }) : null;
+  return getDoc<GbpStoredReview>(GBP_REVIEWS, reviewId);
 }
 
 export async function findReviewByShortRef(shortRef: string) {
-  const snapshot = await db.collection(GBP_REVIEWS).where('shortRef', '==', shortRef).limit(1).get();
-  const doc = snapshot.docs[0];
-  return doc ? ({ ...(doc.data() as GbpStoredReview), id: doc.id }) : null;
+  const [review] = await listDocs<GbpStoredReview>(GBP_REVIEWS, { where: { shortRef }, limit: 1 });
+  return review || null;
 }
 
 export async function setReviewDraft(reviewId: string, draft: string) {
   const text = draft.trim().slice(0, MAX_REPLY_LENGTH);
   if (!text) throw new Error('Reply cannot be empty.');
-  await db.collection(GBP_REVIEWS).doc(reviewId).update({
+  await updateDoc(GBP_REVIEWS, reviewId, {
     draft: text,
     status: 'draft_ready',
     draftError: null,
@@ -363,7 +364,7 @@ export async function setReviewDraft(reviewId: string, draft: string) {
 }
 
 export async function skipStoredReview(reviewId: string) {
-  await db.collection(GBP_REVIEWS).doc(reviewId).update({ status: 'skipped', updatedAt: new Date().toISOString() });
+  await updateDoc(GBP_REVIEWS, reviewId, { status: 'skipped', updatedAt: new Date().toISOString() });
 }
 
 /**
@@ -372,9 +373,7 @@ export async function skipStoredReview(reviewId: string) {
  */
 export async function draftBacklog(options: { timeBudgetMs?: number } = {}) {
   const deadline = Date.now() + (options.timeBudgetMs ?? 40_000);
-  const snapshot = await db.collection(GBP_REVIEWS).where('status', '==', 'needs_draft').get();
-  const waiting = snapshot.docs
-    .map((d) => ({ ...(d.data() as GbpStoredReview), id: d.id }))
+  const waiting = (await listDocs<GbpStoredReview>(GBP_REVIEWS, { where: { status: 'needs_draft' } }))
     // Complaints first, then newest.
     .sort((a, b) => (a.rating || 6) - (b.rating || 6) || b.createTime.localeCompare(a.createTime));
 
@@ -388,13 +387,12 @@ export async function draftBacklog(options: { timeBudgetMs?: number } = {}) {
 
     if (!settingsCache.has(review.clientId)) {
       settingsCache.set(review.clientId, await getReplySettings(review.clientId));
-      const client = await db.collection('clients').doc(review.clientId).get();
-      nameCache.set(review.clientId, (client.data()?.brandName as string) || review.locationTitle);
+      nameCache.set(review.clientId, (await clientBrandName(review.clientId)) || review.locationTitle);
     }
 
     try {
       const draft = await generateReplyDraft(settingsCache.get(review.clientId)!, nameCache.get(review.clientId)!, review);
-      await db.collection(GBP_REVIEWS).doc(review.id).update({
+      await updateDoc(GBP_REVIEWS, review.id, {
         draft,
         status: 'draft_ready',
         draftGeneratedAt: new Date().toISOString(),
@@ -404,7 +402,7 @@ export async function draftBacklog(options: { timeBudgetMs?: number } = {}) {
       });
       drafted++;
     } catch (error) {
-      await db.collection(GBP_REVIEWS).doc(review.id).update({
+      await updateDoc(GBP_REVIEWS, review.id, {
         draftError: error instanceof Error ? error.message : String(error),
         updatedAt: new Date().toISOString(),
       });
@@ -419,9 +417,8 @@ export async function regenerateReviewDraft(reviewId: string) {
   const review = await getStoredReview(reviewId);
   if (!review) throw new Error('Review not found.');
   const settings = await getReplySettings(review.clientId);
-  const client = await db.collection('clients').doc(review.clientId).get();
-  const draft = await generateReplyDraft(settings, (client.data()?.brandName as string) || review.locationTitle, review);
-  await db.collection(GBP_REVIEWS).doc(reviewId).update({
+  const draft = await generateReplyDraft(settings, (await clientBrandName(review.clientId)) || review.locationTitle, review);
+  await updateDoc(GBP_REVIEWS, reviewId, {
     draft,
     status: 'draft_ready',
     draftGeneratedAt: new Date().toISOString(),
@@ -441,13 +438,12 @@ export async function postApprovedReply(reviewId: string, text: string) {
   if (!review) throw new Error('Review not found.');
   if (review.status === 'posted' || review.status === 'replied') throw new Error('This review already has a reply.');
 
-  const locationDoc = await db.collection(GBP_LOCATIONS).doc(review.locationId).get();
-  if (!locationDoc.exists) throw new Error('Location not found.');
-  const location = locationDoc.data() as GbpLocation;
+  const location = await getDoc<GbpLocation>(GBP_LOCATIONS, review.locationId);
+  if (!location) throw new Error('Location not found.');
   if (!location.linked) throw new Error('This location is not enabled for review management.');
 
   await publishReviewReply(location, review.reviewName, reply);
-  await db.collection(GBP_REVIEWS).doc(reviewId).update({
+  await updateDoc(GBP_REVIEWS, reviewId, {
     status: 'posted',
     postedReply: reply,
     postedAt: new Date().toISOString(),
@@ -456,15 +452,13 @@ export async function postApprovedReply(reviewId: string, text: string) {
 }
 
 export async function listReviewQueue() {
-  const snapshot = await db.collection(GBP_REVIEWS).where('status', 'in', ['draft_ready', 'needs_draft', 'posted', 'skipped']).get();
-  return snapshot.docs
-    .map((d) => ({ ...(d.data() as GbpStoredReview), id: d.id }))
+  const reviews = await listDocs<GbpStoredReview>(GBP_REVIEWS, { where: { status: ['draft_ready', 'needs_draft', 'posted', 'skipped'] } });
+  return reviews
     .sort((a, b) => b.createTime.localeCompare(a.createTime));
 }
 
 export async function getLatestSyncSummary() {
-  const doc = await db.collection(GBP_SYNC_STATUS).doc('latest').get();
-  return doc.exists ? (doc.data() as SyncSummary) : null;
+  return getSetting<SyncSummary>(GBP_SYNC_STATUS);
 }
 
 /**

@@ -1,9 +1,9 @@
-import { db } from './firebase';
+import { getSetting, setSetting } from './data/store';
 import { DIGEST_TIMEZONES } from './digest-schedule-options';
 
 // When the Telegram review digest goes out. n8n calls the digest endpoint every hour;
 // the endpoint only runs at the hours/days chosen here, so times are set from the panel.
-const DOC = () => db.collection('gbp_settings').doc('telegram_digest');
+const SETTING_KEY = 'telegram_digest';
 
 export interface DigestSchedule {
   enabled: boolean;
@@ -22,8 +22,8 @@ export const DEFAULT_DIGEST_SCHEDULE: DigestSchedule = {
 };
 
 export async function getDigestSchedule(): Promise<DigestSchedule> {
-  const doc = await DOC().get();
-  return { ...DEFAULT_DIGEST_SCHEDULE, ...(doc.exists ? (doc.data() as DigestSchedule) : {}) };
+  const stored = await getSetting<DigestSchedule>(SETTING_KEY);
+  return { ...DEFAULT_DIGEST_SCHEDULE, ...(stored || {}) };
 }
 
 export async function saveDigestSchedule(input: Pick<DigestSchedule, 'enabled' | 'hours' | 'days' | 'timezone'>) {
@@ -40,7 +40,7 @@ export async function saveDigestSchedule(input: Pick<DigestSchedule, 'enabled' |
   if (schedule.enabled && (schedule.hours.length === 0 || schedule.days.length === 0)) {
     throw new Error('Pick at least one time and one day, or turn the digest off.');
   }
-  await DOC().set(schedule, { merge: true });
+  await setSetting(SETTING_KEY, schedule, { merge: true });
   return schedule;
 }
 
@@ -78,7 +78,7 @@ export async function checkScheduledRun(now = new Date()) {
 
 /** Recorded only after a successful run, so an n8n retry after a failure still sends. */
 export async function markScheduledRun(runKey: string) {
-  await DOC().set({ lastRunKey: runKey }, { merge: true });
+  await setSetting(SETTING_KEY, { lastRunKey: runKey }, { merge: true });
 }
 
 /** Next scheduled send time, for display. */

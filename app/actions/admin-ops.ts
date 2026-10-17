@@ -3,7 +3,7 @@
 import { requireAdmin } from '@/lib/admin-auth';
 import nodemailer from 'nodemailer';
 import { revalidatePath } from 'next/cache';
-import { db } from '@/lib/firebase';
+import { addDoc, getDoc, listDocs, updateDoc } from '@/lib/data/store';
 import { getAdminCollectionNames, getAdminInvoiceById, getClientProfileById } from '@/lib/admin-ops';
 import {
   buildInvoiceNumber,
@@ -238,19 +238,11 @@ function buildNextInvoiceDraftFromInvoice(invoice: AdminInvoiceItem) {
 }
 
 async function findInvoiceByClientAndMonth(clientId: string, monthKey: string) {
-  const snapshot = await db
-    .collection(collections.invoices)
-    .where('clientId', '==', clientId)
-    .where('serviceMonthKey', '==', monthKey)
-    .limit(1)
-    .get();
-
-  if (snapshot.empty) return null;
-  const doc = snapshot.docs[0];
-  return {
-    id: doc.id,
-    ...(doc.data() as Record<string, any>),
-  } as AdminInvoiceItem;
+  const [invoice] = await listDocs<AdminInvoiceItem>(collections.invoices, {
+    where: { clientId, serviceMonthKey: monthKey },
+    limit: 1,
+  });
+  return invoice || null;
 }
 
 async function ensureNextInvoiceDraft(invoice: AdminInvoiceItem) {
@@ -261,7 +253,7 @@ async function ensureNextInvoiceDraft(invoice: AdminInvoiceItem) {
   if (existing) return;
 
   const timestamp = nowIso();
-  await db.collection(collections.invoices).add({
+  await addDoc(collections.invoices, {
     ...nextDraft,
     createdAt: timestamp,
     updatedAt: timestamp,
@@ -288,7 +280,7 @@ export async function createAdminTask(formData: FormData) {
       updatedAt: timestamp,
     };
 
-    await db.collection(collections.tasks).add(payload);
+    await addDoc(collections.tasks, payload);
     refreshAdminPages();
     return { success: true };
   } catch (error: any) {
@@ -304,7 +296,7 @@ export async function updateAdminTaskStatus(formData: FormData) {
     const status = valueAsString(formData.get('status'));
     if (!id || !status) return { success: false, error: 'Task id and status are required.' };
 
-    await db.collection(collections.tasks).doc(id).update({
+    await updateDoc(collections.tasks, id, {
       status,
       updatedAt: nowIso(),
     });
@@ -345,7 +337,7 @@ export async function createAdminFollowUp(formData: FormData) {
       updatedAt: timestamp,
     };
 
-    await db.collection(collections.followUps).add(payload);
+    await addDoc(collections.followUps, payload);
     refreshAdminPages();
     return { success: true };
   } catch (error: any) {
@@ -370,7 +362,7 @@ export async function updateAdminFollowUpStatus(formData: FormData) {
       updateData.lastContactDate = new Date().toISOString().slice(0, 10);
     }
 
-    await db.collection(collections.followUps).doc(id).update(updateData);
+    await updateDoc(collections.followUps, id, updateData);
     refreshAdminPages();
     return { success: true };
   } catch (error: any) {
@@ -386,7 +378,7 @@ export async function createAdminReportItem(formData: FormData) {
     if (!clientName) return { success: false, error: 'Client name is required.' };
 
     const timestamp = nowIso();
-    await db.collection(collections.reports).add({
+    await addDoc(collections.reports, {
       clientName,
       reportType: valueAsString(formData.get('reportType')) || 'custom',
       reportingPeriod: optionalString(formData.get('reportingPeriod')),
@@ -424,7 +416,7 @@ export async function updateAdminReportStatus(formData: FormData) {
       payload.sentDate = new Date().toISOString().slice(0, 10);
     }
 
-    await db.collection(collections.reports).doc(id).update(payload);
+    await updateDoc(collections.reports, id, payload);
     refreshAdminPages();
     return { success: true };
   } catch (error: any) {
@@ -461,21 +453,21 @@ export async function createAdminInvoiceItem(formData: FormData) {
       status: (valueAsString(formData.get('status')) || 'draft') as InvoiceItemStatus,
     });
 
-    const docRef = await db.collection(collections.invoices).add({
+    const newInvoiceId = await addDoc(collections.invoices, {
       ...payload,
       createdAt: timestamp,
       updatedAt: timestamp,
     });
 
     await ensureNextInvoiceDraft({
-      id: docRef.id,
+      id: newInvoiceId,
       ...payload,
       createdAt: timestamp,
       updatedAt: timestamp,
     });
 
     refreshAdminPages();
-    return { success: true, invoiceId: docRef.id };
+    return { success: true, invoiceId: newInvoiceId };
   } catch (error: any) {
     console.error('Failed to create invoice item:', error);
     return { success: false, error: error.message || 'Failed to create invoice item.' };
@@ -545,7 +537,7 @@ export async function saveAdminInvoiceItem(formData: FormData) {
       updatedAt: nowIso(),
     } satisfies Partial<AdminInvoiceItem>;
 
-    await db.collection(collections.invoices).doc(id).update(payload);
+    await updateDoc(collections.invoices, id, payload);
 
     const savedInvoice: AdminInvoiceItem = {
       ...existingInvoice,
@@ -580,7 +572,7 @@ export async function updateAdminInvoiceStatus(formData: FormData) {
       payload.paidDate = new Date().toISOString().slice(0, 10);
     }
 
-    await db.collection(collections.invoices).doc(id).update(payload);
+    await updateDoc(collections.invoices, id, payload);
     refreshAdminPages();
     return { success: true };
   } catch (error: any) {
@@ -595,13 +587,8 @@ export async function sendAdminInvoiceEmail(formData: FormData) {
     const id = valueAsString(formData.get('id'));
     if (!id) return { success: false, error: 'Invoice id is required.' };
 
-    const doc = await db.collection(collections.invoices).doc(id).get();
-    if (!doc.exists) return { success: false, error: 'Invoice not found.' };
-
-    const invoice = {
-      id: doc.id,
-      ...(doc.data() as Record<string, any>),
-    } as AdminInvoiceItem;
+    const invoice = await getDoc<AdminInvoiceItem>(collections.invoices, id);
+    if (!invoice) return { success: false, error: 'Invoice not found.' };
 
     if (!invoice.recipientEmail) {
       return { success: false, error: 'Recipient email is missing for this invoice.' };
@@ -664,7 +651,7 @@ export async function sendAdminInvoiceEmail(formData: FormData) {
       ],
     });
 
-    await db.collection(collections.invoices).doc(id).update({
+    await updateDoc(collections.invoices, id, {
       status: 'sent',
       sentDate: new Date().toISOString().slice(0, 10),
       updatedAt: nowIso(),

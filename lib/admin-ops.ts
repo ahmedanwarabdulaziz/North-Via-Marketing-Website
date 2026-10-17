@@ -1,5 +1,4 @@
-import type { firestore } from 'firebase-admin';
-import { db } from '@/lib/firebase';
+import { addDoc, getDoc, listDocs, newId, nextInvoiceSequence, updateDoc, type Table } from '@/lib/data/store';
 import type {
   AdminFollowUpItem,
   AdminInvoiceItem,
@@ -8,22 +7,14 @@ import type {
   ClientProfile,
 } from '@/types/database';
 
-const TASKS_COLLECTION = 'admin_tasks';
-const FOLLOWUPS_COLLECTION = 'admin_followups';
-const REPORTS_COLLECTION = 'admin_reports';
-const INVOICES_COLLECTION = 'admin_invoices';
+const TASKS_COLLECTION: Table = 'admin_tasks';
+const FOLLOWUPS_COLLECTION: Table = 'admin_followups';
+const REPORTS_COLLECTION: Table = 'admin_reports';
+const INVOICES_COLLECTION: Table = 'admin_invoices';
 
-function normalizeDoc<T>(doc: firestore.QueryDocumentSnapshot | firestore.DocumentSnapshot) {
-  return {
-    id: doc.id,
-    ...(doc.data() as T),
-  } as T & { id: string };
-}
-
-async function safeQuery<T>(collectionName: string, orderField: string) {
+async function safeQuery<T>(collectionName: Table, orderField: string) {
   try {
-    const snapshot = await db.collection(collectionName).orderBy(orderField, 'asc').get();
-    return snapshot.docs.map((doc) => normalizeDoc<T>(doc));
+    return await listDocs<T>(collectionName, { orderBy: orderField });
   } catch (error) {
     console.error(`Failed to query ${collectionName} ordered by ${orderField}:`, error);
     return [] as Array<T & { id: string }>;
@@ -59,9 +50,7 @@ export async function listClientProfiles() {
 
 export async function getClientProfileById(clientId: string) {
   try {
-    const doc = await db.collection('clients').doc(clientId).get();
-    if (!doc.exists) return null;
-    return normalizeDoc<ClientProfile>(doc);
+    return await getDoc<ClientProfile>('clients', clientId);
   } catch (error) {
     console.error(`Failed to load client ${clientId}:`, error);
     return null;
@@ -70,9 +59,7 @@ export async function getClientProfileById(clientId: string) {
 
 export async function getAdminInvoiceById(invoiceId: string) {
   try {
-    const doc = await db.collection(INVOICES_COLLECTION).doc(invoiceId).get();
-    if (!doc.exists) return null;
-    return normalizeDoc<AdminInvoiceItem>(doc);
+    return await getDoc<AdminInvoiceItem>(INVOICES_COLLECTION, invoiceId);
   } catch (error) {
     console.error(`Failed to load invoice ${invoiceId}:`, error);
     return null;
@@ -89,26 +76,9 @@ export function getAdminCollectionNames() {
 }
 
 export async function getNextInvoiceNumber(): Promise<string> {
-  const metadataRef = db.collection('admin_metadata').doc('invoices');
-  
   try {
-    const nextNumber = await db.runTransaction(async (transaction) => {
-      const doc = await transaction.get(metadataRef);
-      let nextSeq = 1;
-      
-      if (doc.exists) {
-        const data = doc.data();
-        if (data?.lastInvoiceSequence) {
-          nextSeq = data.lastInvoiceSequence + 1;
-        }
-      }
-      
-      transaction.set(metadataRef, { lastInvoiceSequence: nextSeq }, { merge: true });
-      return nextSeq;
-    });
-    
-    // Format as 6 digit number like 032001
-    return String(nextNumber).padStart(6, '0');
+    // Atomic database sequence, formatted as a 6 digit number like 032001
+    return await nextInvoiceSequence();
   } catch (error) {
     console.error('Failed to generate invoice number:', error);
     return `INV-${Date.now()}`;
@@ -118,26 +88,25 @@ export async function getNextInvoiceNumber(): Promise<string> {
 export async function createAdminInvoice(data: Omit<AdminInvoiceItem, 'id' | 'createdAt' | 'updatedAt' | 'invoiceNumber'>) {
   const invoiceNumber = await getNextInvoiceNumber();
   
-  const docRef = db.collection(INVOICES_COLLECTION).doc();
+  const id = newId();
   const now = new Date().toISOString();
   
   const invoice: AdminInvoiceItem = {
     ...data,
-    id: docRef.id,
+    id,
     invoiceNumber,
     createdAt: now,
     updatedAt: now,
   };
   
-  await docRef.set(invoice);
+  await addDoc(INVOICES_COLLECTION, invoice, id);
   return invoice;
 }
 
 export async function updateAdminInvoice(invoiceId: string, data: Partial<Omit<AdminInvoiceItem, 'id' | 'createdAt' | 'updatedAt'>>) {
-  const docRef = db.collection(INVOICES_COLLECTION).doc(invoiceId);
   const now = new Date().toISOString();
   
-  await docRef.update({
+  await updateDoc(INVOICES_COLLECTION, invoiceId, {
     ...data,
     updatedAt: now,
   });

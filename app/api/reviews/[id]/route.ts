@@ -1,4 +1,4 @@
-import { db } from '@/lib/firebase';
+import { updateDoc } from '@/lib/data/store';
 import { isAutomationRequest, unauthorized } from '@/lib/automation-auth';
 import { GBP_REVIEWS, getStoredReview, postApprovedReply, regenerateReviewDraft } from '@/lib/review-engine';
 
@@ -28,7 +28,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       return Response.json({ success: true, status: 'posted' });
     }
     if (action === 'skip') {
-      await db.collection(GBP_REVIEWS).doc(id).update({ status: 'skipped', updatedAt: new Date().toISOString() });
+      await updateDoc(GBP_REVIEWS, id, { status: 'skipped', updatedAt: new Date().toISOString() });
       return Response.json({ success: true, status: 'skipped' });
     }
     if (action === 'regenerate') {

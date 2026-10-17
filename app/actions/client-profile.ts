@@ -1,7 +1,7 @@
 'use server';
 
 import { requireAdmin } from '@/lib/admin-auth';
-import { db } from '@/lib/firebase';
+import { listDocs, updateDoc } from '@/lib/data/store';
 import { revalidatePath } from 'next/cache';
 
 export async function updateClientProfile(customerId: string, data: {
@@ -11,26 +11,23 @@ export async function updateClientProfile(customerId: string, data: {
 }) {
   await requireAdmin();
   try {
-    const snapshot = await db.collection('google_ads_accounts')
-      .where('customerId', '==', customerId)
-      .limit(1)
-      .get();
-      
-    if (snapshot.empty) {
+    const [account] = await listDocs('google_ads_accounts', { where: { customerId }, limit: 1 });
+
+    if (!account) {
       return { success: false, error: 'Target Ads Account not found in Database' };
     }
 
-    const docId = snapshot.docs[0].id;
-    
+    const docId = account.id;
+
     const updateData: any = { updatedAt: new Date().toISOString() };
-    
+
     // Safely mapping data to prevent undefined overwriting
     if (data.clientBusinessName !== undefined) updateData.clientBusinessName = data.clientBusinessName;
     if (data.clientContactName !== undefined) updateData.clientContactName = data.clientContactName;
     if (data.aiPromptNotes !== undefined) updateData.aiPromptNotes = data.aiPromptNotes;
 
-    await db.collection('google_ads_accounts').doc(docId).update(updateData);
-    
+    await updateDoc('google_ads_accounts', docId, updateData);
+
     // Instant cache invalidation for seamless UX
     revalidatePath('/admin/ads');
     revalidatePath('/admin/settings');

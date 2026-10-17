@@ -2,7 +2,7 @@
 
 import { requireAdmin } from '@/lib/admin-auth';
 import nodemailer from 'nodemailer';
-import { db } from '@/lib/firebase';
+import { getDoc } from '@/lib/data/store';
 import { ClientProfile } from '@/types/database';
 import { generateReportPdfBuffer } from '@/lib/report-pdf';
 
@@ -17,10 +17,8 @@ export async function dispatchClientReportEmail(payload: {
 }) {
   await requireAdmin();
   try {
-    const doc = await db.collection('clients').doc(payload.clientId).get();
-    if (!doc.exists) return { success: false, error: 'Client not found' };
-
-    const client = doc.data() as ClientProfile;
+    const client = await getDoc<ClientProfile>('clients', payload.clientId);
+    if (!client) return { success: false, error: 'Client not found' };
     const emails = (client.email ? [client.email] : []);
 
     if (emails.length === 0) {
@@ -39,7 +37,7 @@ export async function dispatchClientReportEmail(payload: {
 
     const cpl = payload.totalLeads > 0 ? (payload.totalSpend / Math.max(1, payload.totalLeads)).toFixed(2) : '-';
     // Link generation
-    const printLink = process.env.NEXT_PUBLIC_BASE_URL 
+    const printLink = process.env.NEXT_PUBLIC_BASE_URL
       ? `${process.env.NEXT_PUBLIC_BASE_URL}${payload.reportUrlPath}`
       : `http://localhost:3000${payload.reportUrlPath}`;
 
@@ -49,7 +47,7 @@ export async function dispatchClientReportEmail(payload: {
           <h1 style="color: white; margin: 0; font-size: 24px;">Automated Performance Matrix</h1>
           <p style="color: #a1a1aa; font-size: 14px; margin-top: 5px;">North Via Marketing • ${payload.timeframeStr}</p>
         </div>
-        
+
         <div style="background-color: #f9fafb; padding: 40px; border-left: 1px solid #e5e7eb; border-right: 1px solid #e5e7eb;">
           <p style="font-size: 16px; color: #374151; margin-bottom: 25px;">Hi ${client.ownerName},</p>
           <p style="font-size: 16px; color: #374151; line-height: 1.5;">
@@ -81,7 +79,7 @@ export async function dispatchClientReportEmail(payload: {
           ${payload.resolvedStreams ? payload.resolvedStreams.map((stream: any, index: number) => `
             <div style="margin-top: 40px; padding-top: 20px; border-top: 2px dashed #e5e7eb;">
               <h3 style="color: #111827; font-size: 18px; margin-bottom: 5px;">Node ${index + 1}: ${stream.account?.descriptiveName}</h3>
-              
+
               ${stream.summary?.campaignsInsight ? `
               <div style="margin-top: 20px;">
                 <h4 style="color: #4b5563; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px;">Active Campaigns Analysis</h4>
@@ -205,12 +203,10 @@ export async function sendPdfReportEmailAction(payload: {
 }) {
   await requireAdmin();
   try {
-    const doc = await db.collection('clients').doc(payload.clientId).get();
-    if (!doc.exists) {
+    const client = await getDoc<ClientProfile>('clients', payload.clientId);
+    if (!client) {
       return { success: false, error: 'Client profile not found in CRM database.' };
     }
-
-    const client = doc.data() as ClientProfile;
     const emails = (client.email ? [client.email] : []);
 
     if (emails.length === 0) {
@@ -227,19 +223,19 @@ export async function sendPdfReportEmailAction(payload: {
       totalImpressions: payload.totalImpressions,
       ctr: payload.ctr,
       avgCpc: payload.avgCpc,
-      
+
       prevTotalCost: payload.prevTotalCost,
       prevTotalClicks: payload.prevTotalClicks,
       prevTotalImpressions: payload.prevTotalImpressions,
       prevCtr: payload.prevCtr,
       prevAvgCpc: payload.prevAvgCpc,
-      
+
       lyTotalCost: payload.lyTotalCost,
       lyTotalClicks: payload.lyTotalClicks,
       lyTotalImpressions: payload.lyTotalImpressions,
       lyCtr: payload.lyCtr,
       lyAvgCpc: payload.lyAvgCpc,
-      
+
       aiConclusion: payload.aiConclusion,
       aiSummary: payload.aiSummary,
       campaigns: payload.campaigns,
@@ -270,7 +266,7 @@ export async function sendPdfReportEmailAction(payload: {
           <h1 style="color: white; margin: 0; font-size: 24px; letter-spacing: 0.5px; font-weight: 700;">Performance Matrix Report</h1>
           <p style="color: #bfdbfe; font-size: 13px; margin: 5px 0 0 0; font-weight: 500;">North Via Marketing • ${payload.timeframeStr}</p>
         </div>
-        
+
         <div style="background-color: #f9fafb; padding: 30px 40px; border-left: 1px solid #e5e7eb; border-right: 1px solid #e5e7eb;">
           <p style="font-size: 15px; color: #374151; margin-bottom: 20px; font-weight: 600;">${greeting}</p>
           <p style="font-size: 14px; color: #4b5563; line-height: 1.5; margin-bottom: 25px;">
@@ -397,12 +393,10 @@ export async function generatePdfReportAction(payload: {
 }) {
   await requireAdmin();
   try {
-    const doc = await db.collection('clients').doc(payload.clientId).get();
-    if (!doc.exists) {
+    const client = await getDoc<ClientProfile>('clients', payload.clientId);
+    if (!client) {
       return { success: false, error: 'Client profile not found in CRM database.' };
     }
-
-    const client = doc.data() as ClientProfile;
 
     // Generate PDF Buffer
     const pdfBuffer = await generateReportPdfBuffer({
@@ -414,19 +408,19 @@ export async function generatePdfReportAction(payload: {
       totalImpressions: payload.totalImpressions,
       ctr: payload.ctr,
       avgCpc: payload.avgCpc,
-      
+
       prevTotalCost: payload.prevTotalCost,
       prevTotalClicks: payload.prevTotalClicks,
       prevTotalImpressions: payload.prevTotalImpressions,
       prevCtr: payload.prevCtr,
       prevAvgCpc: payload.prevAvgCpc,
-      
+
       lyTotalCost: payload.lyTotalCost,
       lyTotalClicks: payload.lyTotalClicks,
       lyTotalImpressions: payload.lyTotalImpressions,
       lyCtr: payload.lyCtr,
       lyAvgCpc: payload.lyAvgCpc,
-      
+
       aiConclusion: payload.aiConclusion,
       aiSummary: payload.aiSummary,
       campaigns: payload.campaigns,

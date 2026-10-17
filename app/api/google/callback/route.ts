@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { google } from 'googleapis';
-import { db } from '@/lib/firebase';
+import { setDoc } from '@/lib/data/store';
 import { encryptString } from '@/lib/encryption';
 import { GoogleConnection } from '@/types/database';
 import { completeGbpConnection, verifyConnectToken } from '@/lib/google-business';
@@ -57,7 +57,7 @@ export async function GET(request: Request) {
 
     // Exchange the code for access & refresh tokens
     const { tokens } = await oauth2Client.getToken(code);
-    
+
     if (!tokens.refresh_token) {
       console.warn('Google did not return a refresh token! Revoke access natively in your Google account and try again.');
     }
@@ -68,7 +68,7 @@ export async function GET(request: Request) {
 
     const payload: GoogleConnection = {
       provider: 'google',
-      accountEmail: 'admin-authorized', 
+      accountEmail: 'admin-authorized',
       encryptedAccessToken: encryptedAccess,
       // If we didn't receive a refresh token but already have one in DB, we should retain the old one ideally,
       // but 'prompt: consent' fundamentally forces a new one every time anyway.
@@ -79,8 +79,7 @@ export async function GET(request: Request) {
       updatedAt: new Date().toISOString()
     };
 
-    // Safely write to Firestore using Admin SDK
-    await db.collection('google_connections').doc('master_admin_connection').set(payload, { merge: true });
+    await setDoc('google_connections', 'master_admin_connection', payload, { merge: true });
 
     return NextResponse.redirect(new URL('/admin/settings?success=connected', request.url));
   } catch (error) {

@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { db } from './firebase';
+import { getDoc, setDoc, setDocs } from './data/store';
 import { listClientProfiles } from './admin-ops';
 import {
   GBP_REVIEWS,
@@ -29,7 +29,7 @@ import type { GbpStoredReview } from '@/types/database';
 // Button data (max 64 bytes) is "<action>:<id>" where id is a review shortRef or a batch id:
 //   a/A approve → confirm   e edit   g regenerate   s skip   c cancel
 //   b/B bulk 5★ → confirm   k cancel bulk   x show batch one by one
-const BATCHES = 'gbp_telegram_batches';
+const BATCHES = 'gbp_telegram_batches' as const;
 const MAX_CARDS_PER_DIGEST = 25;
 const PANEL_URL = 'https://www.northviamarketing.com/admin/reviews';
 
@@ -165,14 +165,13 @@ function chunkForTelegram(reviews: Review[]) {
 
 async function createBatch(clientName: string, reviewIds: string[], lastPartIds: string[], parts: number) {
   const batchId = crypto.randomBytes(6).toString('base64url');
-  await db.collection(BATCHES).doc(batchId).set({ clientName, reviewIds, lastPartIds, parts, createdAt: new Date().toISOString() });
+  await setDoc(BATCHES, batchId, { clientName, reviewIds, lastPartIds, parts, createdAt: new Date().toISOString() });
   return batchId;
 }
 
 async function loadBatch(batchId: string) {
-  const doc = await db.collection(BATCHES).doc(batchId).get();
-  if (!doc.exists) return null;
-  const data = doc.data() as { clientName: string; reviewIds: string[]; lastPartIds?: string[]; parts?: number };
+  const data = await getDoc<{ clientName: string; reviewIds: string[]; lastPartIds?: string[]; parts?: number }>(BATCHES, batchId);
+  if (!data) return null;
   const reviews = (await Promise.all(data.reviewIds.map((id) => getStoredReview(id)))).filter((r): r is Review => Boolean(r));
   return { clientName: data.clientName, reviews, lastPartIds: data.lastPartIds || data.reviewIds, parts: data.parts || 1 };
 }
@@ -259,10 +258,9 @@ export async function sendReviewDigest(options: {
   }
 
   if (sentIds.length) {
-    const batch = db.batch();
     const now = new Date().toISOString();
-    sentIds.forEach((id) => batch.update(db.collection(GBP_REVIEWS).doc(id), { telegramSentAt: now, shortRef: reviewShortRef(id) }));
-    await batch.commit();
+    // Merge-writes rows that exist (every sent id came from the review queue).
+    await setDocs(GBP_REVIEWS, sentIds.map((id) => ({ id, data: { telegramSentAt: now, shortRef: reviewShortRef(id) } })), { merge: true });
   }
 
   return { messagesSent: messages.length * chatIds.length, reviewsSent: sentIds.length };

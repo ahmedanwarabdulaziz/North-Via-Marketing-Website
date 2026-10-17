@@ -1,15 +1,14 @@
 import { GoogleAdsApi } from 'google-ads-api';
-import { db } from './firebase';
+import { getDoc } from './data/store';
 import { decryptString } from './encryption';
 
 /**
  * Initializes the Official Google Ads Node Client
  */
 export async function getAdsClient() {
-  const doc = await db.collection('google_connections').doc('master_admin_connection').get();
-  if (!doc.exists) throw new Error('No Google connection found. Please connect your account first.');
+  const connection = await getDoc<{ encryptedRefreshToken?: string }>('google_connections', 'master_admin_connection');
+  if (!connection) throw new Error('No Google connection found. Please connect your account first.');
 
-  const connection = doc.data();
   if (!connection?.encryptedRefreshToken) throw new Error('No refresh token exists. Disconnect and reconnect your Google account.');
 
   const refreshToken = decryptString(connection.encryptedRefreshToken);

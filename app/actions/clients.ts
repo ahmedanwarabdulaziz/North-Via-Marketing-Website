@@ -1,7 +1,7 @@
 'use server';
 
 import { requireAdmin } from '@/lib/admin-auth';
-import { db } from '@/lib/firebase';
+import { addDoc, deleteDocs, updateDoc } from '@/lib/data/store';
 import { ClientProfile } from '@/types/database';
 import { revalidatePath } from 'next/cache';
 import { encryptString } from '@/lib/encryption';
@@ -19,14 +19,13 @@ export async function createOrUpdateClient(data: Partial<ClientProfile>) {
     
     if (data.id) {
       // Update
-      const docRef = db.collection('clients').doc(data.id);
       const updatePayload = removeUndefinedValues({
         ...data,
         updatedAt: timestamp
       });
       delete updatePayload.id;
       
-      await docRef.update(updatePayload);
+      await updateDoc('clients', data.id, updatePayload);
     } else {
       // Create
       const newPayload = removeUndefinedValues({
@@ -44,7 +43,7 @@ export async function createOrUpdateClient(data: Partial<ClientProfile>) {
         createdAt: timestamp,
         updatedAt: timestamp
       });
-      await db.collection('clients').add(newPayload);
+      await addDoc('clients', newPayload);
     }
     
     revalidatePath('/admin/clients');
@@ -58,7 +57,8 @@ export async function createOrUpdateClient(data: Partial<ClientProfile>) {
 export async function deleteClientProfile(clientId: string) {
   await requireAdmin();
   try {
-    await db.collection('clients').doc(clientId).delete();
+    // Its Google Business Profile connection, locations and reviews go with it.
+    await deleteDocs('clients', { id: clientId });
     revalidatePath('/admin/clients');
     return { success: true };
   } catch (error: any) {

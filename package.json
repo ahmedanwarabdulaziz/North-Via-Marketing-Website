@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
+    "@supabase/supabase-js": "^2.49.4",
     "@types/pdfkit": "^0.17.6",
     "autoprefixer": "^10.4.21",
     "firebase-admin": "^13.8.0",
@@ -36,7 +37,9 @@
     "@types/react-dom": "^18",
     "eslint": "^8",
     "eslint-config-next": "^15.0.0",
+    "pg": "^8.13.1",
     "sharp": "^0.34.4",
+    "tsx": "^4.23.15",
     "typescript": "5.9.2"
   }
 }

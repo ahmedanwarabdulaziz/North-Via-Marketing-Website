@@ -1,11 +1,11 @@
 import { google } from 'googleapis';
 import { SignJWT, jwtVerify } from 'jose';
-import { db } from './firebase';
+import { addDoc, deleteDocs, getDoc, getDocs, listDocs, setDoc, setDocs } from './data/store';
 import { decryptString, encryptString } from './encryption';
 import type { GbpConnection, GbpLocation, GbpReview } from '@/types/database';
 
-export const GBP_CONNECTIONS = 'gbp_connections';
-export const GBP_LOCATIONS = 'gbp_locations';
+export const GBP_CONNECTIONS = 'gbp_connections' as const;
+export const GBP_LOCATIONS = 'gbp_locations' as const;
 
 const GBP_SCOPES = [
   'https://www.googleapis.com/auth/business.manage',
@@ -83,7 +83,7 @@ export async function completeGbpConnection(code: string, clientId: string, via:
   }
 
   const now = new Date().toISOString();
-  const existing = await db.collection(GBP_CONNECTIONS).doc(clientId).get();
+  const existing = await getGbpConnection(clientId);
 
   const connection: GbpConnection = {
     clientId,
@@ -92,17 +92,16 @@ export async function completeGbpConnection(code: string, clientId: string, via:
     scopes,
     status: 'connected',
     connectedVia: via,
-    connectedAt: existing.exists ? (existing.data()?.connectedAt as string) || now : now,
+    connectedAt: existing?.connectedAt || now,
     updatedAt: now,
   };
 
-  await db.collection(GBP_CONNECTIONS).doc(clientId).set(connection);
+  await setDoc(GBP_CONNECTIONS, clientId, connection);
   await logAudit('gbp.connected', { clientId, googleEmail, via });
 }
 
 export async function getGbpConnection(clientId: string) {
-  const doc = await db.collection(GBP_CONNECTIONS).doc(clientId).get();
-  return doc.exists ? (doc.data() as GbpConnection) : null;
+  return getDoc<GbpConnection>(GBP_CONNECTIONS, clientId);
 }
 
 async function getClientAuth(clientId: string) {
@@ -115,10 +114,7 @@ async function getClientAuth(clientId: string) {
 }
 
 async function markConnectionError(clientId: string, message: string) {
-  await db.collection(GBP_CONNECTIONS).doc(clientId).set(
-    { status: 'error', lastError: message, updatedAt: new Date().toISOString() },
-    { merge: true }
-  );
+  await setDoc(GBP_CONNECTIONS, clientId, { status: 'error', lastError: message, updatedAt: new Date().toISOString() }, { merge: true });
 }
 
 function describeGoogleError(error: unknown) {
@@ -191,7 +187,7 @@ async function fetchAvailableLocations(clientId: string) {
             accountName,
             locationName: location.name,
             title: location.title || 'Untitled location',
-            // Firestore rejects undefined; service-area businesses have no storefront
+            // Service-area businesses have no storefront
             address: formatAddress(location.storefrontAddress) || '',
           });
         }
@@ -199,10 +195,7 @@ async function fetchAvailableLocations(clientId: string) {
       } while (pageToken);
     }
 
-    await db.collection(GBP_CONNECTIONS).doc(clientId).set(
-      { status: 'connected', lastError: null, updatedAt: new Date().toISOString() },
-      { merge: true }
-    );
+    await setDoc(GBP_CONNECTIONS, clientId, { status: 'connected', lastError: null, updatedAt: new Date().toISOString() }, { merge: true });
     return found.sort((a, b) => a.title.localeCompare(b.title));
   });
 }
@@ -215,11 +208,9 @@ export interface LocationChoice extends AvailableLocation {
 /** Locations for the picker: what Google offers, marked with what's already chosen. */
 export async function previewClientLocations(clientId: string): Promise<LocationChoice[]> {
   const available = await fetchAvailableLocations(clientId);
-  const snaps = available.length
-    ? await db.getAll(...available.map((l) => db.collection(GBP_LOCATIONS).doc(l.locationId)))
-    : [];
-  return available.map((location, i) => {
-    const stored = snaps[i].exists ? (snaps[i].data() as GbpLocation) : null;
+  const storedById = await getDocs<GbpLocation>(GBP_LOCATIONS, available.map((l) => l.locationId));
+  return available.map((location) => {
+    const stored = storedById.get(location.locationId) || null;
     return {
       ...location,
       selected: Boolean(stored && stored.clientId === clientId && stored.linked),
@@ -236,11 +227,10 @@ export async function saveClientLocationSelection(clientId: string, selectedIds:
   const choices = await previewClientLocations(clientId);
   const wanted = new Set(selectedIds);
   const now = new Date().toISOString();
-  const batch = db.batch();
-  let monitored = 0;
+  const chosen: Array<{ id: string; data: GbpLocation }> = [];
+  const dropped: string[] = [];
 
   for (const choice of choices) {
-    const ref = db.collection(GBP_LOCATIONS).doc(choice.locationId);
     if (wanted.has(choice.locationId)) {
       if (choice.takenByClientId) continue;
       const record: GbpLocation = {
@@ -254,27 +244,24 @@ export async function saveClientLocationSelection(clientId: string, selectedIds:
         lastSyncedAt: now,
         updatedAt: now,
       };
-      batch.set(ref, record);
-      monitored++;
+      chosen.push({ id: choice.locationId, data: record });
     } else if (choice.selected) {
-      batch.update(ref, { linked: false, updatedAt: now });
+      dropped.push(choice.locationId);
     }
   }
 
-  await batch.commit();
-  return monitored;
+  await setDocs(GBP_LOCATIONS, chosen);
+  await setDocs(GBP_LOCATIONS, dropped.map((id) => ({ id, data: { linked: false, updatedAt: now } })), { merge: true });
+  return chosen.length;
 }
 
 export async function listClientLocations(clientId: string) {
-  const snapshot = await db.collection(GBP_LOCATIONS).where('clientId', '==', clientId).get();
-  return snapshot.docs
-    .map((doc) => ({ ...(doc.data() as GbpLocation), id: doc.id }))
-    .sort((a, b) => a.title.localeCompare(b.title));
+  const locations = await listDocs<GbpLocation>(GBP_LOCATIONS, { where: { clientId } });
+  return locations.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
 }
 
 export async function listLinkedLocations() {
-  const snapshot = await db.collection(GBP_LOCATIONS).where('linked', '==', true).get();
-  return snapshot.docs.map((doc) => ({ ...(doc.data() as GbpLocation), id: doc.id }));
+  return listDocs<GbpLocation>(GBP_LOCATIONS, { where: { linked: true } });
 }
 
 export async function fetchLocationReviews(location: GbpLocation) {
@@ -319,17 +306,14 @@ export async function disconnectClient(clientId: string) {
     }
   }
 
-  const locations = await db.collection(GBP_LOCATIONS).where('clientId', '==', clientId).get();
-  const batch = db.batch();
-  locations.docs.forEach((doc) => batch.delete(doc.ref));
-  batch.delete(db.collection(GBP_CONNECTIONS).doc(clientId));
-  await batch.commit();
+  await deleteDocs(GBP_LOCATIONS, { clientId });
+  await deleteDocs(GBP_CONNECTIONS, { clientId });
   await logAudit('gbp.disconnected', { clientId });
 }
 
 async function logAudit(action: string, metadata: Record<string, unknown>) {
   try {
-    await db.collection('admin_audit_logs').add({
+    await addDoc('admin_audit_logs', {
       action,
       metadataJson: JSON.stringify(metadata),
       ipAddress: '',

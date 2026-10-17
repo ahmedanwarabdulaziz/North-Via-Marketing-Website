@@ -1,23 +1,17 @@
 'use server';
 
 import { requireAdmin } from '@/lib/admin-auth';
-import { db } from '@/lib/firebase';
+import { deleteDocs, getDoc, getDocs, listDocs, setDocs, updateDoc } from '@/lib/data/store';
 import { revalidatePath } from 'next/cache';
 
 export async function disconnectGoogleAds() {
   await requireAdmin();
   try {
-    // Shred the connection securely 
-    await db.collection('google_connections').doc('master_admin_connection').delete();
-    
-    // Purge related ad account metadata 
-    const accountsSnapshot = await db.collection('google_ads_accounts').where('googleConnectionId', '==', 'master_admin_connection').get();
-    
-    const batch = db.batch();
-    accountsSnapshot.docs.forEach((doc) => {
-      batch.delete(doc.ref);
-    });
-    await batch.commit();
+    // Shred the connection securely
+    await deleteDocs('google_connections', { id: 'master_admin_connection' });
+
+    // Purge related ad account metadata
+    await deleteDocs('google_ads_accounts', { googleConnectionId: 'master_admin_connection' });
 
     revalidatePath('/admin/settings');
     revalidatePath('/admin/ads');
@@ -31,8 +25,8 @@ export async function disconnectGoogleAds() {
 export async function checkGoogleAdsConnection() {
   await requireAdmin();
   try {
-    const doc = await db.collection('google_connections').doc('master_admin_connection').get();
-    return { isConnected: doc.exists };
+    const connection = await getDoc('google_connections', 'master_admin_connection');
+    return { isConnected: Boolean(connection) };
   } catch (error: any) {
     return { isConnected: false, error: error.message };
   }
@@ -48,18 +42,15 @@ export async function syncAdsAccounts() {
       return { success: true, accounts: [] };
     }
 
-    const batch = db.batch();
-    
+    const existing = await getDocs<{ isSelected?: boolean }>('google_ads_accounts', clients.map((c) => c.customerId));
+    const writes: Array<{ id: string; data: object }> = [];
+
     // We update/insert all accounts pulled
     for (const client of clients) {
-      // Check if we need to preserve an existing isSelected status
-      let isSelected = false;
-      const existingDoc = await db.collection('google_ads_accounts').doc(client.customerId).get();
-      if (existingDoc.exists) {
-        isSelected = existingDoc.data()?.isSelected || false;
-      }
+      // Preserve an existing isSelected status
+      const isSelected = existing.get(client.customerId)?.isSelected || false;
 
-      batch.set(db.collection('google_ads_accounts').doc(client.customerId), {
+      writes.push({ id: client.customerId, data: {
         googleConnectionId: 'master_admin_connection',
         customerId: client.customerId,
         descriptiveName: client.descriptiveName,
@@ -67,10 +58,10 @@ export async function syncAdsAccounts() {
         timeZone: client.timeZone,
         isSelected: isSelected,
         updatedAt: new Date().toISOString(),
-      }, { merge: true });
+      } });
     }
 
-    await batch.commit();
+    await setDocs('google_ads_accounts', writes, { merge: true });
     revalidatePath('/admin/settings');
     revalidatePath('/admin/ads');
 
@@ -85,16 +76,9 @@ export async function selectDefaultAdsAccount(customerId: string) {
   await requireAdmin();
   try {
     // We only permit one single account to be toggled as True simultaneously
-    const allDocs = await db.collection('google_ads_accounts').get();
-    const batch = db.batch();
-
-    allDocs.forEach((doc) => {
-      batch.update(doc.ref, {
-        isSelected: doc.id === customerId
-      });
-    });
-
-    await batch.commit();
+    const allDocs = await listDocs('google_ads_accounts');
+    await updateDoc('google_ads_accounts', allDocs.filter((doc) => doc.id !== customerId).map((doc) => doc.id), { isSelected: false });
+    await updateDoc('google_ads_accounts', customerId, { isSelected: true });
     revalidatePath('/admin/settings');
     revalidatePath('/admin/ads');
     return { success: true };
@@ -106,35 +90,31 @@ export async function selectDefaultAdsAccount(customerId: string) {
 export async function assignAdsAccountToClient(customerId: string, clientId: string | null) {
   await requireAdmin();
   try {
-    const batch = db.batch();
-    
     // 1. Fetch all clients to clean up existing links for this customerId
-    const clientsSnapshot = await db.collection('clients').get();
-    clientsSnapshot.docs.forEach((doc) => {
-      const data = doc.data();
-      const linkedIds: string[] = data.linkedGoogleAdsIds || [];
-      if (linkedIds.includes(customerId)) {
-        batch.update(doc.ref, {
+    const allClients = await listDocs<{ linkedGoogleAdsIds?: string[] }>('clients');
+    for (const doc of allClients) {
+      const linkedIds: string[] = doc.linkedGoogleAdsIds || [];
+      if (linkedIds.includes(customerId) && doc.id !== clientId) {
+        await updateDoc('clients', doc.id, {
           linkedGoogleAdsIds: linkedIds.filter(id => id !== customerId),
           updatedAt: new Date().toISOString()
         });
       }
-    });
+    }
 
     let brandName = '';
     let ownerName = '';
 
     // 2. If a new clientId is specified, link it to this client
     if (clientId) {
-      const clientDoc = await db.collection('clients').doc(clientId).get();
-      if (clientDoc.exists) {
-        const clientData = clientDoc.data();
+      const clientData = await getDoc<{ brandName?: string; ownerName?: string; linkedGoogleAdsIds?: string[] }>('clients', clientId);
+      if (clientData) {
         brandName = clientData?.brandName || '';
         ownerName = clientData?.ownerName || '';
 
         const currentLinked: string[] = clientData?.linkedGoogleAdsIds || [];
         if (!currentLinked.includes(customerId)) {
-          batch.update(clientDoc.ref, {
+          await updateDoc('clients', clientId, {
             linkedGoogleAdsIds: [...currentLinked, customerId],
             updatedAt: new Date().toISOString()
           });
@@ -143,17 +123,13 @@ export async function assignAdsAccountToClient(customerId: string, clientId: str
     }
 
     // 3. Update the google_ads_accounts document metadata
-    const accountDocRef = db.collection('google_ads_accounts').doc(customerId);
-    const accountDoc = await accountDocRef.get();
-    if (accountDoc.exists) {
-      batch.update(accountDocRef, {
+    {
+      await updateDoc('google_ads_accounts', customerId, {
         brandName: brandName || null,
         ownerName: ownerName || null,
         updatedAt: new Date().toISOString()
       });
     }
-
-    await batch.commit();
 
     revalidatePath('/admin/settings');
     revalidatePath('/admin/ads');

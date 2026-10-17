@@ -3,7 +3,7 @@
 import { requireAdmin } from '@/lib/admin-auth';
 import { headers } from 'next/headers';
 import { revalidatePath } from 'next/cache';
-import { db } from '@/lib/firebase';
+import { getDoc, updateDoc } from '@/lib/data/store';
 import {
   createConnectToken,
   disconnectClient,
@@ -107,8 +107,8 @@ const SAMPLE_REVIEWS = {
 export async function previewReplyStyle(settings: GbpReplySettings, sample: 'positive' | 'negative') {
   await requireAdmin();
   try {
-    const client = await db.collection('clients').doc(settings.clientId).get();
-    const businessName = (client.data()?.brandName as string) || 'the business';
+    const client = await getDoc<{ brandName?: string }>('clients', settings.clientId);
+    const businessName = client?.brandName || 'the business';
     const reply = await generateReplyDraft(settings, businessName, SAMPLE_REVIEWS[sample]);
     return { success: true, reply, review: SAMPLE_REVIEWS[sample] };
   } catch (error) {
@@ -142,7 +142,7 @@ export async function approveReview(reviewId: string, reply: string) {
 export async function skipReview(reviewId: string) {
   await requireAdmin();
   try {
-    await db.collection(GBP_REVIEWS).doc(reviewId).update({ status: 'skipped', updatedAt: new Date().toISOString() });
+    await updateDoc(GBP_REVIEWS, reviewId, { status: 'skipped', updatedAt: new Date().toISOString() });
     revalidatePath('/admin/reviews');
     return { success: true };
   } catch (error) {
