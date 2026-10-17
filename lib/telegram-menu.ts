@@ -2,6 +2,7 @@ import { getDigestSchedule, nextDigestRun, saveDigestSchedule } from './digest-s
 import { DIGEST_TIMEZONES } from './digest-schedule-options';
 import { checkReviewsNow, reviewQueueOverview, showWaitingReviews } from './review-telegram';
 import { InlineButton, OutgoingMessage, answerCallback, editMessage, escapeHtml as h, sendMessage } from './telegram';
+import { runWebsiteChecks, websiteOverview, websitesScreenText } from './website-monitor';
 
 // Main bot menu. Button data is "m:<screen>" or "m:<screen>:<action>".
 // To add a new area (e.g. Tasks, Invoices), add a section here and a screen below.
@@ -18,6 +19,14 @@ const SECTIONS: MenuSection[] = [
     label: async () => {
       const { total } = await reviewQueueOverview();
       return `⭐ Google Reviews${total ? ` (${total} waiting)` : ''}`;
+    },
+  },
+  {
+    id: 'ws',
+    label: async () => {
+      const { sites, down } = await websiteOverview();
+      if (!sites.length) return '🌐 Websites';
+      return `🌐 Websites (${down.length ? `${down.length} down` : 'all up'})`;
     },
   },
 ];
@@ -79,11 +88,27 @@ async function reviewsScreen(note?: string): Promise<OutgoingMessage> {
   };
 }
 
+async function websitesScreen(note?: string): Promise<OutgoingMessage> {
+  const { text, panelUrl } = await websitesScreenText();
+  return {
+    text: note ? `${text}
+
+${note}` : text,
+    buttons: [
+      [
+        { text: '🔁 Check all now', callback_data: 'm:ws:check' },
+        { text: '🌐 Open panel', url: panelUrl },
+      ],
+      [{ text: '⬅️ Back to menu', callback_data: 'm:home' }],
+    ],
+  };
+}
+
 export async function sendMenu(chatId: number | string) {
   return sendMessage(chatId, await homeScreen());
 }
 
-export async function handleMenuCallback(query: { id: string; data?: string; message?: { message_id: number; chat: { id: number } } }) {
+export async function handleMenuCallback(query: { id: string; data?: string; message?: { message_id: number; chat: { id: number }; text?: string } }) {
   const chatId = query.message?.chat.id;
   const messageId = query.message?.message_id;
   if (!chatId || !messageId) return answerCallback(query.id);
@@ -114,6 +139,22 @@ export async function handleMenuCallback(query: { id: string; data?: string; mes
         return answerCallback(query.id, action === 'pause' ? 'Paused' : 'Resumed');
       }
       await editMessage(chatId, messageId, await reviewsScreen());
+      return answerCallback(query.id);
+    }
+
+    if (screen === 'ws') {
+      if (action === 'check') {
+        await answerCallback(query.id, 'Checking websites…');
+        // Alerts for any change go to this chat as separate messages.
+        const run = await runWebsiteChecks({ chatIds: [String(chatId)] });
+        const note = run.checked ? `🔁 <i>Checked ${run.checked} just now.</i>` : '';
+        // "Check again" on an alert sends a fresh status screen; from the menu, update it in place.
+        const fromMenu = query.message?.text?.startsWith('🌐');
+        if (fromMenu) await editMessage(chatId, messageId, await websitesScreen(note));
+        else await sendMessage(chatId, await websitesScreen(note));
+        return;
+      }
+      await editMessage(chatId, messageId, await websitesScreen());
       return answerCallback(query.id);
     }
 

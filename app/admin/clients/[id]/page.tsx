@@ -6,6 +6,8 @@ import { getGbpConnection, listClientLocations } from '@/lib/google-business';
 import { ClientGbpCard } from '@/components/admin/ClientGbpCard';
 import { ReplyStyleCard } from '@/components/admin/ReplyStyleCard';
 import { getReplySettings } from '@/lib/review-engine';
+import { WebsitesCard } from '@/components/admin/WebsitesCard';
+import { listClientWebsites } from '@/lib/website-monitor';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,10 +26,11 @@ export default async function ClientDetailPage({
     notFound();
   }
 
-  const [gbpConnection, gbpLocations, replySettings] = await Promise.all([
+  const [gbpConnection, gbpLocations, replySettings, websites] = await Promise.all([
     getGbpConnection(id).catch(() => null),
     listClientLocations(id).catch(() => []),
     getReplySettings(id),
+    listClientWebsites(id).catch(() => []),
   ]);
 
 
@@ -77,6 +80,8 @@ export default async function ClientDetailPage({
         />
 
         {gbpConnection && <ReplyStyleCard initial={replySettings} />}
+
+        <WebsitesCard clientId={id} initial={websites} suggestedUrl={client.websiteUrl || undefined} />
 
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-zinc-200">
           <h3 className="font-semibold text-zinc-900 flex items-center gap-2 mb-4">

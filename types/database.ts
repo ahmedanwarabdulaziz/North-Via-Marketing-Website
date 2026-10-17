@@ -290,3 +290,36 @@ export interface GbpStoredReview {
   firstSeenAt: string;
   updatedAt: string;
 }
+
+// Website monitoring: one row per URL (homepage or an important page).
+export type WebsiteStatus = 'up' | 'down' | 'unknown';
+
+export interface Website {
+  id?: string;
+  clientId: string;
+  url: string;
+  label?: string; // e.g. "Homepage", "Contact page"
+  mustContain?: string; // text the page must show, to catch error pages that still return 200
+  enabled: boolean;
+  status: WebsiteStatus;
+  lastStatusCode?: number;
+  lastResponseMs?: number;
+  lastError?: string;
+  downSince?: string;
+  sslExpiresAt?: string;
+  sslAlertedDays?: number; // smallest expiry warning already sent
+  lastCheckedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WebsiteCheck {
+  id?: string;
+  websiteId: string;
+  clientId: string;
+  ok: boolean;
+  statusCode?: number;
+  responseMs?: number;
+  error?: string;
+  checkedAt: string;
+}

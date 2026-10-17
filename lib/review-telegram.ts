@@ -24,6 +24,7 @@ import {
   truncate,
 } from './telegram';
 import { whatsAppShareLink } from './whatsapp-share';
+import { websiteDigestLine } from './website-monitor';
 import type { GbpStoredReview } from '@/types/database';
 
 // Telegram review approvals.
@@ -262,7 +263,11 @@ export async function sendReviewDigest(options: {
     stillDrafting > 0 ? `✍️ ${stillDrafting} more are still being drafted — they'll be sent here once ready.` : '',
     earlier > 0 ? `${earlier} sent earlier still waiting — send /reviews to see them again.` : '',
   ].filter(Boolean).join('\n');
-  messages.push({ text: header, buttons: [[{ text: 'Open reviews panel', url: PANEL_URL }]] });
+  // Scheduled digests and "Check now" also carry the one-line website status.
+  const websiteLine = options.summary && !options.followUp ? await websiteDigestLine().catch(() => '') : '';
+  messages.push({ text: websiteLine ? `${header}
+
+${websiteLine}` : header, buttons: [[{ text: 'Open reviews panel', url: PANEL_URL }]] });
 
   const byClient = new Map<string, Review[]>();
   for (const r of toSend) byClient.set(r.clientId, [...(byClient.get(r.clientId) || []), r]);

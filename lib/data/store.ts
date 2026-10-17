@@ -63,6 +63,14 @@ const TABLES = {
     pk: 'id',
     fields: ['clientName', 'reviewIds', 'lastPartIds', 'parts', 'createdAt'],
   },
+  websites: {
+    pk: 'id',
+    fields: ['clientId', 'url', 'label', 'mustContain', 'enabled', 'status', 'lastStatusCode', 'lastResponseMs', 'lastError', 'downSince', 'sslExpiresAt', 'sslAlertedDays', 'lastCheckedAt', 'createdAt', 'updatedAt'],
+  },
+  website_checks: {
+    pk: 'id',
+    fields: ['websiteId', 'clientId', 'ok', 'statusCode', 'responseMs', 'error', 'checkedAt'],
+  },
 } as const;
 
 export type Table = keyof typeof TABLES;
@@ -237,6 +245,14 @@ export async function updateDoc(table: Table, id: string | string[], data: objec
 export async function deleteDocs(table: Table, where: Filter) {
   if (!Object.keys(where).length) throw new Error('deleteDocs needs a filter.');
   const { error } = await applyFilters(table, supabase.from(table).delete(), where);
+  if (error) fail(table, 'delete', error);
+}
+
+/** Deletes rows whose timestamp field is before `iso` (history pruning). */
+export async function deleteOlderThan(table: Table, field: string, iso: string) {
+  const column = columnMaps[table].toColumn.get(field);
+  if (!column) throw new Error(`Unknown field "${field}" for ${table}.`);
+  const { error } = await supabase.from(table).delete().lt(column, iso);
   if (error) fail(table, 'delete', error);
 }
 
