@@ -4,6 +4,28 @@ import { revalidatePath } from 'next/cache';
 import { requireAdmin } from '@/lib/admin-auth';
 import { describeGaError, listGa4Properties, refreshGa4Summary, setClientGa4Property } from '@/lib/ga4';
 import { removeClarityToken, saveClarityToken } from '@/lib/clarity';
+import { describeSearchError, listSearchSites, refreshSearchSummary, setClientSearchSite } from '@/lib/search-console';
+
+export async function loadSearchSites() {
+  await requireAdmin();
+  try {
+    return { success: true, sites: await listSearchSites() };
+  } catch (error) {
+    return { success: false, error: describeSearchError(error) };
+  }
+}
+
+export async function saveSearchSite(clientId: string, siteUrl: string | null) {
+  await requireAdmin();
+  try {
+    await setClientSearchSite(clientId, siteUrl);
+    if (siteUrl) await refreshSearchSummary(clientId, siteUrl).catch(() => undefined);
+    revalidatePath(`/admin/clients/${clientId}`);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: describeSearchError(error) };
+  }
+}
 
 const message = (error: unknown) => (error instanceof Error ? error.message : 'Unexpected error');
 

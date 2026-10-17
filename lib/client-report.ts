@@ -5,6 +5,7 @@ import { conversionsMeaningful, costPerConversion, ctr, describeAdsError, fetchC
 import { MIN_CONVERSIONS_TO_SHOW } from './ads-thresholds';
 import { describeGaError, fetchGa4 } from './ga4';
 import { clarityPeriod, listClaritySnapshots } from './clarity';
+import { describeSearchError, fetchSearchPeriod, searchWindows } from './search-console';
 import type {
   ClientProfile,
   GbpStoredReview,
@@ -113,6 +114,17 @@ export interface ReportData {
       deadClickPct: Compared;
       days: number; // daily snapshots behind the numbers
     } | null;
+  } | null;
+  search: {
+    start: string; // Search Console runs ~3 days behind, so its dates differ from the report's
+    end: string;
+    clicks: Compared;
+    impressions: Compared;
+    ctr: Compared; // %
+    position: Compared; // average; lower is better
+    hasLastYear: boolean;
+    queries: Array<{ query: string; clicks: number; impressions: number; position: number }>;
+    pages: Array<{ page: string; clicks: number }>;
   } | null;
   websites: {
     uptime: Compared; // % across all monitored pages
@@ -406,6 +418,38 @@ async function analyticsSection(client: ClientProfile, w: ReturnType<typeof wind
   return ga || clarity ? { ga, clarity } : null;
 }
 
+async function searchSection(client: ClientProfile, days: ReportDays, warnings: string[]): Promise<ReportData['search']> {
+  if (!client.searchConsoleSite) return null;
+  try {
+    const w = searchWindows(days);
+    const [cur, prev, ly] = await Promise.all([
+      fetchSearchPeriod(client.searchConsoleSite, w.current, true),
+      fetchSearchPeriod(client.searchConsoleSite, w.previous, false),
+      fetchSearchPeriod(client.searchConsoleSite, w.lastYear, false).catch(() => null),
+    ]);
+    const hasLastYear = Boolean(ly && ly.totals.impressions > 0);
+    const metric = (pick: (t: typeof cur.totals) => number): Compared => ({
+      current: pick(cur.totals),
+      previous: pick(prev.totals),
+      ...(hasLastYear ? { lastYear: pick(ly!.totals) } : {}),
+    });
+    return {
+      start: w.current.start,
+      end: w.current.end,
+      clicks: metric((t) => t.clicks),
+      impressions: metric((t) => t.impressions),
+      ctr: metric((t) => t.ctr),
+      position: metric((t) => t.position),
+      hasLastYear,
+      queries: cur.queries,
+      pages: cur.pages.map((p) => ({ page: p.page, clicks: p.clicks })),
+    };
+  } catch (error) {
+    warnings.push(`Google search (Search Console) not included: ${describeSearchError(error)}`);
+    return null;
+  }
+}
+
 // ---------- Public API ----------
 
 export async function buildReportData(clientId: string, days: ReportDays): Promise<{ data: ReportData; warnings: string[] }> {
@@ -419,14 +463,15 @@ export async function buildReportData(clientId: string, days: ReportDays): Promi
     return null;
   });
   const analytics = analyticsSection({ ...client, id: clientId }, w, warnings);
+  const search = searchSection(client, days, warnings);
   const [social, reviews, websites] = await Promise.all([socialSection(clientId, w), reviewsSection(clientId, w), websitesSection(clientId, w)]);
-  const data: ReportData = { clientName: client.brandName, days, ...w.labels, generatedAt: new Date().toISOString(), social, reviews, ads: await ads, analytics: await analytics, websites };
+  const data: ReportData = { clientName: client.brandName, days, ...w.labels, generatedAt: new Date().toISOString(), social, reviews, ads: await ads, analytics: await analytics, search: await search, websites };
   return { data, warnings };
 }
 
 export async function createClientReport(clientId: string, days: ReportDays, language: ReportLanguage) {
   const { data, warnings } = await buildReportData(clientId, days);
-  if (!data.social && !data.reviews && !data.ads && !data.analytics && !data.websites) {
+  if (!data.social && !data.reviews && !data.ads && !data.analytics && !data.search && !data.websites) {
     throw new Error(warnings[0] || 'Nothing to report yet: connect Facebook/Instagram, Google reviews, Google Ads or a website for this client first.');
   }
   // 128 random bits: the link is the only key to the report.

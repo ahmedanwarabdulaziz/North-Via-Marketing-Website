@@ -3,6 +3,7 @@ import { MIN_CONVERSIONS_TO_SHOW } from './ads-thresholds';
 import { analyticsConnected, describeGaError, fetchGa4, getGa4Summary } from './ga4';
 import { listClaritySnapshots } from './clarity';
 import { cairoDay } from './social-sync';
+import { describeSearchError, fetchSearchPeriod, getSearchSummary, searchConsoleReady, searchWindows } from './search-console';
 import { escapeHtml as h } from './telegram';
 
 // "🧭 Website analytics" in the Telegram menu: GA4 visitors per client (7 or 30 days
@@ -18,17 +19,19 @@ const arrow = (cur: number, prev: number) => {
 };
 
 export async function analyticsScreenText(days: 7 | 30 = 7) {
-  const clients = (await listDocs<{ brandName: string; ga4PropertyId?: string; clarityApiTokenEncrypted?: string }>('clients'))
-    .filter((c) => c.ga4PropertyId || c.clarityApiTokenEncrypted)
+  const clients = (await listDocs<{ brandName: string; ga4PropertyId?: string; clarityApiTokenEncrypted?: string; searchConsoleSite?: string }>('clients'))
+    .filter((c) => c.ga4PropertyId || c.clarityApiTokenEncrypted || c.searchConsoleSite)
     .sort((a, b) => a.brandName.localeCompare(b.brandName));
-  const lines = ['🧭 <b>Website analytics</b>', `<i>GA4: last ${days} days vs the ${days} before · Clarity: latest day</i>`, ''];
+  const lines = ['🧭 <b>Website analytics</b>', `<i>GA4 & Google search: last ${days} days vs the ${days} before (search ends ~3 days ago) · Clarity: latest day</i>`, ''];
   if (!clients.length) {
-    lines.push('No client has GA4 or Clarity connected yet.', 'Connect them on each client page (Analytics tab).');
+    lines.push('No client has GA4, Search Console or Clarity connected yet.', 'Connect them on each client page (Analytics and Search Console tabs).');
     return lines.join('\n');
   }
 
   const gaOn = await analyticsConnected().catch(() => false);
+  const searchOn = (await searchConsoleReady().catch(() => ({ hasScope: false }))).hasScope;
   let gaFailure: string | null = null;
+  let searchFailure: string | null = null;
 
   for (const c of clients) {
     lines.push(`<b>${h(c.brandName)}</b>`);
@@ -61,6 +64,21 @@ export async function analyticsScreenText(days: 7 | 30 = 7) {
       gaFailure = 'Google Analytics is not connected. Connect it on a client page (Analytics tab).';
     }
 
+    if (c.searchConsoleSite && searchOn && !searchFailure) {
+      try {
+        const saved = days === 7 ? await getSearchSummary(c.id) : null;
+        if (saved && saved.siteUrl === c.searchConsoleSite) {
+          lines.push(`🔎 ${fmt(saved.clicks)} Google clicks${arrow(saved.clicks, saved.clicksBefore)} · avg position ${saved.position}${saved.topQueries[0] ? ` · top: “${h(saved.topQueries[0].query)}”` : ''}`);
+        } else {
+          const w = searchWindows(days);
+          const [cur, prev] = await Promise.all([fetchSearchPeriod(c.searchConsoleSite, w.current, true), fetchSearchPeriod(c.searchConsoleSite, w.previous, false)]);
+          lines.push(`🔎 ${fmt(cur.totals.clicks)} Google clicks${arrow(cur.totals.clicks, prev.totals.clicks)} · avg position ${cur.totals.position}${cur.queries[0] ? ` · top: “${h(cur.queries[0].query)}”` : ''}`);
+        }
+      } catch (error) {
+        searchFailure = describeSearchError(error);
+      }
+    }
+
     if (c.clarityApiTokenEncrypted) {
       const snaps = await listClaritySnapshots(c.id).catch(() => []);
       const last = snaps.at(-1);
@@ -78,5 +96,6 @@ export async function analyticsScreenText(days: 7 | 30 = 7) {
     lines.push('');
   }
   if (gaFailure) lines.push(`⚠️ ${h(gaFailure)}`);
+  if (searchFailure) lines.push(`⚠️ ${h(searchFailure)}`);
   return lines.join('\n').trim().slice(0, 4000);
 }

@@ -18,6 +18,8 @@ import { ClientTabs, type ClientTab, type OverviewTile } from '@/components/admi
 import { ClientAnalyticsCard } from '@/components/admin/ClientAnalyticsCard';
 import { analyticsConnected, describeGaError, getGa4Summary, refreshGa4Summary } from '@/lib/ga4';
 import { listClaritySnapshots } from '@/lib/clarity';
+import { ClientSearchCard } from '@/components/admin/ClientSearchCard';
+import { describeSearchError, getSearchSummary, refreshSearchSummary, searchConsoleReady } from '@/lib/search-console';
 
 export const dynamic = 'force-dynamic';
 
@@ -66,6 +68,18 @@ export default async function ClientDetailPage({
       gaError = describeGaError(error);
     }
   }
+  // Search Console shares the GA4 login; same daily refresh, fetched live only for a newly chosen site.
+  const searchReady = await searchConsoleReady().catch(() => ({ connected: false, hasScope: false }));
+  let searchSummary = null;
+  let searchError: string | undefined;
+  if (searchReady.hasScope && client.searchConsoleSite) {
+    try {
+      const saved = await getSearchSummary(id);
+      searchSummary = saved?.siteUrl === client.searchConsoleSite ? saved : (await refreshSearchSummary(id, client.searchConsoleSite)).summary;
+    } catch (error) {
+      searchError = describeSearchError(error);
+    }
+  }
   const clarityLatest = claritySnapshots.at(-1) || null;
   const clarityOn = Boolean(client.clarityApiTokenEncrypted);
 
@@ -77,6 +91,7 @@ export default async function ClientDetailPage({
   const enabledSites = websites.filter((w) => w.enabled);
   const downSites = enabledSites.filter((w) => w.status === 'down');
   const websitesStatus: OverviewTile['status'] = !enabledSites.length ? 'off' : downSites.length ? 'warn' : 'ok';
+  const searchStatus: OverviewTile['status'] = !client.searchConsoleSite ? 'off' : searchError ? 'warn' : 'ok';
   const analyticsStatus: OverviewTile['status'] = !client.ga4PropertyId && !clarityOn ? 'off' : gaError ? 'warn' : 'ok';
 
   const tabs: ClientTab[] = [
@@ -86,6 +101,7 @@ export default async function ClientDetailPage({
     { id: 'ads', label: 'Google Ads', status: adsStatus },
     { id: 'websites', label: 'Websites', status: websitesStatus },
     { id: 'analytics', label: 'Analytics', status: analyticsStatus },
+    { id: 'search', label: 'Search Console', status: searchStatus },
     { id: 'details', label: 'Details' },
   ];
 
@@ -136,6 +152,14 @@ export default async function ClientDetailPage({
     detail: gaError || (gaStats ? 'Last 7 days (GA4)' : 'Connect GA4 and Clarity for visitors and behaviour.') + (clarityOn ? ' · Clarity on' : ''),
   });
 
+  overview.push({
+    tab: 'search',
+    title: 'Google search (organic)',
+    status: searchStatus,
+    value: searchSummary ? `${searchSummary.clicks.toLocaleString('en-CA')} Google clicks` : client.searchConsoleSite ? 'Connected' : 'Not connected',
+    detail: searchError || (searchSummary ? `7 days · avg position ${searchSummary.position}` : 'Choose the Search Console site for free search traffic.'),
+  });
+
   const initial = tab || (gbp ? 'reviews' : meta ? 'social' : ads ? 'ads' : ga ? 'analytics' : 'overview');
 
   const panels = {
@@ -176,6 +200,16 @@ export default async function ClientDetailPage({
         clarityConnected={clarityOn}
         clarityLatest={clarityLatest ? { day: clarityLatest.day, sessions: clarityLatest.sessions, scrollDepth: clarityLatest.scrollDepth, rageClickPct: clarityLatest.rageClickPct, deadClickPct: clarityLatest.deadClickPct } : null}
         notice={ga === 'connected' ? 'connected' : ga ? 'error' : undefined}
+      />
+    ),
+    search: (
+      <ClientSearchCard
+        clientId={id}
+        connected={searchReady.connected}
+        hasScope={searchReady.hasScope}
+        siteUrl={client.searchConsoleSite || undefined}
+        summary={searchSummary}
+        error={searchError}
       />
     ),
     details: (

@@ -24,7 +24,7 @@ export interface GaPeriod {
   pages: Array<{ title: string; path: string; views: number }>;
 }
 
-async function analyticsAuth() {
+export async function analyticsAuth() {
   const connection = await getDoc<{ encryptedRefreshToken?: string }>('google_connections', GA_CONNECTION);
   if (!connection?.encryptedRefreshToken) throw new Error('Google Analytics is not connected.');
   const auth = new google.auth.OAuth2(process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_CLIENT_SECRET, googleRedirectUri());

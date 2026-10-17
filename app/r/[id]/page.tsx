@@ -321,6 +321,57 @@ function Report({ data, lang }: { data: ReportData; lang: ReportLanguage }) {
         </Section>
       )}
 
+      {data.search && (
+        <Section title={t.searchSection} icon="🔎">
+          <p className="-mt-1 mb-3 text-xs text-zinc-500">{t.searchDates(periodLabel(data.search.start, data.search.end, lang))}</p>
+          <div className="grid grid-cols-2 gap-3">
+            <Stat label={t.searchClicks} m={data.search.clicks} lang={lang} t={t} />
+            <Stat label={t.searchImpressions} m={data.search.impressions} lang={lang} t={t} />
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-3">
+            <Stat label={t.searchCtr} m={data.search.ctr} lang={lang} t={t} format={(n) => `${nf.format(n)}%`} />
+            {/* Position 1 is the top of Google, so a smaller number is better. */}
+            <Stat label={t.position} m={data.search.position} lang={lang} t={t} format={(n) => nf.format(n)} lowerIsBetter />
+          </div>
+          {data.search.queries.length > 0 && (
+            <div className="mt-4 rounded-2xl border border-zinc-200 bg-white overflow-hidden break-inside-avoid">
+              <div className="px-4 py-3 text-xs font-medium text-zinc-500 flex justify-between gap-3">
+                <span>{t.topSearches}</span>
+                <span className="flex gap-6" dir="ltr">
+                  <span>{t.clicks}</span>
+                  <span>#</span>
+                </span>
+              </div>
+              <ol className="divide-y divide-zinc-100">
+                {data.search.queries.map((q, i) => (
+                  <li key={q.query} className="px-4 py-2.5 flex items-center justify-between gap-3 text-sm">
+                    <span className="min-w-0 truncate">
+                      <span className="text-zinc-400 me-2" dir="ltr">{i + 1}.</span>
+                      <bdi className="text-zinc-800">{q.query}</bdi>
+                    </span>
+                    <span className="flex gap-6 text-zinc-600 shrink-0 tabular-nums" dir="ltr">
+                      <span className="w-10 text-end font-semibold text-zinc-900">{compactNumber(q.clicks, lang)}</span>
+                      <span className="w-8 text-end">{nf.format(q.position)}</span>
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+          {data.search.pages.length > 0 && (
+            <div className="mt-4 rounded-2xl border border-zinc-200 bg-white divide-y divide-zinc-100 break-inside-avoid">
+              <div className="px-4 py-3 text-xs font-medium text-zinc-500">{t.searchPages}</div>
+              {data.search.pages.map((p) => (
+                <div key={p.page} className="px-4 py-2.5 flex items-center justify-between gap-3 text-sm">
+                  <span className="min-w-0 truncate text-zinc-700" dir="ltr">{p.page.replace(/^https?:\/\/[^/]+/, '') || '/'}</span>
+                  <span className="shrink-0 font-semibold text-zinc-900 tabular-nums" dir="ltr">{compactNumber(p.clicks, lang)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </Section>
+      )}
+
       {data.websites && (
         <Section title={t.websites} icon="🌐">
           {data.websites.uptime.current !== null && (

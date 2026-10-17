@@ -9,7 +9,7 @@ import { supabase, supabaseConfigProblem } from '../supabase';
 const TABLES = {
   clients: {
     pk: 'id',
-    fields: ['brandName', 'ownerName', 'email', 'mobileNumber', 'websiteUrl', 'facebookLink', 'instagramLink', 'tiktokLink', 'googleLink', 'ga4PropertyId', 'clarityProjectId', 'clarityApiTokenEncrypted', 'linkedGoogleAdsIds', 'createdAt', 'updatedAt'],
+    fields: ['brandName', 'ownerName', 'email', 'mobileNumber', 'websiteUrl', 'facebookLink', 'instagramLink', 'tiktokLink', 'googleLink', 'ga4PropertyId', 'clarityProjectId', 'clarityApiTokenEncrypted', 'searchConsoleSite', 'linkedGoogleAdsIds', 'createdAt', 'updatedAt'],
   },
   google_connections: {
     pk: 'id',

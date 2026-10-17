@@ -50,6 +50,14 @@ export const REPORT_TEXT = {
     scrollDepth: 'Average scroll depth',
     rageClicks: 'Sessions with rage clicks',
     deadClicks: 'Sessions with dead clicks',
+    searchSection: 'Google search (free results)',
+    searchClicks: 'Clicks from Google',
+    searchImpressions: 'Times shown in Google',
+    searchCtr: 'Click-through rate',
+    position: 'Average position',
+    topSearches: 'Top 10 searches',
+    searchPages: 'Pages people found on Google',
+    searchDates: (period: string) => `Search Console data: ${period} (it runs about 3 days behind)`,
     websites: 'Website health',
     uptime: 'Uptime',
     incidents: 'Outages',
@@ -113,6 +121,14 @@ export const REPORT_TEXT = {
     scrollDepth: 'متوسط عمق التمرير',
     rageClicks: 'زيارات بها نقرات غاضبة',
     deadClicks: 'زيارات بها نقرات بلا استجابة',
+    searchSection: 'بحث جوجل (النتائج المجانية)',
+    searchClicks: 'النقرات من جوجل',
+    searchImpressions: 'مرات الظهور في جوجل',
+    searchCtr: 'نسبة النقر',
+    position: 'متوسط الترتيب',
+    topSearches: 'أكثر 10 عمليات بحث',
+    searchPages: 'الصفحات التي وجدها الناس على جوجل',
+    searchDates: (period: string) => `بيانات Search Console: ${period} (تتأخر حوالي 3 أيام)`,
     websites: 'صحة الموقع',
     uptime: 'مدة التشغيل',
     incidents: 'مرات التوقف',
@@ -191,6 +207,10 @@ export function reportWhatsAppText(data: ReportData, lang: ReportLanguage, url: 
   if (data.analytics?.ga) {
     const g = data.analytics.ga;
     lines.push(`🌐 *${t.visitorsSection}* — ${t.visitors}: ${n(g.visitors.current)}${change(g.visitors)} · ${t.sessions}: ${n(g.sessions.current)}${change(g.sessions)}`);
+  }
+  if (data.search) {
+    const s = data.search;
+    lines.push(`🔎 *${t.searchSection}* — ${t.searchClicks}: ${n(s.clicks.current)}${change(s.clicks)} · ${t.position}: ${s.position.current ?? '—'}`);
   }
   if (data.websites && data.websites.uptime.current !== null) {
     lines.push(`🌐 *${t.websites}* — ${t.uptime}: ${numberFormat(lang).format(data.websites.uptime.current)}%${change(data.websites.uptime)}`);

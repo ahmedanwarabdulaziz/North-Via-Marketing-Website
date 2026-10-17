@@ -7,6 +7,7 @@ import { syncSocial } from '@/lib/social-sync';
 import { sendCommentDigest, sendRiskAlerts } from '@/lib/social-telegram';
 import { captureClarityDaily } from '@/lib/clarity';
 import { captureGa4Daily } from '@/lib/ga4';
+import { captureSearchDaily } from '@/lib/search-console';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -30,9 +31,9 @@ export async function POST(request: Request) {
         console.error('Website checks failed:', error);
         return { error: error instanceof Error ? error.message : 'Website checks failed' };
       });
-      // Clarity snapshot and GA4 summary once a day, on the first run at or after 10 AM Cairo.
-      const clarityRun = Promise.all([captureClarityDaily(), captureGa4Daily()])
-        .then(([clarity, ga4]) => ({ ...clarity, ga4 }))
+      // Clarity snapshot, GA4 and Search Console summaries once a day, on the first run at or after 10 AM Cairo.
+      const clarityRun = Promise.all([captureClarityDaily(), captureGa4Daily(), captureSearchDaily()])
+        .then(([clarity, ga4, search]) => ({ ...clarity, ga4, search }))
         .catch((error) => ({ error: error instanceof Error ? error.message : 'Daily analytics capture failed' }));
       const socialRun = syncSocial({ timeBudgetMs: 30_000 })
         .then(async (summary) => ({ ...summary, risky: summary.risky.length, alerted: await sendRiskAlerts(summary.risky) }))

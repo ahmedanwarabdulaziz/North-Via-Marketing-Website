@@ -82,6 +82,7 @@ export interface ClientProfile {
   ga4PropertyId?: string;
   clarityProjectId?: string;
   clarityApiTokenEncrypted?: string;
+  searchConsoleSite?: string; // "sc-domain:example.com" or "https://example.com/"
   linkedGoogleAdsIds?: string[];
   createdAt: string;
   updatedAt: string;
