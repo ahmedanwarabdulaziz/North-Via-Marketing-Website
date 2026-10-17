@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { supabase } from '../supabase';
+import { supabase, supabaseConfigProblem } from '../supabase';
 
 /**
  * Document-style access to the Supabase tables, so the app keeps working with
@@ -92,8 +92,11 @@ export function newId() {
   return crypto.randomBytes(15).toString('base64url').slice(0, 20);
 }
 
-function fail(table: string, action: string, error: { message: string }): never {
-  throw new Error(`Database ${action} on ${table} failed: ${error.message}`);
+function fail(table: string, action: string, error: { message: string; details?: string }): never {
+  const problem = supabaseConfigProblem();
+  // supabase-js reports network errors as "TypeError: fetch failed" with the cause in details.
+  const detail = problem || (error.details ? `${error.message} (${String(error.details).slice(0, 200)})` : error.message);
+  throw new Error(`Database ${action} on ${table} failed: ${detail}`);
 }
 
 /**
