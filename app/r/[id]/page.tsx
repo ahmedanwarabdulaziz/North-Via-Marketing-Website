@@ -52,7 +52,7 @@ function Stat({ label, m, lang, t, format, lowerIsBetter, neutral }: { label: st
       <div className="mt-1 text-2xl font-bold text-zinc-900" dir="ltr">
         {show(m.current)}
       </div>
-      <div className="mt-2 flex items-center justify-between gap-2">
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
         <ChangeBadge m={m} t={t} lowerIsBetter={lowerIsBetter} neutral={neutral} />
         {m.previous !== null && (
           <span className="text-[11px] text-zinc-400 whitespace-nowrap">
@@ -61,7 +61,7 @@ function Stat({ label, m, lang, t, format, lowerIsBetter, neutral }: { label: st
         )}
       </div>
       {m.lastYear !== undefined && m.lastYear !== null && (
-        <div className="mt-1.5 flex items-center justify-between gap-2">
+        <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
           <ChangeBadge m={m} t={t} lowerIsBetter={lowerIsBetter} neutral={neutral} against="lastYear" />
           <span className="text-[11px] text-zinc-400 whitespace-nowrap">
             {t.vsLastYear} <span dir="ltr">{show(m.lastYear)}</span>
@@ -256,6 +256,68 @@ function Report({ data, lang }: { data: ReportData; lang: ReportLanguage }) {
               </>
             );
           })()}
+        </Section>
+      )}
+
+      {data.analytics && (
+        <Section title={t.visitorsSection} icon="👥">
+          {data.analytics.ga && (() => {
+            const g = data.analytics!.ga!;
+            const totalSessions = g.channels.reduce((a, c) => a + c.sessions, 0) || 1;
+            return (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <Stat label={t.visitors} m={g.visitors} lang={lang} t={t} />
+                  <Stat label={t.sessions} m={g.sessions} lang={lang} t={t} />
+                </div>
+                <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  <Stat label={t.pageViews} m={g.pageViews} lang={lang} t={t} />
+                  <Stat label={t.engagement} m={g.engagementRate} lang={lang} t={t} format={(n) => `${nf.format(n)}%`} />
+                  {g.showKeyEvents && <Stat label={t.keyEvents} m={g.keyEvents} lang={lang} t={t} />}
+                </div>
+                {g.channels.length > 0 && (
+                  <div className="mt-4 rounded-2xl border border-zinc-200 bg-white p-4 break-inside-avoid">
+                    <div className="text-xs font-medium text-zinc-500 mb-3">{t.sources}</div>
+                    <div className="space-y-2">
+                      {g.channels.map((c) => (
+                        <div key={c.name} className="flex items-center gap-3 text-sm">
+                          <bdi className="w-32 shrink-0 text-zinc-700 truncate">{c.name}</bdi>
+                          <div className="flex-1 h-2 rounded-full bg-zinc-100 overflow-hidden">
+                            <div className="h-full rounded-full bg-sky-500" style={{ width: `${(c.sessions / totalSessions) * 100}%` }} />
+                          </div>
+                          <span className="w-12 text-end text-zinc-600 tabular-nums" dir="ltr">{Math.round((c.sessions / totalSessions) * 100)}%</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {g.pages.length > 0 && (
+                  <div className="mt-4 rounded-2xl border border-zinc-200 bg-white divide-y divide-zinc-100 break-inside-avoid">
+                    <div className="px-4 py-3 text-xs font-medium text-zinc-500">{t.topPages}</div>
+                    {g.pages.map((p) => (
+                      <div key={p.path} className="px-4 py-2.5 flex items-center justify-between gap-3 text-sm">
+                        <div className="min-w-0">
+                          <bdi className="block text-zinc-800 truncate">{p.title || p.path}</bdi>
+                          <div className="text-xs text-zinc-400 truncate" dir="ltr">{p.path}</div>
+                        </div>
+                        <span className="shrink-0 font-semibold text-zinc-900 tabular-nums" dir="ltr">{compactNumber(p.views, lang)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            );
+          })()}
+          {data.analytics.clarity && (
+            <div className={data.analytics.ga ? 'mt-6' : ''}>
+              <h3 className="font-semibold text-zinc-800">{t.behaviour}</h3>
+              <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <Stat label={t.scrollDepth} m={data.analytics.clarity.scrollDepth} lang={lang} t={t} format={(n) => `${Math.round(n)}%`} />
+                <Stat label={t.rageClicks} m={data.analytics.clarity.rageClickPct} lang={lang} t={t} format={(n) => `${nf.format(n)}%`} lowerIsBetter />
+                <Stat label={t.deadClicks} m={data.analytics.clarity.deadClickPct} lang={lang} t={t} format={(n) => `${nf.format(n)}%`} lowerIsBetter />
+              </div>
+            </div>
+          )}
         </Section>
       )}
 

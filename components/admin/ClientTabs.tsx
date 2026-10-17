@@ -35,7 +35,7 @@ export function ClientTabs({ tabs, panels, overview, initial }: { tabs: ClientTa
     setActive(id);
     const url = new URL(window.location.href);
     url.searchParams.set('tab', id);
-    for (const key of ['gbp', 'meta', 'ads']) url.searchParams.delete(key); // one-time connect notices
+    for (const key of ['gbp', 'meta', 'ads', 'ga']) url.searchParams.delete(key); // one-time connect notices
     window.history.replaceState(null, '', url);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }

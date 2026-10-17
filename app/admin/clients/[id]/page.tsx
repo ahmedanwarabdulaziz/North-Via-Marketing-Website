@@ -15,6 +15,11 @@ import { socialOverview } from '@/lib/social-sync';
 import { ClientAdsCard } from '@/components/admin/ClientAdsCard';
 import { clientAdsCard } from '@/lib/ads-metrics';
 import { ClientTabs, type ClientTab, type OverviewTile } from '@/components/admin/ClientTabs';
+import { ClientAnalyticsCard } from '@/components/admin/ClientAnalyticsCard';
+import { analyticsConnected, describeGaError, fetchGa4 } from '@/lib/ga4';
+import { listClaritySnapshots } from '@/lib/clarity';
+import { cairoDay } from '@/lib/social-sync';
+import { MIN_CONVERSIONS_TO_SHOW } from '@/lib/ads-thresholds';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,10 +31,10 @@ export default async function ClientDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ gbp?: string; meta?: string; ads?: string; tab?: string }>;
+  searchParams: Promise<{ gbp?: string; meta?: string; ads?: string; ga?: string; tab?: string }>;
 }) {
   const { id } = await params;
-  const { gbp, meta, ads, tab } = await searchParams;
+  const { gbp, meta, ads, ga, tab } = await searchParams;
   const client = await getClientProfileById(id);
 
   if (!client) {
@@ -49,6 +54,29 @@ export default async function ClientDetailPage({
     clientAdsCard(id).catch(() => ({ connected: false, accounts: [] })),
   ]);
 
+  // ---------- Website analytics (GA4 last 7 days vs the 7 before, latest Clarity day) ----------
+  const day = (offset: number) => cairoDay(new Date(Date.now() - offset * 86_400_000));
+  const [gaConnected, claritySnapshots] = await Promise.all([analyticsConnected().catch(() => false), listClaritySnapshots(id).catch(() => [])]);
+  let gaStats = null;
+  let gaError: string | undefined;
+  if (gaConnected && client.ga4PropertyId) {
+    try {
+      const [cur, prev] = await fetchGa4(client.ga4PropertyId, [{ start: day(7), end: day(1) }, { start: day(14), end: day(8) }]);
+      gaStats = {
+        visitors: cur.totals.visitors,
+        visitorsBefore: prev.totals.visitors,
+        sessions: cur.totals.sessions,
+        engagementRate: cur.totals.engagementRate,
+        keyEvents: cur.totals.keyEvents >= MIN_CONVERSIONS_TO_SHOW ? cur.totals.keyEvents : null,
+        topSource: cur.channels[0]?.name,
+      };
+    } catch (error) {
+      gaError = describeGaError(error);
+    }
+  }
+  const clarityLatest = claritySnapshots.at(-1) || null;
+  const clarityOn = Boolean(client.clarityApiTokenEncrypted);
+
   // ---------- Status per area (tab dots and overview tiles) ----------
   const monitoredLocations = gbpLocations.filter((l) => l.linked);
   const reviewsStatus: OverviewTile['status'] = !gbpConnection ? 'off' : gbpConnection.status === 'error' || !monitoredLocations.length ? 'warn' : 'ok';
@@ -57,6 +85,7 @@ export default async function ClientDetailPage({
   const enabledSites = websites.filter((w) => w.enabled);
   const downSites = enabledSites.filter((w) => w.status === 'down');
   const websitesStatus: OverviewTile['status'] = !enabledSites.length ? 'off' : downSites.length ? 'warn' : 'ok';
+  const analyticsStatus: OverviewTile['status'] = !client.ga4PropertyId && !clarityOn ? 'off' : gaError ? 'warn' : 'ok';
 
   const tabs: ClientTab[] = [
     { id: 'overview', label: 'Overview' },
@@ -64,6 +93,7 @@ export default async function ClientDetailPage({
     { id: 'social', label: 'Facebook & Instagram', status: socialStatus },
     { id: 'ads', label: 'Google Ads', status: adsStatus },
     { id: 'websites', label: 'Websites', status: websitesStatus },
+    { id: 'analytics', label: 'Analytics', status: analyticsStatus },
     { id: 'details', label: 'Details' },
   ];
 
@@ -106,7 +136,15 @@ export default async function ClientDetailPage({
     },
   ];
 
-  const initial = tab || (gbp ? 'reviews' : meta ? 'social' : ads ? 'ads' : 'overview');
+  overview.push({
+    tab: 'analytics',
+    title: 'Website analytics',
+    status: analyticsStatus,
+    value: gaStats ? `${gaStats.visitors.toLocaleString('en-CA')} visitors` : client.ga4PropertyId || clarityOn ? 'Connected' : 'Not connected',
+    detail: gaError || (gaStats ? 'Last 7 days (GA4)' : 'Connect GA4 and Clarity for visitors and behaviour.') + (clarityOn ? ' · Clarity on' : ''),
+  });
+
+  const initial = tab || (gbp ? 'reviews' : meta ? 'social' : ads ? 'ads' : ga ? 'analytics' : 'overview');
 
   const panels = {
     reviews: (
@@ -136,6 +174,18 @@ export default async function ClientDetailPage({
     ),
     ads: <ClientAdsCard clientId={id} connected={adsCard.connected} accounts={adsCard.accounts} notice={ads === 'connected' ? 'connected' : ads ? 'error' : undefined} />,
     websites: <WebsitesCard clientId={id} initial={websites} suggestedUrl={client.websiteUrl || undefined} />,
+    analytics: (
+      <ClientAnalyticsCard
+        clientId={id}
+        gaConnected={gaConnected}
+        propertyId={client.ga4PropertyId || undefined}
+        gaStats={gaStats}
+        gaError={gaError}
+        clarityConnected={clarityOn}
+        clarityLatest={clarityLatest ? { day: clarityLatest.day, sessions: clarityLatest.sessions, scrollDepth: clarityLatest.scrollDepth, rageClickPct: clarityLatest.rageClickPct, deadClickPct: clarityLatest.deadClickPct } : null}
+        notice={ga === 'connected' ? 'connected' : ga ? 'error' : undefined}
+      />
+    ),
     details: (
       <div className="bg-white p-6 rounded-2xl shadow-sm border border-zinc-200">
         <h3 className="font-semibold text-zinc-900 flex items-center gap-2 mb-4">

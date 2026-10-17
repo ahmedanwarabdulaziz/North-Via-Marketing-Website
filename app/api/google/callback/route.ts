@@ -7,7 +7,8 @@ import { completeGbpConnection, verifyConnectToken } from '@/lib/google-business
 import { isAdminAuthenticated } from '@/lib/admin-auth';
 import { googleRedirectUri } from '@/lib/google-oauth';
 
-// Business Profile authorizations carry a signed `state`; Google Ads ones carry "ads:<clientId>".
+// Business Profile authorizations carry a signed `state`; Google Ads ones carry
+// "ads:<clientId>" and Google Analytics ones "ga:<clientId>".
 async function handleBusinessProfileCallback(request: Request, code: string | null, state: string) {
   const verified = await verifyConnectToken(state);
   if (!verified) {
@@ -37,16 +38,17 @@ export async function GET(request: Request) {
     const code = searchParams.get('code');
     const state = searchParams.get('state');
 
-    const adsState = state?.startsWith('ads:') ? state : null;
-    if (state && !adsState) {
-      return handleBusinessProfileCallback(request, code, state);
+    const kind = state?.startsWith('ga:') ? 'ga' : state?.startsWith('ads:') ? 'ads' : state ? 'gbp' : 'ads';
+    if (kind === 'gbp') {
+      return handleBusinessProfileCallback(request, code, state!);
     }
+    const connectionId = kind === 'ga' ? 'analytics_admin_connection' : 'master_admin_connection';
     // Back to the client page the connection was started from, or Settings.
-    const adsClientId = adsState?.slice(4) || '';
+    const adsClientId = state?.split(':')[1] || '';
     const adsDone = (query: string) =>
-      new URL(adsClientId ? `/admin/clients/${adsClientId}?ads=${query}` : `/admin/settings?${query === 'connected' ? 'success=connected' : 'error=' + query}`, request.url);
+      new URL(adsClientId ? `/admin/clients/${adsClientId}?${kind}=${query}` : `/admin/settings?${query === 'connected' ? 'success=connected' : 'error=' + query}`, request.url);
 
-    // The Google Ads master connection may only be replaced by a signed-in admin.
+    // The shared Google Ads / Analytics connections may only be replaced by a signed-in admin.
     if (!(await isAdminAuthenticated())) {
       return NextResponse.redirect(new URL('/admin/login', request.url));
     }
@@ -80,12 +82,12 @@ export async function GET(request: Request) {
       // but 'prompt: consent' fundamentally forces a new one every time anyway.
       encryptedRefreshToken: encryptedRefresh,
       tokenExpiry: tokens.expiry_date || Date.now() + 3600 * 1000,
-      scopes: tokens.scope ? tokens.scope.split(' ') : ['https://www.googleapis.com/auth/adwords'],
+      scopes: tokens.scope ? tokens.scope.split(' ') : [kind === 'ga' ? 'https://www.googleapis.com/auth/analytics.readonly' : 'https://www.googleapis.com/auth/adwords'],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
 
-    await setDoc('google_connections', 'master_admin_connection', payload, { merge: true });
+    await setDoc('google_connections', connectionId, payload, { merge: true });
 
     return NextResponse.redirect(adsDone('connected'));
   } catch (error) {

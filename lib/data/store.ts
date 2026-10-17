@@ -71,6 +71,10 @@ const TABLES = {
     pk: 'id',
     fields: ['websiteId', 'clientId', 'ok', 'statusCode', 'responseMs', 'error', 'checkedAt'],
   },
+  clarity_daily: {
+    pk: 'id',
+    fields: ['clientId', 'day', 'sessions', 'botSessions', 'pagesPerSession', 'scrollDepth', 'activeSeconds', 'rageClickPct', 'deadClickPct', 'quickbackPct', 'scriptErrorPct', 'raw', 'capturedAt'],
+  },
   client_reports: {
     pk: 'id',
     fields: ['clientId', 'periodDays', 'language', 'periodStart', 'periodEnd', 'data', 'createdAt'],

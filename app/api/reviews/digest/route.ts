@@ -5,6 +5,7 @@ import { runDailyDigest, sendReviewDigest } from '@/lib/review-telegram';
 import { runWebsiteChecks } from '@/lib/website-monitor';
 import { syncSocial } from '@/lib/social-sync';
 import { sendCommentDigest, sendRiskAlerts } from '@/lib/social-telegram';
+import { captureClarityDaily } from '@/lib/clarity';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -28,6 +29,8 @@ export async function POST(request: Request) {
         console.error('Website checks failed:', error);
         return { error: error instanceof Error ? error.message : 'Website checks failed' };
       });
+      // One Clarity snapshot per client each morning (its API keeps only ~3 days).
+      const clarityRun = captureClarityDaily().catch((error) => ({ error: error instanceof Error ? error.message : 'Clarity capture failed' }));
       const socialRun = syncSocial({ timeBudgetMs: 30_000 })
         .then(async (summary) => ({ ...summary, risky: summary.risky.length, alerted: await sendRiskAlerts(summary.risky) }))
         .catch((error) => {
@@ -41,13 +44,13 @@ export async function POST(request: Request) {
         if (backlog.drafted > 0 && (await digestSentToday())) {
           followUp = await sendReviewDigest({ onlyUnsent: true, followUp: true });
         }
-        return Response.json({ skipped: true, reason: check.reason, backlog, followUp, websites: await websitesRun, social: await socialRun });
+        return Response.json({ skipped: true, reason: check.reason, backlog, followUp, websites: await websitesRun, social: await socialRun, clarity: await clarityRun });
       }
       const result = await runDailyDigest();
       const social = await socialRun;
       const comments = await sendCommentDigest({ onlyUnsent: true }).catch((error) => ({ error: error instanceof Error ? error.message : 'Comment digest failed' }));
       await markScheduledRun(check.runKey);
-      return Response.json({ ...result, websites: await websitesRun, social, comments });
+      return Response.json({ ...result, websites: await websitesRun, social, comments, clarity: await clarityRun });
     }
     return Response.json(await runDailyDigest());
   } catch (error) {

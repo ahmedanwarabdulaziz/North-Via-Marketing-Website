@@ -2,6 +2,9 @@ import crypto from 'crypto';
 import { addDoc, getDoc, listDocs } from './data/store';
 import { cairoDay } from './social-sync';
 import { conversionsMeaningful, costPerConversion, ctr, describeAdsError, fetchClientAds, fetchClientKeywords } from './ads-metrics';
+import { MIN_CONVERSIONS_TO_SHOW } from './ads-thresholds';
+import { describeGaError, fetchGa4 } from './ga4';
+import { clarityPeriod, listClaritySnapshots } from './clarity';
 import type {
   ClientProfile,
   GbpStoredReview,
@@ -90,6 +93,26 @@ export interface ReportData {
     lastYearEnd: string;
     campaigns: Array<{ name: string; cost: number; clicks: number; conversions: number }>;
     keywords: { source: 'keywords' | 'search_terms'; items: Array<{ text: string; impressions: number; clicks: number }> };
+  } | null;
+  analytics: {
+    ga: {
+      visitors: Compared;
+      sessions: Compared;
+      engagementRate: Compared; // %
+      pageViews: Compared;
+      showKeyEvents: boolean;
+      keyEvents: Compared;
+      hasLastYear: boolean;
+      channels: Array<{ name: string; sessions: number }>;
+      pages: Array<{ title: string; path: string; views: number }>;
+    } | null;
+    clarity: {
+      sessions: Compared;
+      scrollDepth: Compared; // average %
+      rageClickPct: Compared;
+      deadClickPct: Compared;
+      days: number; // daily snapshots behind the numbers
+    } | null;
   } | null;
   websites: {
     uptime: Compared; // % across all monitored pages
@@ -335,6 +358,54 @@ async function adsSection(clientId: string, w: ReturnType<typeof windows>): Prom
   };
 }
 
+async function analyticsSection(client: ClientProfile, w: ReturnType<typeof windows>, warnings: string[]): Promise<ReportData['analytics']> {
+  let ga: NonNullable<ReportData['analytics']>['ga'] = null;
+  if (client.ga4PropertyId) {
+    try {
+      const [cur, prev, ly] = await fetchGa4(client.ga4PropertyId, [
+        { start: w.labels.periodStart, end: w.labels.periodEnd },
+        { start: w.labels.previousStart, end: w.labels.previousEnd },
+        { start: yearEarlier(w.labels.periodStart), end: yearEarlier(w.labels.periodEnd) },
+      ]);
+      const hasLastYear = ly.totals.sessions > 0;
+      const metric = (pick: (t: typeof cur.totals) => number): Compared => ({
+        current: pick(cur.totals),
+        previous: pick(prev.totals),
+        ...(hasLastYear ? { lastYear: pick(ly.totals) } : {}),
+      });
+      ga = {
+        visitors: metric((t) => t.visitors),
+        sessions: metric((t) => t.sessions),
+        engagementRate: metric((t) => t.engagementRate),
+        pageViews: metric((t) => t.pageViews),
+        // Same rule as Ads conversions: too few means key events aren't really tracked.
+        showKeyEvents: cur.totals.keyEvents >= MIN_CONVERSIONS_TO_SHOW,
+        keyEvents: metric((t) => t.keyEvents),
+        hasLastYear,
+        channels: cur.channels,
+        pages: cur.pages,
+      };
+    } catch (error) {
+      warnings.push(`Google Analytics not included: ${describeGaError(error)}`);
+    }
+  }
+
+  let clarity: NonNullable<ReportData['analytics']>['clarity'] = null;
+  const snapshots = await listClaritySnapshots(client.id!).catch(() => []);
+  const cur = clarityPeriod(snapshots, w.labels.periodStart, w.labels.periodEnd);
+  if (cur) {
+    const prev = clarityPeriod(snapshots, w.labels.previousStart, w.labels.previousEnd);
+    clarity = {
+      sessions: { current: cur.sessions, previous: prev?.sessions ?? null },
+      scrollDepth: { current: cur.scrollDepth, previous: prev?.scrollDepth ?? null },
+      rageClickPct: { current: cur.rageClickPct, previous: prev?.rageClickPct ?? null },
+      deadClickPct: { current: cur.deadClickPct, previous: prev?.deadClickPct ?? null },
+      days: cur.days,
+    };
+  }
+  return ga || clarity ? { ga, clarity } : null;
+}
+
 // ---------- Public API ----------
 
 export async function buildReportData(clientId: string, days: ReportDays): Promise<{ data: ReportData; warnings: string[] }> {
@@ -347,14 +418,15 @@ export async function buildReportData(clientId: string, days: ReportDays): Promi
     warnings.push(`Google Ads not included: ${describeAdsError(error)}`);
     return null;
   });
+  const analytics = analyticsSection({ ...client, id: clientId }, w, warnings);
   const [social, reviews, websites] = await Promise.all([socialSection(clientId, w), reviewsSection(clientId, w), websitesSection(clientId, w)]);
-  const data: ReportData = { clientName: client.brandName, days, ...w.labels, generatedAt: new Date().toISOString(), social, reviews, ads: await ads, websites };
+  const data: ReportData = { clientName: client.brandName, days, ...w.labels, generatedAt: new Date().toISOString(), social, reviews, ads: await ads, analytics: await analytics, websites };
   return { data, warnings };
 }
 
 export async function createClientReport(clientId: string, days: ReportDays, language: ReportLanguage) {
   const { data, warnings } = await buildReportData(clientId, days);
-  if (!data.social && !data.reviews && !data.ads && !data.websites) {
+  if (!data.social && !data.reviews && !data.ads && !data.analytics && !data.websites) {
     throw new Error(warnings[0] || 'Nothing to report yet: connect Facebook/Instagram, Google reviews, Google Ads or a website for this client first.');
   }
   // 128 random bits: the link is the only key to the report.

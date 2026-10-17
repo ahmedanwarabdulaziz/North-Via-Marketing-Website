@@ -38,6 +38,18 @@ export const REPORT_TEXT = {
     conversions: 'Conversions',
     cpa: 'Cost per conversion',
     campaigns: 'Top campaigns',
+    visitorsSection: 'Website visitors',
+    visitors: 'Visitors',
+    sessions: 'Visits (sessions)',
+    engagement: 'Engaged visits',
+    pageViews: 'Page views',
+    keyEvents: 'Key actions (calls, forms…)',
+    sources: 'Where visitors came from',
+    topPages: 'Most visited pages',
+    behaviour: 'Visitor behaviour (Microsoft Clarity)',
+    scrollDepth: 'Average scroll depth',
+    rageClicks: 'Sessions with rage clicks',
+    deadClicks: 'Sessions with dead clicks',
     websites: 'Website health',
     uptime: 'Uptime',
     incidents: 'Outages',
@@ -89,6 +101,18 @@ export const REPORT_TEXT = {
     conversions: 'التحويلات',
     cpa: 'تكلفة التحويل',
     campaigns: 'أهم الحملات',
+    visitorsSection: 'زوار الموقع',
+    visitors: 'الزوار',
+    sessions: 'الزيارات',
+    engagement: 'الزيارات المتفاعلة',
+    pageViews: 'مشاهدات الصفحات',
+    keyEvents: 'الإجراءات المهمة (اتصال، نماذج…)',
+    sources: 'مصادر الزوار',
+    topPages: 'أكثر الصفحات زيارة',
+    behaviour: 'سلوك الزوار (Microsoft Clarity)',
+    scrollDepth: 'متوسط عمق التمرير',
+    rageClicks: 'زيارات بها نقرات غاضبة',
+    deadClicks: 'زيارات بها نقرات بلا استجابة',
     websites: 'صحة الموقع',
     uptime: 'مدة التشغيل',
     incidents: 'مرات التوقف',
@@ -163,6 +187,10 @@ export function reportWhatsAppText(data: ReportData, lang: ReportLanguage, url: 
       `📈 *${t.ads}* — ${t.impressions}: ${n(a.impressions.current)}${change(a.impressions)} · ${t.clicks}: ${n(a.clicks.current)}${change(a.clicks)} · ${t.spend}: ${cur(a.spend.current)}` +
         (a.showConversions ? ` · ${t.conversions}: ${n(a.conversions.current)}${change(a.conversions)}` : '')
     );
+  }
+  if (data.analytics?.ga) {
+    const g = data.analytics.ga;
+    lines.push(`🌐 *${t.visitorsSection}* — ${t.visitors}: ${n(g.visitors.current)}${change(g.visitors)} · ${t.sessions}: ${n(g.sessions.current)}${change(g.sessions)}`);
   }
   if (data.websites && data.websites.uptime.current !== null) {
     lines.push(`🌐 *${t.websites}* — ${t.uptime}: ${numberFormat(lang).format(data.websites.uptime.current)}%${change(data.websites.uptime)}`);
