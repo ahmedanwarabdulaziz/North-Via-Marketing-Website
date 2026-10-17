@@ -71,6 +71,10 @@ const TABLES = {
     pk: 'id',
     fields: ['websiteId', 'clientId', 'ok', 'statusCode', 'responseMs', 'error', 'checkedAt'],
   },
+  client_reports: {
+    pk: 'id',
+    fields: ['clientId', 'periodDays', 'language', 'periodStart', 'periodEnd', 'data', 'createdAt'],
+  },
   meta_connections: {
     pk: 'id',
     fields: ['connectedVia', 'clientId', 'metaUserId', 'metaUserName', 'encryptedUserToken', 'tokenExpiresAt', 'scopes', 'status', 'lastError', 'connectedAt', 'updatedAt'],

@@ -305,10 +305,15 @@ export interface FbPost {
   reactions?: { summary?: { total_count?: number } };
 }
 
-export async function fetchFacebookPosts(account: SocialAccount & { id: string }, limit = 5) {
+/** Posts published in the last `days` days (newest first), with like and comment totals. */
+export async function fetchFacebookPosts(account: SocialAccount & { id: string }, days = 62) {
   const res = await graph<{ data: FbPost[] }>(`${account.id}/published_posts`, {
     token: pageToken(account),
-    params: { fields: 'id,message,created_time,permalink_url,comments.summary(true).limit(0),reactions.summary(true).limit(0)', limit },
+    params: {
+      fields: 'id,message,created_time,permalink_url,comments.summary(true).limit(0),reactions.summary(true).limit(0)',
+      since: Math.floor((Date.now() - days * 86_400_000) / 1000),
+      limit: 100,
+    },
   });
   return res.data || [];
 }
@@ -335,13 +340,15 @@ export interface IgMedia {
   comments_count?: number;
 }
 
-export async function fetchInstagramMedia(account: SocialAccount, limit = 5) {
+/** Media from the last `days` days (newest first). */
+export async function fetchInstagramMedia(account: SocialAccount, days = 62) {
   if (!account.igUserId) return [];
   const res = await graph<{ data: IgMedia[] }>(`${account.igUserId}/media`, {
     token: pageToken(account),
-    params: { fields: 'id,caption,timestamp,permalink,like_count,comments_count', limit },
+    params: { fields: 'id,caption,timestamp,permalink,like_count,comments_count', limit: 100 },
   });
-  return res.data || [];
+  const since = Date.now() - days * 86_400_000;
+  return (res.data || []).filter((m) => new Date(m.timestamp).getTime() >= since);
 }
 
 export async function fetchInstagramInsights(account: SocialAccount, mediaId: string) {

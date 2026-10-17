@@ -5,6 +5,11 @@ import { InlineButton, OutgoingMessage, answerCallback, editMessage, escapeHtml 
 import { runWebsiteChecks, websiteOverview, websitesScreenText } from './website-monitor';
 import { listCommentQueue } from './social-sync';
 import { checkSocialNow, showWaitingComments, socialStatsLines } from './social-telegram';
+import { createClientReport, type ReportDays, type ReportLanguage } from './client-report';
+import { reportWhatsAppText } from './report-i18n';
+import { whatsAppNumber, whatsAppShareLink } from './whatsapp-share';
+import { listClientProfiles } from './admin-ops';
+import { listDocs } from './data/store';
 
 // Main bot menu. Button data is "m:<screen>" or "m:<screen>:<action>".
 // To add a new area (e.g. Tasks, Invoices), add a section here and a screen below.
@@ -29,6 +34,10 @@ const SECTIONS: MenuSection[] = [
       const waiting = (await listCommentQueue()).length;
       return `📱 Facebook & Instagram${waiting ? ` (${waiting} comments)` : ''}`;
     },
+  },
+  {
+    id: 'rp',
+    label: async () => '📊 Client reports',
   },
   {
     id: 'ws',
@@ -117,6 +126,40 @@ async function socialScreen(note?: string): Promise<OutgoingMessage> {
   };
 }
 
+/** Clients with something to report: Facebook/Instagram, Google reviews or a website. */
+async function reportableClients() {
+  const [clients, social, locations, sites] = await Promise.all([
+    listClientProfiles(),
+    listDocs<{ clientId?: string; linked?: boolean }>('social_accounts', { where: { linked: true } }),
+    listDocs<{ clientId?: string; linked?: boolean }>('gbp_locations', { where: { linked: true } }),
+    listDocs<{ clientId?: string; enabled?: boolean }>('websites', { where: { enabled: true } }),
+  ]);
+  const ids = new Set([...social, ...locations, ...sites].map((r) => r.clientId).filter(Boolean));
+  return clients.filter((c) => ids.has(c.id));
+}
+
+async function reportsScreen(): Promise<OutgoingMessage> {
+  const clients = await reportableClients();
+  return {
+    text: clients.length
+      ? ['📊 <b>Client reports</b>', '', 'Choose a client. You’ll get a branded report link and a ready WhatsApp message, compared with the previous period.'].join('\n')
+      : '📊 <b>Client reports</b>\n\nNo client has Facebook/Instagram, Google reviews or a website connected yet.',
+    buttons: [...clients.map((c) => [{ text: c.brandName, callback_data: `m:rp:c:${c.id}` }]), [{ text: '⬅️ Back to menu', callback_data: 'm:home' }]],
+  };
+}
+
+function reportOptionsScreen(clientId: string, clientName: string): OutgoingMessage {
+  const opt = (days: ReportDays, lang: ReportLanguage, text: string) => ({ text, callback_data: `m:rp:g:${clientId}:${days}:${lang}` });
+  return {
+    text: `📊 <b>${h(clientName)}</b>\n\nWhich report?`,
+    buttons: [
+      [opt(7, 'en', '📅 Weekly · English'), opt(7, 'ar', '📅 أسبوعي · عربي')],
+      [opt(30, 'en', '🗓 Monthly · English'), opt(30, 'ar', '🗓 شهري · عربي')],
+      [{ text: '⬅️ Back', callback_data: 'm:rp' }],
+    ],
+  };
+}
+
 async function websitesScreen(note?: string): Promise<OutgoingMessage> {
   const { text, panelUrl } = await websitesScreenText();
   return {
@@ -184,6 +227,36 @@ export async function handleMenuCallback(query: { id: string; data?: string; mes
         return;
       }
       await editMessage(chatId, messageId, await socialScreen());
+      return answerCallback(query.id);
+    }
+
+    if (screen === 'rp') {
+      const [, , , clientId, days, lang] = (query.data || '').split(':');
+      const client = clientId ? (await listClientProfiles()).find((c) => c.id === clientId) : undefined;
+      if (action === 'c' && client) {
+        await editMessage(chatId, messageId, reportOptionsScreen(client.id, client.brandName));
+        return answerCallback(query.id);
+      }
+      if (action === 'g' && client && (days === '7' || days === '30') && (lang === 'en' || lang === 'ar')) {
+        await answerCallback(query.id, 'Preparing the report…');
+        const { id, url, report } = await createClientReport(client.id, Number(days) as ReportDays, lang);
+        const phone = whatsAppNumber(client.mobileNumber);
+        await sendMessage(chatId, {
+          text: [
+            `📊 <b>Report ready</b> · ${h(client.brandName)}`,
+            phone ? `📲 Sends to ${h(client.mobileNumber || '')}` : '📲 No valid mobile number saved for this client: you’ll pick the WhatsApp chat.',
+            '',
+            h(reportWhatsAppText(report.data, report.language, url)),
+          ].join('\n'),
+          buttons: [
+            [{ text: '📲 Send on WhatsApp', url: whatsAppShareLink('p', id) }],
+            [{ text: '🔗 Open report', url }],
+            [{ text: '📊 Another report', callback_data: 'm:rp' }],
+          ],
+        });
+        return;
+      }
+      await editMessage(chatId, messageId, await reportsScreen());
       return answerCallback(query.id);
     }
 

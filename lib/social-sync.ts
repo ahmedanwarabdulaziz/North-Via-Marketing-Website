@@ -28,6 +28,8 @@ const POSTS = 'social_posts' as const;
 const COMMENTS = 'social_comments' as const;
 const SNAPSHOTS = 'social_follower_snapshots' as const;
 const RECENT_POSTS = 5; // per platform; comments are read on these
+const HISTORY_DAYS = 62; // posts kept up to date for month-over-month reports
+const INSIGHTS_FRESH_DAYS = 14; // older posts' reach barely moves, so it's read once
 const BACKFILL_MS = 48 * 3600_000; // comments older than this before linking aren't imported
 const MAX_AI_PER_RUN = 20;
 const MAX_REPLY_LENGTH = 2000;
@@ -183,15 +185,20 @@ async function syncAccount(account: Account, now: string) {
 
   const posts: Array<{ id: string; data: SocialPost }> = [];
   const raw: RawComment[] = [];
+  const fbPosts = await fetchFacebookPosts(account, HISTORY_DAYS);
+  const igMedia = await fetchInstagramMedia(account, HISTORY_DAYS);
+  const stored = await getDocs<SocialPost>(POSTS, [...fbPosts.map((p) => p.id), ...igMedia.map((m) => m.id)]);
+  const needsInsights = (id: string, created: string) =>
+    Date.now() - new Date(created).getTime() < INSIGHTS_FRESH_DAYS * 86_400_000 || stored.get(id)?.reach === undefined;
 
-  for (const p of await fetchFacebookPosts(account, RECENT_POSTS)) {
-    const views = await fetchFacebookPostViews(account, p.id);
+  for (const [i, p] of fbPosts.entries()) {
+    const views = needsInsights(p.id, p.created_time) ? await fetchFacebookPostViews(account, p.id) : stored.get(p.id)?.views ?? null;
     const commentsCount = p.comments?.summary?.total_count ?? 0;
     posts.push({
       id: p.id,
       data: { accountId: account.id, clientId: account.clientId!, platform: 'facebook', message: p.message, permalink: p.permalink_url, createdTime: p.created_time, reach: views ?? undefined, views: views ?? undefined, likes: p.reactions?.summary?.total_count, commentsCount, lastSyncedAt: now, updatedAt: now },
     });
-    if (commentsCount > 0) {
+    if (commentsCount > 0 && i < RECENT_POSTS) {
       for (const c of await fetchFacebookComments(account, p.id)) {
         if (c.from?.id === account.id || !c.message) continue; // the Page's own comments
         raw.push({
@@ -203,13 +210,16 @@ async function syncAccount(account: Account, now: string) {
     }
   }
 
-  for (const m of await fetchInstagramMedia(account, RECENT_POSTS)) {
-    const insights = await fetchInstagramInsights(account, m.id);
+  for (const [i, m] of igMedia.entries()) {
+    const prev = stored.get(m.id);
+    const insights = needsInsights(m.id, m.timestamp)
+      ? await fetchInstagramInsights(account, m.id)
+      : { reach: prev?.reach ?? null, views: prev?.views ?? null };
     posts.push({
       id: m.id,
       data: { accountId: account.id, clientId: account.clientId!, platform: 'instagram', message: m.caption, permalink: m.permalink, createdTime: m.timestamp, reach: insights.reach ?? undefined, views: insights.views ?? undefined, likes: m.like_count, commentsCount: m.comments_count, lastSyncedAt: now, updatedAt: now },
     });
-    if ((m.comments_count ?? 0) > 0) {
+    if ((m.comments_count ?? 0) > 0 && i < RECENT_POSTS) {
       for (const c of await fetchInstagramComments(account, m.id)) {
         const author = c.username || c.from?.username;
         if (!c.text || (account.igUsername && author === account.igUsername)) continue;

@@ -1,8 +1,7 @@
 import type { Metadata } from 'next'
 import { Inter, Playfair_Display } from 'next/font/google'
 import './globals.css'
-import { ConditionalHeader, ConditionalFooter } from './components/ClientLayoutElements'
-import Chatbot from '@/components/Chatbot'
+import { ConditionalHeader, ConditionalFooter, ConditionalChatbot } from './components/ClientLayoutElements'
 
 const inter = Inter({ 
   subsets: ['latin'],
@@ -87,7 +86,7 @@ export default function RootLayout({
           {children}
         </main>
         <ConditionalFooter />
-        <Chatbot />
+        <ConditionalChatbot />
       </body>
     </html>
   )

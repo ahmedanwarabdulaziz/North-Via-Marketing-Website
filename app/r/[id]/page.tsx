@@ -1,0 +1,247 @@
+import type { Metadata } from 'next';
+import Image from 'next/image';
+import { notFound } from 'next/navigation';
+import { Cairo } from 'next/font/google';
+import { getClientReport, percentChange, type Compared, type PlatformStats, type ReportData, type ReportLanguage } from '@/lib/client-report';
+import { REPORT_TEXT, compactNumber, numberFormat, periodLabel } from '@/lib/report-i18n';
+import { PrintButton } from './PrintButton';
+
+export const dynamic = 'force-dynamic';
+
+const cairo = Cairo({ subsets: ['arabic', 'latin'], weight: ['400', '600', '700'], display: 'swap' });
+
+type T = (typeof REPORT_TEXT)[ReportLanguage];
+
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
+  const { id } = await params;
+  const report = await getClientReport(id).catch(() => null);
+  if (!report) return { title: 'Report | North Via Marketing', robots: { index: false, follow: false } };
+  const t = REPORT_TEXT[report.language];
+  const title = `${report.data.clientName} — ${report.periodDays === 7 ? t.weekly : t.monthly}`;
+  const description = `${periodLabel(report.periodStart, report.periodEnd, report.language)} · ${t.preparedBy}`;
+  return {
+    title,
+    description,
+    robots: { index: false, follow: false },
+    metadataBase: new URL('https://www.northviamarketing.com'),
+    openGraph: { title, description, images: [{ url: '/Logo-1.png', width: 400, height: 400 }], type: 'article' },
+  };
+}
+
+function ChangeBadge({ m, t, lowerIsBetter = false, suffix = '%' }: { m: Compared; t: T; lowerIsBetter?: boolean; suffix?: string }) {
+  if (m.current === null) return null;
+  if (m.previous === null) return <span className="text-xs text-zinc-400">{t.noPrevious}</span>;
+  const pct = percentChange(m);
+  if (pct === null) return <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">{t.newLabel}</span>;
+  if (pct === 0) return <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-600">= 0{suffix}</span>;
+  const good = lowerIsBetter ? pct < 0 : pct > 0;
+  return (
+    <span className={`whitespace-nowrap text-xs font-semibold px-2 py-0.5 rounded-full ${good ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`} dir="ltr">
+      {pct > 0 ? '▲' : '▼'} {Math.abs(pct)}
+      {suffix}
+    </span>
+  );
+}
+
+function Stat({ label, m, lang, t, format, lowerIsBetter }: { label: string; m: Compared; lang: ReportLanguage; t: T; format?: (n: number) => string; lowerIsBetter?: boolean }) {
+  const show = (n: number | null) => (n === null ? '—' : format ? format(n) : compactNumber(n, lang));
+  return (
+    <div className="rounded-2xl border border-zinc-200 bg-white p-4 break-inside-avoid">
+      <div className="text-xs font-medium text-zinc-500">{label}</div>
+      <div className="mt-1 text-2xl font-bold text-zinc-900" dir="ltr">
+        {show(m.current)}
+      </div>
+      <div className="mt-2 flex items-center justify-between gap-2">
+        <ChangeBadge m={m} t={t} lowerIsBetter={lowerIsBetter} />
+        {m.previous !== null && (
+          <span className="text-[11px] text-zinc-400 whitespace-nowrap">
+            {t.before} <span dir="ltr">{show(m.previous)}</span>
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Section({ title, icon, children }: { title: string; icon: string; children: React.ReactNode }) {
+  return (
+    <section className="mt-8 break-inside-avoid-page">
+      <h2 className="flex items-center gap-2 text-lg font-bold text-zinc-900">
+        <span aria-hidden>{icon}</span>
+        {title}
+      </h2>
+      <div className="mt-3">{children}</div>
+    </section>
+  );
+}
+
+function PlatformBlock({ p, kind, lang, t }: { p: PlatformStats; kind: 'facebook' | 'instagram'; lang: ReportLanguage; t: T }) {
+  return (
+    <div className="mt-4">
+      <div className="flex items-baseline justify-between gap-3">
+        <h3 className="font-semibold text-zinc-800">
+          {kind === 'facebook' ? '📘 ' + t.facebook : '📸 ' + t.instagram}
+          {' '}
+          <bdi className="ms-1 text-sm font-normal text-zinc-500">{p.name}</bdi>
+        </h3>
+        {p.followers !== null && (
+          <div className="text-sm text-zinc-600">
+            <span className="font-semibold text-zinc-900" dir="ltr">{compactNumber(p.followers, lang)}</span> {t.followers}
+          </div>
+        )}
+      </div>
+      <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <Stat label={kind === 'facebook' ? t.views : t.reach} m={p.reach} lang={lang} t={t} />
+        {p.followersChange.current !== null && (
+          <Stat label={t.newFollowers} m={p.followersChange} lang={lang} t={t} format={(n) => `${n > 0 ? '+' : ''}${numberFormat(lang).format(n)}`} />
+        )}
+        <Stat label={t.posts} m={p.posts} lang={lang} t={t} />
+        <Stat label={t.likes} m={p.likes} lang={lang} t={t} />
+        <Stat label={t.comments} m={p.comments} lang={lang} t={t} />
+      </div>
+    </div>
+  );
+}
+
+function Report({ data, lang }: { data: ReportData; lang: ReportLanguage }) {
+  const t = REPORT_TEXT[lang];
+  const nf = numberFormat(lang);
+  const dateFmt = new Intl.DateTimeFormat(lang === 'ar' ? 'ar-EG-u-nu-latn' : 'en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+  const day = (d: string) => dateFmt.format(new Date(`${d}T12:00:00Z`));
+
+  return (
+    <>
+      {data.social && (data.social.facebook || data.social.instagram) && (
+        <Section title={t.social} icon="📱">
+          {data.social.facebook && <PlatformBlock p={data.social.facebook} kind="facebook" lang={lang} t={t} />}
+          {data.social.instagram && <PlatformBlock p={data.social.instagram} kind="instagram" lang={lang} t={t} />}
+          {data.social.followersTrackedSince && data.social.followersTrackedSince > data.previousStart && (
+            <p className="mt-3 text-xs text-zinc-500">{t.followers}: {t.trackingSince(day(data.social.followersTrackedSince))}</p>
+          )}
+          {data.social.topPosts.length > 0 && (
+            <div className="mt-6">
+              <h3 className="font-semibold text-zinc-800">{t.topPosts}</h3>
+              <div className="mt-3 space-y-3">
+                {data.social.topPosts.map((p, i) => (
+                  <div key={i} className="rounded-2xl border border-zinc-200 bg-white p-4 break-inside-avoid">
+                    <div className="flex items-center justify-between gap-3 text-xs text-zinc-500">
+                      <span>{p.platform === 'facebook' ? '📘 ' + t.facebook : '📸 ' + t.instagram} · {day(p.createdTime.slice(0, 10))}</span>
+                      {p.permalink && (
+                        <a href={p.permalink} target="_blank" rel="noopener noreferrer" className="print:hidden text-blue-600 hover:underline">{t.openPost}</a>
+                      )}
+                    </div>
+                    <p className="mt-2 text-sm text-zinc-800 line-clamp-3">{p.message || '—'}</p>
+                    <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-sm text-zinc-600" dir="ltr">
+                      <span>👁 {compactNumber(p.reach, lang)}</span>
+                      <span>❤️ {compactNumber(p.likes, lang)}</span>
+                      <span>💬 {compactNumber(p.comments, lang)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </Section>
+      )}
+
+      {data.reviews && (
+        <Section title={t.reviews} icon="⭐">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <Stat label={t.newReviews} m={data.reviews.newReviews} lang={lang} t={t} />
+            <Stat label={t.avgRating} m={data.reviews.averageRating} lang={lang} t={t} format={(n) => `${nf.format(n)} ★`} />
+            <Stat label={t.answered} m={data.reviews.answered} lang={lang} t={t} />
+          </div>
+          {data.reviews.newReviews.current ? (
+            <div className="mt-4 rounded-2xl border border-zinc-200 bg-white p-4 break-inside-avoid">
+              <div className="text-xs font-medium text-zinc-500 mb-2">{t.ratingMix}</div>
+              {data.reviews.stars.map((count, i) => {
+                const max = Math.max(...data.reviews!.stars, 1);
+                return (
+                  <div key={i} className="flex items-center gap-3 text-sm" dir="ltr">
+                    <span className="w-8 text-zinc-600">{5 - i}★</span>
+                    <div className="flex-1 h-2 rounded-full bg-zinc-100 overflow-hidden">
+                      <div className="h-full rounded-full bg-amber-400" style={{ width: `${(count / max) * 100}%` }} />
+                    </div>
+                    <span className="w-6 text-end text-zinc-600">{count}</span>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="mt-3 text-sm text-zinc-500">{t.noData}</p>
+          )}
+        </Section>
+      )}
+
+      {data.websites && (
+        <Section title={t.websites} icon="🌐">
+          {data.websites.uptime.current !== null && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
+              <Stat label={t.uptime} m={data.websites.uptime} lang={lang} t={t} format={(n) => `${nf.format(n)}%`} />
+              <Stat label={t.incidents} m={data.websites.incidents} lang={lang} t={t} lowerIsBetter />
+              <Stat label={t.speed} m={data.websites.avgResponseMs} lang={lang} t={t} format={(n) => `${nf.format(Math.round(n / 100) / 10)}s`} lowerIsBetter />
+            </div>
+          )}
+          <div className="rounded-2xl border border-zinc-200 bg-white divide-y divide-zinc-100 break-inside-avoid">
+            {data.websites.pages.map((p, i) => (
+              <div key={i} className="p-4 flex flex-wrap items-center justify-between gap-2 text-sm">
+                <div className="min-w-0">
+                  <div className="font-medium text-zinc-800">{p.label}</div>
+                  <div className="text-xs text-zinc-500 break-all" dir="ltr">{p.url}</div>
+                </div>
+                <div className="flex gap-4 text-xs text-zinc-600">
+                  {p.uptime !== null && <span dir="ltr">✅ {nf.format(p.uptime)}%</span>}
+                  {p.sslDaysLeft !== null && <span>🔒 {t.sslDays(p.sslDaysLeft)}</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+          {data.websites.trackedSince && data.websites.trackedSince > data.previousStart && (
+            <p className="mt-3 text-xs text-zinc-500">{t.trackingSince(day(data.websites.trackedSince))}</p>
+          )}
+        </Section>
+      )}
+    </>
+  );
+}
+
+export default async function SharedReportPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const report = await getClientReport(id);
+  if (!report) notFound();
+  const { data, language: lang } = report;
+  const t = REPORT_TEXT[lang];
+
+  return (
+    <main dir={lang === 'ar' ? 'rtl' : 'ltr'} lang={lang} className={`min-h-screen bg-zinc-50 print:bg-white ${lang === 'ar' ? cairo.className : ''}`}>
+      <header className="bg-gradient-to-br from-[#14306b] via-[#1e3a8a] to-[#b45309] text-white print:bg-none print:text-zinc-900">
+        <div className="max-w-3xl mx-auto px-5 pt-8 pb-10">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="bg-white rounded-xl p-1.5">
+                <Image src="/Logo-1.png" alt="North Via Marketing" width={36} height={36} priority />
+              </div>
+              <span className="text-sm font-semibold tracking-wide opacity-90">North Via Marketing</span>
+            </div>
+            <PrintButton label={t.savePdf} />
+          </div>
+          <h1 className="mt-8 text-3xl sm:text-4xl font-bold">{data.clientName}</h1>
+          <p className="mt-2 text-lg opacity-90">{data.days === 7 ? t.weekly : t.monthly}</p>
+          <p className="mt-1 text-sm opacity-80">
+            {periodLabel(data.periodStart, data.periodEnd, lang)} · {data.days === 7 ? t.vsWeek : t.vsMonth}
+          </p>
+          <p className="mt-1 text-xs opacity-60">
+            {t.previousPeriod}: {periodLabel(data.previousStart, data.previousEnd, lang)}
+          </p>
+        </div>
+      </header>
+
+      <div className="max-w-3xl mx-auto px-5 pb-12 -mt-2">
+        <Report data={data} lang={lang} />
+        <footer className="mt-12 pt-6 border-t border-zinc-200 text-center text-xs text-zinc-500">
+          {t.preparedBy} · northviamarketing.com
+        </footer>
+      </div>
+    </main>
+  );
+}
