@@ -1,4 +1,5 @@
-import { getClientProfileById } from '@/lib/admin-ops';
+import { getClientProfileById, listClientProfiles } from '@/lib/admin-ops';
+import { ClientSwitcher } from '@/components/admin/ClientSwitcher';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { Edit3, ArrowLeft, Building2, User, Mail, Phone } from 'lucide-react';
@@ -35,7 +36,8 @@ export default async function ClientDetailPage({
     notFound();
   }
 
-  const [gbpConnection, gbpLocations, replySettings, websites, socialAccounts, metaConnections, socialStats, reviewQueue, adsCard] = await Promise.all([
+  const [allClients, gbpConnection, gbpLocations, replySettings, websites, socialAccounts, metaConnections, socialStats, reviewQueue, adsCard] = await Promise.all([
+    listClientProfiles().catch(() => []),
     getGbpConnection(id).catch(() => null),
     listClientLocations(id).catch(() => []),
     getReplySettings(id),
@@ -174,11 +176,12 @@ export default async function ClientDetailPage({
   };
 
   return (
-    <div className="max-w-4xl mx-auto p-6 md:p-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="mb-6">
+    <div className="max-w-4xl mx-auto px-6 md:px-8 pb-8 animate-in fade-in duration-300">
+      <ClientSwitcher clients={allClients.map((c) => ({ id: c.id, name: c.brandName }))} currentId={id} />
+      <div className="mt-5 mb-6">
         <Link href="/admin/clients" className="inline-flex items-center gap-2 text-sm text-zinc-500 hover:text-zinc-900 transition-colors mb-4">
           <ArrowLeft className="w-4 h-4" />
-          Back to Clients
+          All clients
         </Link>
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
           <div>
