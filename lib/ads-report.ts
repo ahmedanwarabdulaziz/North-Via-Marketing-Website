@@ -13,6 +13,7 @@ export interface AdsReportMetricTotals {
   cost: number;
   impressions: number;
   clicks: number;
+  conversions: number;
   averageCpc: number;
   ctr: number;
 }
@@ -24,6 +25,7 @@ export interface AdsReportCampaign {
   cost: number;
   impressions: number;
   clicks: number;
+  conversions: number;
   ctr: number;
 }
 
@@ -43,6 +45,7 @@ export function calculateAdsMetricTotals(data: {
   cost?: number;
   impressions?: number;
   clicks?: number;
+  conversions?: number;
 } | null | undefined): AdsReportMetricTotals {
   const cost = data?.cost || 0;
   const impressions = data?.impressions || 0;
@@ -52,6 +55,7 @@ export function calculateAdsMetricTotals(data: {
     cost,
     impressions,
     clicks,
+    conversions: data?.conversions || 0,
     averageCpc: clicks > 0 ? cost / clicks : 0,
     ctr: impressions > 0 ? (clicks / impressions) * 100 : 0,
   };

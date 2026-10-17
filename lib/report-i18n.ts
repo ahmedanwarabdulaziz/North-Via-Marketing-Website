@@ -28,7 +28,12 @@ export const REPORT_TEXT = {
     ads: 'Google Ads',
     spend: 'Ad spend',
     clicks: 'Clicks',
-    impressions: 'Impressions',
+    impressions: 'Reach (impressions)',
+    avgCpc: 'Cost per click',
+    keywords: 'Top 10 keywords',
+    searchTerms: 'Top 10 searches',
+    vsLastYear: 'vs last year',
+    lastYear: 'Same period last year',
     ctr: 'Click-through rate',
     conversions: 'Conversions',
     cpa: 'Cost per conversion',
@@ -74,7 +79,12 @@ export const REPORT_TEXT = {
     ads: 'إعلانات جوجل',
     spend: 'الإنفاق الإعلاني',
     clicks: 'النقرات',
-    impressions: 'مرات الظهور',
+    impressions: 'الوصول (مرات الظهور)',
+    avgCpc: 'تكلفة النقرة',
+    keywords: 'أفضل 10 كلمات مفتاحية',
+    searchTerms: 'أكثر 10 عمليات بحث',
+    vsLastYear: 'مقارنة بالعام الماضي',
+    lastYear: 'نفس الفترة من العام الماضي',
     ctr: 'نسبة النقر',
     conversions: 'التحويلات',
     cpa: 'تكلفة التحويل',
@@ -148,8 +158,10 @@ export function reportWhatsAppText(data: ReportData, lang: ReportLanguage, url: 
   if (data.ads) {
     const a = data.ads;
     const cur = (v: number | null) => (v === null ? '—' : new Intl.NumberFormat('en-CA', { style: 'currency', currency: a.currency, maximumFractionDigits: v >= 100 ? 0 : 2 }).format(v));
+    // Reach and clicks lead; conversions only when there are enough to mean something.
     lines.push(
-      `📈 *${t.ads}* — ${t.spend}: ${cur(a.spend.current)}${change(a.spend)} · ${t.clicks}: ${n(a.clicks.current)}${change(a.clicks)} · ${t.conversions}: ${n(a.conversions.current)}${change(a.conversions)}`
+      `📈 *${t.ads}* — ${t.impressions}: ${n(a.impressions.current)}${change(a.impressions)} · ${t.clicks}: ${n(a.clicks.current)}${change(a.clicks)} · ${t.spend}: ${cur(a.spend.current)}` +
+        (a.showConversions ? ` · ${t.conversions}: ${n(a.conversions.current)}${change(a.conversions)}` : '')
     );
   }
   if (data.websites && data.websites.uptime.current !== null) {

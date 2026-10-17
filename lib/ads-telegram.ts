@@ -1,5 +1,5 @@
 import { cairoDay } from './social-sync';
-import { clientsWithAds, costPerConversion, describeAdsError, fetchClientAds, money } from './ads-metrics';
+import { clientsWithAds, conversionsMeaningful, costPerConversion, describeAdsError, fetchClientAds, money } from './ads-metrics';
 import { escapeHtml as h } from './telegram';
 
 // Google Ads in Telegram: the "📈 Google Ads" menu screen and the digest line.
@@ -27,10 +27,15 @@ export async function adsScreenText() {
       const [cur, prev] = await Promise.all([fetchClientAds(c.id, day(7), day(1)), fetchClientAds(c.id, day(14), day(8))]);
       if (!cur || !prev) continue;
       const cpa = costPerConversion(cur.totals);
+      const t = cur.totals;
       lines.push(
         `<b>${h(c.brandName)}</b>`,
-        `💰 ${money(cur.totals.cost, cur.currency)}${arrow(cur.totals.cost, prev.totals.cost)} · 👆 ${cur.totals.clicks} clicks${arrow(cur.totals.clicks, prev.totals.clicks)}`,
-        `🎯 ${Math.round(cur.totals.conversions * 10) / 10} conversions${arrow(cur.totals.conversions, prev.totals.conversions)}${cpa !== null ? ` · ${money(cpa, cur.currency)} each` : ''}`,
+        // Reach and clicks are the main results; spend and conversions follow.
+        `👀 ${t.impressions.toLocaleString('en-CA')} reach${arrow(t.impressions, prev.totals.impressions)} · 👆 ${t.clicks} clicks${arrow(t.clicks, prev.totals.clicks)}`,
+        `💰 ${money(t.cost, cur.currency)}${arrow(t.cost, prev.totals.cost)}${t.clicks ? ` · ${money(t.cost / t.clicks, cur.currency)} per click` : ''}`,
+        ...(conversionsMeaningful(t.conversions, t.clicks)
+          ? [`🎯 ${Math.round(t.conversions * 10) / 10} conversions${arrow(t.conversions, prev.totals.conversions)}${cpa !== null ? ` · ${money(cpa, cur.currency)} each` : ''}`]
+          : []),
         ...(cur.campaigns[0] ? [`Top: ${h(cur.campaigns[0].name)} (${money(cur.campaigns[0].cost, cur.currency)})`] : []),
         ''
       );
@@ -59,7 +64,7 @@ export async function adsDigestLines() {
       if (t.cost === 0 && week.totals.cost > 0) {
         lines.push(`• ⚠️ ${h(c.brandName)}: no spend yesterday (spent ${money(week.totals.cost, week.currency)} the week before). Check billing and ad status.`);
       } else if (t.cost > 0) {
-        lines.push(`• ${h(c.brandName)}: ${money(t.cost, yesterday.currency)} · ${t.clicks} clicks · ${Math.round(t.conversions * 10) / 10} conv.`);
+        lines.push(`• ${h(c.brandName)}: ${t.impressions.toLocaleString('en-CA')} reach · ${t.clicks} clicks · ${money(t.cost, yesterday.currency)}`);
       }
     } catch (error) {
       return [`⚠️ ${h(describeAdsError(error))}`];

@@ -7,7 +7,7 @@ import { listCommentQueue } from './social-sync';
 import { checkSocialNow, showWaitingComments, socialStatsLines } from './social-telegram';
 import { createClientReport, type ReportDays, type ReportLanguage } from './client-report';
 import { reportWhatsAppText } from './report-i18n';
-import { whatsAppNumber, whatsAppShareLink } from './whatsapp-share';
+import { whatsAppShareLink } from './whatsapp-share';
 import { listClientProfiles } from './admin-ops';
 import { listDocs } from './data/store';
 import { adsScreenText } from './ads-telegram';
@@ -254,15 +254,9 @@ export async function handleMenuCallback(query: { id: string; data?: string; mes
       if (action === 'g' && client && (days === '7' || days === '30') && (lang === 'en' || lang === 'ar')) {
         await answerCallback(query.id, 'Preparing the report…');
         const { id, url, report, warnings } = await createClientReport(client.id, Number(days) as ReportDays, lang);
-        const phone = whatsAppNumber(client.mobileNumber);
+        // Just the message to forward; warnings (e.g. Ads left out) go on top only when there are any.
         await sendMessage(chatId, {
-          text: [
-            `📊 <b>Report ready</b> · ${h(client.brandName)}`,
-            phone ? `📲 Sends to ${h(client.mobileNumber || '')}` : '📲 No valid mobile number saved for this client: you’ll pick the WhatsApp chat.',
-            ...warnings.map((w) => `⚠️ ${h(w)}`),
-            '',
-            h(reportWhatsAppText(report.data, report.language, url)),
-          ].join('\n'),
+          text: [...warnings.map((w) => `⚠️ ${h(w)}`), ...(warnings.length ? [''] : []), h(reportWhatsAppText(report.data, report.language, url))].join('\n'),
           buttons: [
             [{ text: '📲 Send on WhatsApp', url: whatsAppShareLink('p', id) }],
             [{ text: '🔗 Open report', url }],

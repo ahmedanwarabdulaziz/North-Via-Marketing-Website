@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { addDoc, getDoc, listDocs } from './data/store';
 import { cairoDay } from './social-sync';
-import { costPerConversion, ctr, describeAdsError, fetchClientAds } from './ads-metrics';
+import { conversionsMeaningful, costPerConversion, ctr, describeAdsError, fetchClientAds, fetchClientKeywords } from './ads-metrics';
 import type {
   ClientProfile,
   GbpStoredReview,
@@ -22,10 +22,14 @@ export type ReportDays = 7 | 30;
 const SITE = 'https://www.northviamarketing.com';
 const DAY = 86_400_000;
 
-/** A metric for this period and the previous one; `previous` is null when there's no history yet. */
+/**
+ * A metric for this period and the previous one; `previous` is null when there's no
+ * history yet. `lastYear` (same dates a year earlier) is only set where it exists.
+ */
 export interface Compared {
   current: number | null;
   previous: number | null;
+  lastYear?: number | null;
 }
 
 export interface PlatformStats {
@@ -71,13 +75,21 @@ export interface ReportData {
   ads: {
     currency: string;
     accounts: string[];
-    spend: Compared;
-    clicks: Compared;
+    // Impressions and clicks are the headline results; spend and cost follow.
     impressions: Compared;
+    clicks: Compared;
     ctr: Compared; // %
+    spend: Compared;
+    avgCpc: Compared;
+    // Only shown with enough conversions to mean tracking is actually in use.
+    showConversions: boolean;
     conversions: Compared;
     costPerConversion: Compared;
+    hasLastYear: boolean;
+    lastYearStart: string;
+    lastYearEnd: string;
     campaigns: Array<{ name: string; cost: number; clicks: number; conversions: number }>;
+    keywords: { source: 'keywords' | 'search_terms'; items: Array<{ text: string; impressions: number; clicks: number }> };
   } | null;
   websites: {
     uptime: Compared; // % across all monitored pages
@@ -278,23 +290,48 @@ async function websitesSection(clientId: string, w: ReturnType<typeof windows>) 
   };
 }
 
+/** The same dates one year earlier ("2026-10-16" → "2025-10-16"). */
+const yearEarlier = (day: string) => {
+  const d = new Date(`${day}T12:00:00Z`);
+  d.setUTCFullYear(d.getUTCFullYear() - 1);
+  return d.toISOString().slice(0, 10);
+};
+
 async function adsSection(clientId: string, w: ReturnType<typeof windows>): Promise<ReportData['ads']> {
-  const [cur, prev] = await Promise.all([
+  const lastYearStart = yearEarlier(w.labels.periodStart);
+  const lastYearEnd = yearEarlier(w.labels.periodEnd);
+  const [cur, prev, ly, keywords] = await Promise.all([
     fetchClientAds(clientId, w.labels.periodStart, w.labels.periodEnd),
     fetchClientAds(clientId, w.labels.previousStart, w.labels.previousEnd),
+    // Last year is optional: missing or empty history simply isn't shown.
+    fetchClientAds(clientId, lastYearStart, lastYearEnd).catch(() => null),
+    fetchClientKeywords(clientId, w.labels.periodStart, w.labels.periodEnd).catch(() => ({ source: 'keywords' as const, items: [] })),
   ]);
   if (!cur || !prev) return null;
+  const hasLastYear = Boolean(ly && (ly.totals.impressions > 0 || ly.totals.cost > 0));
   const round2 = (n: number | null) => (n === null ? null : Math.round(n * 100) / 100);
+  const cpc = (t: { cost: number; clicks: number }) => (t.clicks ? t.cost / t.clicks : null);
+  const metric = (pick: (t: NonNullable<typeof cur>['totals']) => number | null): Compared => ({
+    current: pick(cur.totals),
+    previous: pick(prev.totals),
+    ...(hasLastYear ? { lastYear: pick(ly!.totals) } : {}),
+  });
   return {
     currency: cur.currency,
     accounts: cur.accounts.map((a) => a.name),
-    spend: { current: round2(cur.totals.cost), previous: round2(prev.totals.cost) },
-    clicks: { current: cur.totals.clicks, previous: prev.totals.clicks },
-    impressions: { current: cur.totals.impressions, previous: prev.totals.impressions },
-    ctr: { current: round2(ctr(cur.totals)), previous: round2(ctr(prev.totals)) },
-    conversions: { current: round1(cur.totals.conversions), previous: round1(prev.totals.conversions) },
-    costPerConversion: { current: round2(costPerConversion(cur.totals)), previous: round2(costPerConversion(prev.totals)) },
+    impressions: metric((t) => t.impressions),
+    clicks: metric((t) => t.clicks),
+    ctr: metric((t) => round2(ctr(t))),
+    spend: metric((t) => round2(t.cost)),
+    avgCpc: metric((t) => round2(cpc(t))),
+    showConversions: conversionsMeaningful(cur.totals.conversions, cur.totals.clicks),
+    conversions: metric((t) => round1(t.conversions)),
+    costPerConversion: metric((t) => round2(costPerConversion(t))),
+    hasLastYear,
+    lastYearStart,
+    lastYearEnd,
     campaigns: cur.campaigns.slice(0, 5).map((c) => ({ name: c.name, cost: round2(c.cost)!, clicks: c.clicks, conversions: round1(c.conversions) })),
+    keywords,
   };
 }
 
@@ -332,9 +369,10 @@ export async function getClientReport(id: string) {
   return getDoc<StoredReport>('client_reports', id);
 }
 
-/** Percentage change, or null when there's nothing to compare against. */
-export function percentChange(m: Compared) {
-  if (m.current === null || m.previous === null) return null;
-  if (m.previous === 0) return m.current === 0 ? 0 : null; // "new" rather than an infinite %
-  return Math.round(((m.current - m.previous) / Math.abs(m.previous)) * 100);
+/** Percentage change against `previous` (or another baseline), or null when there's nothing to compare against. */
+export function percentChange(m: Compared, against: 'previous' | 'lastYear' = 'previous') {
+  const base = m[against];
+  if (m.current === null || base === null || base === undefined) return null;
+  if (base === 0) return m.current === 0 ? 0 : null; // "new" rather than an infinite %
+  return Math.round(((m.current - base) / Math.abs(base)) * 100);
 }

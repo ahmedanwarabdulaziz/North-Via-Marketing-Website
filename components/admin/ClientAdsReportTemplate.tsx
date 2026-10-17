@@ -1,4 +1,5 @@
 import React from 'react';
+import { MIN_CONVERSIONS_TO_SHOW } from '@/lib/ads-thresholds';
 import type { AdsReportData } from '@/lib/ads-report';
 import { calculateAdsChange, formatAdsDateRange } from '@/lib/ads-report';
 import { ArrowUp, ArrowDown, Minus } from 'lucide-react';
@@ -84,7 +85,11 @@ export const ClientAdsReportTemplate = React.forwardRef<HTMLDivElement, ClientAd
   const previousCpl = previous.conversions > 0 ? previous.cost / previous.conversions : 0;
   const lastYearCpl = lastYear && lastYear.conversions > 0 ? lastYear.cost / lastYear.conversions : 0;
   
-  const hasConversions = current.conversions > 0 || (previous && previous.conversions > 0) || (lastYear && lastYear.conversions > 0);
+  // Conversions are only shown when tracking is clearly in use: at least
+  // MIN_CONVERSIONS_TO_SHOW this period and a conversion rate above 0%.
+  // Otherwise the report leads with clicks (visitors) and cost per click.
+  const conversionRate = current.clicks > 0 ? (current.conversions / current.clicks) * 100 : 0;
+  const hasConversions = current.conversions >= MIN_CONVERSIONS_TO_SHOW && Math.round(conversionRate * 10) / 10 > 0;
 
   return (
     <div ref={ref} style={{ display: 'flex', flexDirection: 'column', backgroundColor: '#f1f5f9' }}>

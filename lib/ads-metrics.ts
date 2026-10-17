@@ -211,3 +211,67 @@ export async function clientAdsCard(clientId: string) {
     }),
   };
 }
+
+// ---------- Keywords ----------
+
+export interface AdsKeyword {
+  text: string;
+  impressions: number;
+  clicks: number;
+}
+
+/**
+ * Top keywords by clicks for one account. Campaigns without keywords (Performance
+ * Max, Display) have none, so it falls back to the search terms people typed.
+ */
+async function topKeywords(customerId: string, start: string, end: string) {
+  const { client, refreshToken } = await getAdsClient();
+  const customer = client.Customer({ customer_id: customerId, refresh_token: refreshToken });
+  type Row = { ad_group_criterion?: { keyword?: { text?: string } }; search_term_view?: { search_term?: string }; metrics?: { impressions?: number; clicks?: number } };
+  const run = async (query: string, text: (r: Row) => string | undefined) => {
+    const rows = (await customer.query(query)) as Row[];
+    const byText = new Map<string, AdsKeyword>();
+    for (const r of rows) {
+      const t = text(r)?.trim().toLowerCase();
+      if (!t) continue;
+      const k = byText.get(t) || { text: t, impressions: 0, clicks: 0 };
+      k.impressions += r.metrics?.impressions || 0;
+      k.clicks += r.metrics?.clicks || 0;
+      byText.set(t, k);
+    }
+    return [...byText.values()];
+  };
+  const keywords = await run(
+    `SELECT ad_group_criterion.keyword.text, metrics.impressions, metrics.clicks FROM keyword_view
+     WHERE segments.date BETWEEN '${start}' AND '${end}' AND metrics.impressions > 0 ORDER BY metrics.clicks DESC LIMIT 200`,
+    (r) => r.ad_group_criterion?.keyword?.text
+  );
+  if (keywords.length) return { source: 'keywords' as const, items: keywords };
+  const terms = await run(
+    `SELECT search_term_view.search_term, metrics.impressions, metrics.clicks FROM search_term_view
+     WHERE segments.date BETWEEN '${start}' AND '${end}' AND metrics.clicks > 0 ORDER BY metrics.clicks DESC LIMIT 200`,
+    (r) => r.search_term_view?.search_term
+  );
+  return { source: 'search_terms' as const, items: terms };
+}
+
+/** Top 10 keywords (or search terms) across a client's ad accounts. */
+export async function fetchClientKeywords(clientId: string, start: string, end: string) {
+  const accounts = await clientAdsAccounts(clientId);
+  const merged = new Map<string, AdsKeyword>();
+  let source: 'keywords' | 'search_terms' = 'keywords';
+  for (const a of accounts) {
+    const r = await topKeywords(a.customerId, start, end).catch(() => ({ source: 'keywords' as const, items: [] as AdsKeyword[] }));
+    if (r.source === 'search_terms' && r.items.length) source = 'search_terms';
+    for (const k of r.items) {
+      const m = merged.get(k.text) || { text: k.text, impressions: 0, clicks: 0 };
+      m.impressions += k.impressions;
+      m.clicks += k.clicks;
+      merged.set(k.text, m);
+    }
+  }
+  const items = [...merged.values()].sort((a, b) => b.clicks - a.clicks || b.impressions - a.impressions).slice(0, 10);
+  return { source, items };
+}
+
+export { MIN_CONVERSIONS_TO_SHOW, conversionsMeaningful } from './ads-thresholds';

@@ -447,6 +447,7 @@ export async function fetchProfessionalAdsReport(
       cost: campaign.cost,
       impressions: campaign.impressions,
       clicks: campaign.clicks,
+      conversions: campaign.conversions || 0,
       ctr: campaign.impressions > 0 ? (campaign.clicks / campaign.impressions) * 100 : 0,
     }));
 

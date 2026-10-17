@@ -28,10 +28,10 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
   };
 }
 
-function ChangeBadge({ m, t, lowerIsBetter = false, neutral = false, suffix = '%' }: { m: Compared; t: T; lowerIsBetter?: boolean; neutral?: boolean; suffix?: string }) {
+function ChangeBadge({ m, t, lowerIsBetter = false, neutral = false, suffix = '%', against = 'previous' }: { m: Compared; t: T; lowerIsBetter?: boolean; neutral?: boolean; suffix?: string; against?: 'previous' | 'lastYear' }) {
   if (m.current === null) return null;
-  if (m.previous === null) return <span className="text-xs text-zinc-400">{t.noPrevious}</span>;
-  const pct = percentChange(m);
+  if (m[against] === null || m[against] === undefined) return <span className="text-xs text-zinc-400">{t.noPrevious}</span>;
+  const pct = percentChange(m, against);
   if (pct === null) return <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">{t.newLabel}</span>;
   if (pct === 0) return <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-600">= 0{suffix}</span>;
   const good = lowerIsBetter ? pct < 0 : pct > 0;
@@ -60,6 +60,14 @@ function Stat({ label, m, lang, t, format, lowerIsBetter, neutral }: { label: st
           </span>
         )}
       </div>
+      {m.lastYear !== undefined && m.lastYear !== null && (
+        <div className="mt-1.5 flex items-center justify-between gap-2">
+          <ChangeBadge m={m} t={t} lowerIsBetter={lowerIsBetter} neutral={neutral} against="lastYear" />
+          <span className="text-[11px] text-zinc-400 whitespace-nowrap">
+            {t.vsLastYear} <span dir="ltr">{show(m.lastYear)}</span>
+          </span>
+        </div>
+      )}
     </div>
   );
 }
@@ -181,15 +189,55 @@ function Report({ data, lang }: { data: ReportData; lang: ReportLanguage }) {
             const money = (n: number) => new Intl.NumberFormat('en-CA', { style: 'currency', currency: a.currency, maximumFractionDigits: n >= 100 ? 0 : 2 }).format(n);
             return (
               <>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {a.hasLastYear && (
+                  <p className="-mt-1 mb-3 text-xs text-zinc-500">
+                    {t.lastYear}: {periodLabel(a.lastYearStart, a.lastYearEnd, lang)}
+                  </p>
+                )}
+                {/* The headline results: how many people saw the ads, and how many clicked. */}
+                <div className="grid grid-cols-2 gap-3">
+                  <Stat label={t.impressions} m={a.impressions} lang={lang} t={t} />
+                  <Stat label={t.clicks} m={a.clicks} lang={lang} t={t} />
+                </div>
+                <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  <Stat label={t.ctr} m={a.ctr} lang={lang} t={t} format={(n) => `${nf.format(n)}%`} />
                   {/* Spend going up or down isn't good or bad by itself, so it's shown in grey. */}
                   <Stat label={t.spend} m={a.spend} lang={lang} t={t} format={money} neutral />
-                  <Stat label={t.clicks} m={a.clicks} lang={lang} t={t} />
-                  <Stat label={t.impressions} m={a.impressions} lang={lang} t={t} />
-                  <Stat label={t.ctr} m={a.ctr} lang={lang} t={t} format={(n) => `${nf.format(n)}%`} />
-                  <Stat label={t.conversions} m={a.conversions} lang={lang} t={t} />
-                  <Stat label={t.cpa} m={a.costPerConversion} lang={lang} t={t} format={money} lowerIsBetter />
+                  <Stat label={t.avgCpc} m={a.avgCpc} lang={lang} t={t} format={money} lowerIsBetter />
+                  {a.showConversions && (
+                    <>
+                      <Stat label={t.conversions} m={a.conversions} lang={lang} t={t} />
+                      <Stat label={t.cpa} m={a.costPerConversion} lang={lang} t={t} format={money} lowerIsBetter />
+                    </>
+                  )}
                 </div>
+
+                {a.keywords.items.length > 0 && (
+                  <div className="mt-4 rounded-2xl border border-zinc-200 bg-white overflow-hidden break-inside-avoid">
+                    <div className="px-4 py-3 text-xs font-medium text-zinc-500 flex justify-between gap-3">
+                      <span>{a.keywords.source === 'keywords' ? t.keywords : t.searchTerms}</span>
+                      <span className="flex gap-6" dir="ltr">
+                        <span>{t.impressions.split(' (')[0]}</span>
+                        <span>{t.clicks}</span>
+                      </span>
+                    </div>
+                    <ol className="divide-y divide-zinc-100">
+                      {a.keywords.items.map((k, i) => (
+                        <li key={k.text} className="px-4 py-2.5 flex items-center justify-between gap-3 text-sm">
+                          <span className="min-w-0 truncate">
+                            <span className="text-zinc-400 me-2" dir="ltr">{i + 1}.</span>
+                            <bdi className="text-zinc-800">{k.text}</bdi>
+                          </span>
+                          <span className="flex gap-6 text-zinc-600 shrink-0 tabular-nums" dir="ltr">
+                            <span className="w-14 text-end">{compactNumber(k.impressions, lang)}</span>
+                            <span className="w-10 text-end font-semibold text-zinc-900">{compactNumber(k.clicks, lang)}</span>
+                          </span>
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+                )}
+
                 {a.campaigns.length > 0 && (
                   <div className="mt-4 rounded-2xl border border-zinc-200 bg-white divide-y divide-zinc-100 break-inside-avoid">
                     <div className="px-4 py-3 text-xs font-medium text-zinc-500">{t.campaigns}</div>
@@ -197,9 +245,9 @@ function Report({ data, lang }: { data: ReportData; lang: ReportLanguage }) {
                       <div key={i} className="px-4 py-3 flex flex-wrap items-center justify-between gap-2 text-sm">
                         <bdi className="font-medium text-zinc-800 min-w-0 truncate">{c.name}</bdi>
                         <div className="flex gap-4 text-xs text-zinc-600" dir="ltr">
-                          <span>{money(c.cost)}</span>
                           <span>{compactNumber(c.clicks, lang)} {t.clicks}</span>
-                          <span>{nf.format(c.conversions)} {t.conversions}</span>
+                          <span>{money(c.cost)}</span>
+                          {a.showConversions && <span>{nf.format(c.conversions)} {t.conversions}</span>}
                         </div>
                       </div>
                     ))}
