@@ -2,6 +2,7 @@ import { google } from 'googleapis';
 import { SignJWT, jwtVerify } from 'jose';
 import { addDoc, deleteDocs, getDoc, getDocs, listDocs, setDoc, setDocs } from './data/store';
 import { decryptString, encryptString } from './encryption';
+import { googleRedirectUri } from './google-oauth';
 import type { GbpConnection, GbpLocation, GbpReview } from '@/types/database';
 
 export const GBP_CONNECTIONS = 'gbp_connections' as const;
@@ -18,12 +19,9 @@ const stateKey = new TextEncoder().encode(process.env.SESSION_SECRET);
 
 type ConnectVia = GbpConnection['connectedVia'];
 
-function getOAuth2Client() {
-  return new google.auth.OAuth2(
-    process.env.GOOGLE_CLIENT_ID,
-    process.env.GOOGLE_CLIENT_SECRET,
-    process.env.GOOGLE_REDIRECT_URI
-  );
+// The redirect address only matters for the login itself; token refreshes don't use it.
+function getOAuth2Client(redirectUri = googleRedirectUri()) {
+  return new google.auth.OAuth2(process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_CLIENT_SECRET, redirectUri);
 }
 
 /**
@@ -49,8 +47,8 @@ export async function verifyConnectToken(token: string) {
   }
 }
 
-export function getGbpAuthUrl(state: string) {
-  return getOAuth2Client().generateAuthUrl({
+export function getGbpAuthUrl(state: string, redirectUri: string) {
+  return getOAuth2Client(redirectUri).generateAuthUrl({
     access_type: 'offline',
     prompt: 'consent',
     include_granted_scopes: false,
@@ -60,8 +58,8 @@ export function getGbpAuthUrl(state: string) {
 }
 
 /** Exchanges the OAuth code and stores the client's encrypted refresh token. */
-export async function completeGbpConnection(code: string, clientId: string, via: ConnectVia) {
-  const oauth2Client = getOAuth2Client();
+export async function completeGbpConnection(code: string, clientId: string, via: ConnectVia, redirectUri: string) {
+  const oauth2Client = getOAuth2Client(redirectUri);
   const { tokens } = await oauth2Client.getToken(code);
 
   if (!tokens.refresh_token) {

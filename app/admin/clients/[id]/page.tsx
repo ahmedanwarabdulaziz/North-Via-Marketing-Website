@@ -11,6 +11,8 @@ import { listClientWebsites } from '@/lib/website-monitor';
 import { ClientSocialCard } from '@/components/admin/ClientSocialCard';
 import { getMetaConnections, listClientAccounts, metaConfigured } from '@/lib/meta';
 import { socialOverview } from '@/lib/social-sync';
+import { ClientAdsCard } from '@/components/admin/ClientAdsCard';
+import { clientAdsCard } from '@/lib/ads-metrics';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,10 +21,10 @@ export default async function ClientDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ gbp?: string; meta?: string }>;
+  searchParams: Promise<{ gbp?: string; meta?: string; ads?: string }>;
 }) {
   const { id } = await params;
-  const { gbp, meta } = await searchParams;
+  const { gbp, meta, ads } = await searchParams;
   const client = await getClientProfileById(id);
   
   if (!client) {
@@ -38,6 +40,7 @@ export default async function ClientDetailPage({
     getMetaConnections().catch(() => []),
     socialOverview().then((all) => all.find((s) => s.clientId === id) || null).catch(() => null),
   ]);
+  const adsCard = await clientAdsCard(id).catch(() => ({ connected: false, accounts: [] }));
 
 
   return (
@@ -95,6 +98,8 @@ export default async function ClientDetailPage({
           stats={socialStats ? { fb: socialStats.fb, ig: socialStats.ig, latest: socialStats.latest, waiting: socialStats.waiting } : null}
           notice={meta === 'connected' || meta === 'error' ? meta : undefined}
         />
+
+        <ClientAdsCard clientId={id} connected={adsCard.connected} accounts={adsCard.accounts} notice={ads === 'connected' ? 'connected' : ads ? 'error' : undefined} />
 
         <WebsitesCard clientId={id} initial={websites} suggestedUrl={client.websiteUrl || undefined} />
 

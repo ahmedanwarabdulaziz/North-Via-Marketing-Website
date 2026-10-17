@@ -5,8 +5,9 @@ import { encryptString } from '@/lib/encryption';
 import { GoogleConnection } from '@/types/database';
 import { completeGbpConnection, verifyConnectToken } from '@/lib/google-business';
 import { isAdminAuthenticated } from '@/lib/admin-auth';
+import { googleRedirectUri } from '@/lib/google-oauth';
 
-// Business Profile authorizations always carry a signed `state`; Google Ads ones never do.
+// Business Profile authorizations carry a signed `state`; Google Ads ones carry "ads:<clientId>".
 async function handleBusinessProfileCallback(request: Request, code: string | null, state: string) {
   const verified = await verifyConnectToken(state);
   if (!verified) {
@@ -22,7 +23,7 @@ async function handleBusinessProfileCallback(request: Request, code: string | nu
   if (!code) return NextResponse.redirect(doneUrl('error'));
 
   try {
-    await completeGbpConnection(code, clientId, via);
+    await completeGbpConnection(code, clientId, via, googleRedirectUri(request.url));
     return NextResponse.redirect(doneUrl('connected'));
   } catch (error) {
     console.error('Business Profile callback error:', error);
@@ -36,9 +37,14 @@ export async function GET(request: Request) {
     const code = searchParams.get('code');
     const state = searchParams.get('state');
 
-    if (state) {
+    const adsState = state?.startsWith('ads:') ? state : null;
+    if (state && !adsState) {
       return handleBusinessProfileCallback(request, code, state);
     }
+    // Back to the client page the connection was started from, or Settings.
+    const adsClientId = adsState?.slice(4) || '';
+    const adsDone = (query: string) =>
+      new URL(adsClientId ? `/admin/clients/${adsClientId}?ads=${query}` : `/admin/settings?${query === 'connected' ? 'success=connected' : 'error=' + query}`, request.url);
 
     // The Google Ads master connection may only be replaced by a signed-in admin.
     if (!(await isAdminAuthenticated())) {
@@ -46,13 +52,13 @@ export async function GET(request: Request) {
     }
 
     if (!code) {
-      return NextResponse.redirect(new URL('/admin/settings?error=NoAuthCode', request.url));
+      return NextResponse.redirect(adsDone('NoAuthCode'));
     }
 
     const oauth2Client = new google.auth.OAuth2(
       process.env.GOOGLE_CLIENT_ID,
       process.env.GOOGLE_CLIENT_SECRET,
-      process.env.GOOGLE_REDIRECT_URI
+      googleRedirectUri(request.url)
     );
 
     // Exchange the code for access & refresh tokens
@@ -81,7 +87,7 @@ export async function GET(request: Request) {
 
     await setDoc('google_connections', 'master_admin_connection', payload, { merge: true });
 
-    return NextResponse.redirect(new URL('/admin/settings?success=connected', request.url));
+    return NextResponse.redirect(adsDone('connected'));
   } catch (error) {
     console.error('Google Callback Critical Server Error:', error);
     return NextResponse.redirect(new URL('/admin/settings?error=CallbackFailed', request.url));

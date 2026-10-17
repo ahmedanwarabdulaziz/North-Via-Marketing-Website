@@ -17,7 +17,7 @@ const TABLES = {
   },
   google_ads_accounts: {
     pk: 'id',
-    fields: ['googleConnectionId', 'customerId', 'descriptiveName', 'currencyCode', 'timeZone', 'isSelected', 'brandName', 'ownerName', 'clientBusinessName', 'clientContactName', 'aiPromptNotes', 'createdAt', 'updatedAt'],
+    fields: ['googleConnectionId', 'customerId', 'descriptiveName', 'currencyCode', 'timeZone', 'isSelected', 'brandName', 'ownerName', 'clientBusinessName', 'clientContactName', 'aiPromptNotes', 'campaignNames', 'campaignsCheckedAt', 'createdAt', 'updatedAt'],
   },
   ads_reports_snapshots: {
     pk: 'id',

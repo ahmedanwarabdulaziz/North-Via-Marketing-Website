@@ -19,7 +19,7 @@ export async function adsScreenText() {
   const clients = await clientsWithAds();
   const lines = ['📈 <b>Google Ads</b>', `<i>Last 7 days vs the 7 before</i>`, ''];
   if (!clients.length) {
-    lines.push('No ad accounts are linked to clients yet.', 'Link them in Admin → Settings → Google Ads.');
+    lines.push('No ad accounts are linked to clients yet.', 'Link them on each client page (Google Ads card → Choose ad accounts).');
     return lines.join('\n');
   }
   for (const c of clients) {
