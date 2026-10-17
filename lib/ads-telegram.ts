@@ -1,5 +1,5 @@
 import { cairoDay } from './social-sync';
-import { clientsWithAds, conversionsMeaningful, costPerConversion, describeAdsError, fetchClientAds, money } from './ads-metrics';
+import { clientsWithAds, conversionsMeaningful, costPerConversion, describeAdsError, fetchClientAds, fetchClientKeywords, money } from './ads-metrics';
 import { escapeHtml as h } from './telegram';
 
 // Google Ads in Telegram: the "📈 Google Ads" menu screen and the digest line.
@@ -14,8 +14,19 @@ const arrow = (cur: number, prev: number) => {
   return p === null ? '' : p === 0 ? ' (=)' : ` (${p > 0 ? '▲' : '▼'} ${Math.abs(p)}%)`;
 };
 
-/** Last 7 days vs the 7 before, per client with linked ad accounts. */
+/**
+ * Last 7 days vs the 7 before, per client with linked ad accounts. Telegram allows
+ * 4096 characters per message, so with many clients the keyword lists get shorter.
+ */
 export async function adsScreenText() {
+  for (const keywordLimit of [10, 5, 3]) {
+    const text = await adsScreenTextWith(keywordLimit);
+    if (text.length <= 3900 || keywordLimit === 3) return text.slice(0, 4000);
+  }
+  return '';
+}
+
+async function adsScreenTextWith(keywordLimit: number) {
   const clients = await clientsWithAds();
   const lines = ['📈 <b>Google Ads</b>', `<i>Last 7 days vs the 7 before</i>`, ''];
   if (!clients.length) {
@@ -24,7 +35,11 @@ export async function adsScreenText() {
   }
   for (const c of clients) {
     try {
-      const [cur, prev] = await Promise.all([fetchClientAds(c.id, day(7), day(1)), fetchClientAds(c.id, day(14), day(8))]);
+      const [cur, prev, keywords] = await Promise.all([
+        fetchClientAds(c.id, day(7), day(1)),
+        fetchClientAds(c.id, day(14), day(8)),
+        fetchClientKeywords(c.id, day(7), day(1)).catch(() => ({ source: 'keywords' as const, items: [] })),
+      ]);
       if (!cur || !prev) continue;
       const cpa = costPerConversion(cur.totals);
       const t = cur.totals;
@@ -36,7 +51,12 @@ export async function adsScreenText() {
         ...(conversionsMeaningful(t.conversions, t.clicks)
           ? [`🎯 ${Math.round(t.conversions * 10) / 10} conversions${arrow(t.conversions, prev.totals.conversions)}${cpa !== null ? ` · ${money(cpa, cur.currency)} each` : ''}`]
           : []),
-        ...(cur.campaigns[0] ? [`Top: ${h(cur.campaigns[0].name)} (${money(cur.campaigns[0].cost, cur.currency)})`] : []),
+        ...(keywords.items.length
+          ? [
+              `🔑 Top ${Math.min(keywords.items.length, keywordLimit)} ${keywords.source === 'keywords' ? 'keywords' : 'searches'} (clicks):`,
+              ...keywords.items.slice(0, keywordLimit).map((k, i) => `${i + 1}. ${h(k.text)} — ${k.clicks}`),
+            ]
+          : []),
         ''
       );
     } catch (error) {
