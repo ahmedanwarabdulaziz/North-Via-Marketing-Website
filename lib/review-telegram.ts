@@ -251,8 +251,14 @@ export async function sendReviewDigest(options: {
 
   const header = [
     options.followUp ? '✍️ <b>More review replies are ready</b>' : '📋 <b>Google reviews</b>',
-    options.summary ? `Checked ${options.summary.locationsChecked} location(s): ${options.summary.newReviews} new, ${options.summary.draftsCreated} drafted.` : '',
-    toSend.length ? `${toSend.length} waiting for your approval below.` : '✅ Nothing new to approve.',
+    // Counts are about what you haven't seen in Telegram yet. A review found by an
+    // earlier check (e.g. the overnight sync) is still new here until it's been sent.
+    options.summary ? `🔎 Checked ${options.summary.locationsChecked} location(s) on Google.` : '',
+    toSend.length
+      ? options.onlyUnsent
+        ? `🆕 ${toSend.length} new review${toSend.length === 1 ? '' : 's'} waiting for your approval below.`
+        : `${toSend.length} waiting for your approval below.`
+      : '✅ Nothing new since the last message.',
     stillDrafting > 0 ? `✍️ ${stillDrafting} more are still being drafted — they'll be sent here once ready.` : '',
     earlier > 0 ? `${earlier} sent earlier still waiting — send /reviews to see them again.` : '',
   ].filter(Boolean).join('\n');
