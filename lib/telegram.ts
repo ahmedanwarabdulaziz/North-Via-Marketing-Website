@@ -10,6 +10,7 @@ export interface OutgoingMessage {
   text: string; // Telegram HTML
   buttons?: InlineButton[][];
   forceReply?: boolean;
+  placeholder?: string; // hint shown in the reply box with forceReply
 }
 
 export function telegramConfigured() {
@@ -45,7 +46,7 @@ export async function telegram<T = unknown>(method: string, body: Record<string,
 }
 
 function markup(message: OutgoingMessage) {
-  if (message.forceReply) return { force_reply: true, input_field_placeholder: 'Type the new reply…' };
+  if (message.forceReply) return { force_reply: true, input_field_placeholder: message.placeholder || 'Type the new reply…' };
   if (message.buttons?.length) return { inline_keyboard: message.buttons };
   return undefined;
 }

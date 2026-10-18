@@ -12,6 +12,7 @@ import { listClientProfiles } from './admin-ops';
 import { listDocs } from './data/store';
 import { adsScreenText } from './ads-telegram';
 import { analyticsScreenText } from './analytics-telegram';
+import { taskCounts, tasksHomeScreen } from './task-telegram';
 
 // Main bot menu. Button data is "m:<screen>" or "m:<screen>:<action>".
 // To add a new area (e.g. Tasks, Invoices), add a section here and a screen below.
@@ -23,6 +24,14 @@ interface MenuSection {
 }
 
 const SECTIONS: MenuSection[] = [
+  {
+    id: 'tk',
+    label: async () => {
+      const { today, overdue } = await taskCounts();
+      const parts = [today ? `${today} today` : '', overdue ? `${overdue} overdue` : ''].filter(Boolean);
+      return `✅ Tasks${parts.length ? ` (${parts.join(', ')})` : ''}`;
+    },
+  },
   {
     id: 'gr',
     label: async () => {
@@ -199,6 +208,11 @@ export async function handleMenuCallback(query: { id: string; data?: string; mes
   try {
     if (screen === 'home') {
       await editMessage(chatId, messageId, await homeScreen());
+      return answerCallback(query.id);
+    }
+
+    if (screen === 'tk') {
+      await editMessage(chatId, messageId, await tasksHomeScreen());
       return answerCallback(query.id);
     }
 
