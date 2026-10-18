@@ -45,6 +45,17 @@ export async function telegram<T = unknown>(method: string, body: Record<string,
   return data.result as T;
 }
 
+/** Downloads a file the user sent (voice note, photo…) by its file_id. Telegram serves up to 20 MB. */
+export async function downloadFile(fileId: string) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const file = await telegram<{ file_path?: string; file_size?: number }>('getFile', { file_id: fileId });
+  if (!file.file_path) throw new Error('Telegram returned no file path.');
+  const base = process.env.TELEGRAM_API_BASE || 'https://api.telegram.org';
+  const res = await fetch(`${base}/file/bot${token}/${file.file_path}`);
+  if (!res.ok) throw new Error(`Telegram file download failed: ${res.status}`);
+  return { data: Buffer.from(await res.arrayBuffer()), path: file.file_path };
+}
+
 function markup(message: OutgoingMessage) {
   if (message.forceReply) return { force_reply: true, input_field_placeholder: message.placeholder || 'Type the new reply…' };
   if (message.buttons?.length) return { inline_keyboard: message.buttons };

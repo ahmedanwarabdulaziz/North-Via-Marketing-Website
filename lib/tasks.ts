@@ -52,6 +52,7 @@ export interface Task {
   all_day: boolean;
   remind_before_min: number;
   remind_at: string | null;
+  reminded_at: string | null;
   repeat_rule: RepeatRule | null;
   repeat_until: string | null;
   repeat_count: number | null;
@@ -215,6 +216,7 @@ function dueAndRemind(f: TaskFields) {
 }
 
 function rowFromFields(f: TaskFields) {
+  const when = dueAndRemind(f);
   return {
     title: (f.title || 'Untitled').slice(0, 300),
     notes: f.notes || null,
@@ -223,8 +225,10 @@ function rowFromFields(f: TaskFields) {
     client_id: f.category === 'work' ? f.clientId || null : null,
     priority: f.priority || 'normal',
     remind_before_min: f.remindBeforeMin || 0,
-    ...dueAndRemind(f),
-    reminded_at: null,
+    ...when,
+    // A reminder time that has already passed when saved counts as sent, so saving
+    // "called Mona at 2" at 3 PM doesn't ping straight away. Future ones start unsent.
+    reminded_at: when.remind_at && Date.parse(when.remind_at) <= Date.now() ? new Date().toISOString() : null,
     repeat_rule: f.repeat || null,
     repeat_until: f.repeat ? f.repeatUntil || null : null,
     repeat_count: f.repeat ? f.repeatCount || null : null,
@@ -342,7 +346,61 @@ export async function listOpenTasks() {
   return check(await supabase.from('tasks').select().eq('status', 'open').order('due_at', { ascending: true, nullsFirst: false }).limit(500)) as Task[];
 }
 
-export type TaskListKey = 'today' | 'overdue' | 'week' | 'nodate';
+// ---------- Reminders ----------
+
+/** Reminders not sent yet, oldest first. Ones missed for over a week are left alone. */
+export async function listDueReminders(now = new Date()) {
+  const tasks = check(
+    await supabase
+      .from('tasks')
+      .select()
+      .eq('status', 'open')
+      .lte('remind_at', now.toISOString())
+      .gte('remind_at', new Date(now.getTime() - 7 * 86_400_000).toISOString())
+      .order('remind_at', { ascending: true })
+      .limit(200)
+  ) as Task[];
+  // PostgREST can't compare two columns, so "sent for an older time" is checked here.
+  return tasks.filter((t) => !t.reminded_at || Date.parse(t.reminded_at) < Date.parse(t.remind_at!));
+}
+
+/**
+ * Marks the reminder as sent before sending, only if nobody else did in the meantime
+ * (overlapping runs). Returns false when another run already claimed it.
+ */
+export async function claimReminder(task: Task) {
+  let query = supabase.from('tasks').update({ reminded_at: new Date().toISOString() }).eq('id', task.id).eq('remind_at', task.remind_at!);
+  query = task.reminded_at ? query.eq('reminded_at', task.reminded_at) : query.is('reminded_at', null);
+  const claimed = check(await query.select('id')) as { id: string }[];
+  return claimed.length > 0;
+}
+
+/** Puts the reminder back after a failed send, so the next run tries again. */
+export async function releaseReminder(task: Task) {
+  const { error } = await supabase.from('tasks').update({ reminded_at: task.reminded_at }).eq('id', task.id).eq('remind_at', task.remind_at!);
+  if (error) console.error('Reminder release failed:', error.message);
+}
+
+/** Moves only the reminder (not the due date) and makes it due to send again. */
+export async function snoozeTask(id: string, until: Date) {
+  const task = check(
+    await supabase.from('tasks').update({ remind_at: until.toISOString(), reminded_at: null }).eq('id', id).select().single()
+  ) as Task;
+  await logTaskEvent(id, 'snoozed', { until: task.remind_at });
+  return task;
+}
+
+export async function listDrafts(chatId: string) {
+  return check(await supabase.from('task_drafts').select().eq('chat_id', chatId).order('created_at', { ascending: true }).limit(20)) as TaskDraft[];
+}
+
+/** Drafts nobody finished for a few days are dropped (after the digests have mentioned them). */
+export async function deleteStaleDrafts(days = 3) {
+  const { error } = await supabase.from('task_drafts').delete().lt('updated_at', new Date(Date.now() - days * 86_400_000).toISOString());
+  if (error) console.error('Draft cleanup failed:', error.message);
+}
+
+export type TaskListKey ='today' | 'overdue' | 'week' | 'nodate';
 
 /** Open tasks grouped for the bot: overdue, today, the next 7 days, no date. */
 export function groupTasks(tasks: Task[], now = new Date()) {

@@ -16,7 +16,14 @@ export interface TaskUnderstanding {
   separate: boolean; // answer mode: the message is a new item, not an answer
   fields: TaskFields;
   clientMentioned: string | null; // a client named in the message that isn't in the list
+  heard: string | null; // voice notes: what was said, as the model heard it
   raw: unknown;
+}
+
+/** A voice note or audio file sent along with (or instead of) text. */
+export interface TaskAudio {
+  data: string; // base64
+  mimeType: string;
 }
 
 const FIELD_KEYS = ['category', 'client', 'when', 'time', 'repeat_end'] as const;
@@ -70,7 +77,8 @@ Return ONLY a JSON object:
   "repeat": null | { "freq": "daily"|"weekly"|"monthly"|"yearly", "interval": number, "weekdays": number[], "month_day": number | null },
   "repeat_until": "YYYY-MM-DD" | null,
   "repeat_count": number | null,
-  "repeat_forever": boolean
+  "repeat_forever": boolean,
+  "heard": string | null      // voice notes only: what was said, word for word in its language; else null
 }
 
 Rules:
@@ -87,6 +95,7 @@ Rules:
 - repeat: weekdays are 0=Sunday … 6=Saturday. "Every week" with no day → the weekday of "date". "Every month" with no day → month_day = day of "date".
   If repeating and no start date is given, use the next matching date as "date".
   repeat_until/repeat_count only if the user says how long ("for 3 months" → repeat_until = date + 3 months, "10 times" → repeat_count 10); repeat_forever only if they say forever/always/no end.
+- A voice note (Egyptian Arabic, English or mixed) counts as the message: read the task from what is said, and put the words in "heard".
 - When CURRENT FIELDS are given, the message answers a question or asks for a change: return the full updated object, keeping every current value the message doesn't change.
   Set "separate": true only if the message is clearly a brand-new unrelated task rather than an answer or change. Otherwise false.`;
 }
@@ -148,7 +157,7 @@ export function toUnderstanding(raw: Record<string, unknown>, clients: TaskClien
     repeatForever: Boolean(repeat && raw.repeat_forever === true),
   };
   const intent = raw.intent === 'knowledge' || raw.intent === 'chat' ? raw.intent : 'task';
-  return { intent, separate: raw.separate === true, fields, clientMentioned: knownClient ? null : str(raw.client_mentioned), raw };
+  return { intent, separate: raw.separate === true, fields, clientMentioned: knownClient ? null : str(raw.client_mentioned), heard: str(raw.heard), raw };
 }
 
 function currentFieldsJson(f: TaskFields) {
@@ -173,25 +182,32 @@ function currentFieldsJson(f: TaskFields) {
 }
 
 /**
- * Reads one message. With `current`, the message answers `asking` (a draft's open question)
- * or, without `asking`, is a change to a saved task.
+ * Reads one message: text, or a voice note (`audio`, with any caption as `text`).
+ * With `current`, the message answers `asking` (a draft's open question) or, without
+ * `asking`, is a change to a saved task.
  */
 export async function understandTaskMessage(
   text: string,
   clients: TaskClient[],
-  context?: { current: TaskFields; asking?: keyof typeof QUESTION_TEXT | null }
+  context?: { current: TaskFields; asking?: keyof typeof QUESTION_TEXT | null },
+  audio?: TaskAudio
 ): Promise<TaskUnderstanding> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error('GEMINI_API_KEY is not configured.');
   const genAI = new GoogleGenerativeAI(apiKey);
 
+  const message = audio
+    ? `MESSAGE: the attached voice note.${text ? ` Caption: """${text.slice(0, 1000)}"""` : ''}`
+    : `MESSAGE: """${text.slice(0, 4000)}"""`;
   const prompt = context
     ? [
         `CURRENT FIELDS: ${currentFieldsJson(context.current)}`,
         context.asking ? `QUESTION ASKED: ${QUESTION_TEXT[context.asking]}` : 'The user wants to change this saved task.',
-        `MESSAGE: """${text.slice(0, 4000)}"""`,
+        message,
       ].join('\n')
-    : `MESSAGE: """${text.slice(0, 4000)}"""`;
+    : message;
+  // Gemini hears the audio itself (Arabic and English), so no separate speech-to-text step.
+  const parts = audio ? [{ text: prompt }, { inlineData: { mimeType: audio.mimeType, data: audio.data } }] : prompt;
 
   // Full Flash first: dates and repeat rules need more care than review replies.
   const models = [process.env.GEMINI_TASK_MODEL || 'gemini-flash-latest', process.env.GEMINI_TASK_FALLBACK_MODEL || 'gemini-flash-lite-latest'];
@@ -204,9 +220,9 @@ export async function understandTaskMessage(
           systemInstruction: systemPrompt(clients),
           generationConfig: { temperature: 0.1, maxOutputTokens: 2048, responseMimeType: 'application/json' },
         },
-        { timeout: 25_000 }
+        { timeout: audio ? 40_000 : 25_000 }
       );
-      const result = await model.generateContent(prompt);
+      const result = await model.generateContent(parts);
       const raw = JSON.parse(result.response.text()) as Record<string, unknown>;
       return toUnderstanding(raw, clients);
     } catch (error) {
