@@ -414,13 +414,14 @@ export async function deleteStaleDrafts(days = 3) {
   if (error) console.error('Draft cleanup failed:', error.message);
 }
 
-export type TaskListKey ='today' | 'overdue' | 'week' | 'nodate';
+export type TaskListKey = 'today' | 'tomorrow' | 'overdue' | 'week' | 'nodate';
 
-/** Open tasks grouped for the bot: overdue, today, the next 7 days, no date. */
+/** Open tasks grouped for the bot: overdue, today, tomorrow, the 5 days after, no date. */
 export function groupTasks(tasks: Task[], now = new Date()) {
   const today = cairoToday();
   const weekEnd = addDays(today, 7);
-  const groups: Record<TaskListKey, Task[]> = { today: [], overdue: [], week: [], nodate: [] };
+  const tomorrow = addDays(today, 1);
+  const groups: Record<TaskListKey, Task[]> = { today: [], tomorrow: [], overdue: [], week: [], nodate: [] };
   for (const task of tasks) {
     if (!task.due_at) {
       groups.nodate.push(task);
@@ -430,6 +431,7 @@ export function groupTasks(tasks: Task[], now = new Date()) {
     const overdue = task.all_day ? date < today : new Date(task.due_at) < now;
     if (overdue) groups.overdue.push(task);
     else if (date === today) groups.today.push(task);
+    else if (date === tomorrow) groups.tomorrow.push(task);
     else if (date <= weekEnd) groups.week.push(task);
   }
   return groups;

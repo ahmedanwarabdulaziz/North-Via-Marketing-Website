@@ -134,13 +134,21 @@ function taskCard(task: Task, clients: TaskClient[], header: string, opts: { jus
   }
   return {
     text: [header, '', ...taskLines(task, clients)].join('\n'),
-    buttons: [
-      [
-        { text: '✅ Done', callback_data: `tk:d:${task.id}` },
-        { text: '✏️ Edit', callback_data: `tk:e:${task.id}` },
-        { text: opts.justSaved ? '↩️ Undo' : '🗑 Remove', callback_data: `tk:u:${task.id}` },
-      ],
-    ],
+    // Just saved: only Edit/Undo, since a Done button there got tapped as "OK" and closed the task.
+    buttons: opts.justSaved
+      ? [
+          [
+            { text: '✏️ Edit', callback_data: `tk:e:${task.id}` },
+            { text: '↩️ Undo', callback_data: `tk:u:${task.id}` },
+          ],
+        ]
+      : [
+          [
+            { text: '☑️ Mark as done', callback_data: `tk:d:${task.id}` },
+            { text: '✏️ Edit', callback_data: `tk:e:${task.id}` },
+            { text: '🗑 Remove', callback_data: `tk:u:${task.id}` },
+          ],
+        ],
   };
 }
 
@@ -477,7 +485,7 @@ export async function handleTaskCallback(query: CallbackQuery) {
         text: [`💤 <b>Snoozed until ${label}</b>`, '', ...taskLines(snoozed, clients)].join('\n'),
         buttons: [
           [
-            { text: '✅ Done', callback_data: `tk:d:${task.id}` },
+            { text: '☑️ Mark as done', callback_data: `tk:d:${task.id}` },
             { text: '✏️ Edit', callback_data: `tk:e:${task.id}` },
           ],
         ],
@@ -515,8 +523,9 @@ export async function handleTaskCallback(query: CallbackQuery) {
 
 const LIST_TITLES: Record<TaskListKey, string> = {
   today: '📅 Today',
+  tomorrow: '🌅 Tomorrow',
   overdue: '⚠️ Overdue',
-  week: '🗓 Next 7 days',
+  week: '🗓 Rest of the week',
   nodate: '📝 No date',
 };
 
@@ -554,7 +563,7 @@ function listMessage(title: string, tasks: Task[], clients: TaskClient[], back: 
 
 export async function taskCounts() {
   const groups = groupTasks(await listOpenTasks());
-  return { today: groups.today.length, overdue: groups.overdue.length, week: groups.week.length, nodate: groups.nodate.length };
+  return { today: groups.today.length, tomorrow: groups.tomorrow.length, overdue: groups.overdue.length, week: groups.week.length, nodate: groups.nodate.length };
 }
 
 export async function tasksHomeScreen(): Promise<OutgoingMessage> {
@@ -562,20 +571,23 @@ export async function tasksHomeScreen(): Promise<OutgoingMessage> {
   return {
     text: [
       '✅ <b>Tasks</b>',
-      `Today: ${c.today} · Overdue: ${c.overdue} · Next 7 days: ${c.week} · No date: ${c.nodate}`,
+      `Today: ${c.today} · Tomorrow: ${c.tomorrow} · Overdue: ${c.overdue} · Rest of the week: ${c.week} · No date: ${c.nodate}`,
       '',
       '<i>To add one, just send me a message, e.g. “Call Mona from Bake House Thursday 4pm”.</i>',
     ].join('\n'),
     buttons: [
       [
         { text: `📅 Today (${c.today})`, callback_data: 'tk:l:today' },
-        { text: `⚠️ Overdue (${c.overdue})`, callback_data: 'tk:l:overdue' },
+        { text: `🌅 Tomorrow (${c.tomorrow})`, callback_data: 'tk:l:tomorrow' },
       ],
       [
-        { text: `🗓 Next 7 days (${c.week})`, callback_data: 'tk:l:week' },
-        { text: `📝 No date (${c.nodate})`, callback_data: 'tk:l:nodate' },
+        { text: `⚠️ Overdue (${c.overdue})`, callback_data: 'tk:l:overdue' },
+        { text: `🗓 Rest of the week (${c.week})`, callback_data: 'tk:l:week' },
       ],
-      [{ text: '👥 By client', callback_data: 'tk:l:c' }],
+      [
+        { text: `📝 No date (${c.nodate})`, callback_data: 'tk:l:nodate' },
+        { text: '👥 By client', callback_data: 'tk:l:c' },
+      ],
       [{ text: '⬅️ Back to menu', callback_data: 'm:home' }],
     ],
   };
@@ -645,7 +657,7 @@ function reminderCard(task: Task, clients: TaskClient[], now: Date): OutgoingMes
     text: [reminderHeader(task, now), '', ...taskLines(task, clients)].join('\n'),
     buttons: [
       [
-        { text: '✅ Done', callback_data: `tk:d:${task.id}` },
+        { text: '☑️ Done', callback_data: `tk:d:${task.id}` },
         { text: '💤 Next hour', callback_data: `tk:s:${task.id}:1h` },
         { text: '💤 3 hours', callback_data: `tk:s:${task.id}:3h` },
       ],

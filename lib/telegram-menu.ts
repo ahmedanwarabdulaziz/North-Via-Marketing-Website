@@ -77,6 +77,7 @@ export const BOT_COMMANDS = [
   { command: 'menu', description: '🧭 Main menu (or just type x)' },
   { command: 'tasks', description: '✅ Tasks' },
   { command: 'today', description: '📅 Today’s tasks' },
+  { command: 'tomorrow', description: '🌅 Tomorrow’s tasks' },
   { command: 'reviews', description: '⭐ Google Reviews' },
   { command: 'social', description: '📱 Facebook & Instagram' },
   { command: 'ads', description: '📈 Google Ads' },
@@ -233,6 +234,7 @@ export async function sendMenu(chatId: number | string) {
 const COMMAND_SCREENS: Record<string, () => Promise<OutgoingMessage>> = {
   '/tasks': tasksHomeScreen,
   '/today': () => taskListScreen('today'),
+  '/tomorrow': () => taskListScreen('tomorrow'),
   '/reviews': () => reviewsScreen(),
   '/social': () => socialScreen(),
   '/ads': () => periodScreen('ad', 7),
