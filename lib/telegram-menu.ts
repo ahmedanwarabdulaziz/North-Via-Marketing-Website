@@ -12,7 +12,7 @@ import { listClientProfiles } from './admin-ops';
 import { listDocs } from './data/store';
 import { adsScreenText } from './ads-telegram';
 import { analyticsScreenText } from './analytics-telegram';
-import { taskCounts, tasksHomeScreen } from './task-telegram';
+import { taskCounts, taskListScreen, tasksHomeScreen } from './task-telegram';
 
 // Main bot menu. Button data is "m:<screen>" or "m:<screen>:<action>".
 // To add a new area (e.g. Tasks, Invoices), add a section here and a screen below.
@@ -66,6 +66,23 @@ const SECTIONS: MenuSection[] = [
       return `🌐 Websites (${down.length ? `${down.length} down` : 'all up'})`;
     },
   },
+];
+
+/**
+ * The bot's command menu (the "Menu" button next to the message box): one command per
+ * section above, each opening the same screen as its button. Registered with Telegram by
+ * the panel's "Connect bot" (app/api/admin/telegram/setup). /check, /comments and /pending still work.
+ */
+export const BOT_COMMANDS = [
+  { command: 'menu', description: '🧭 Main menu (or just type x)' },
+  { command: 'tasks', description: '✅ Tasks' },
+  { command: 'today', description: '📅 Today’s tasks' },
+  { command: 'reviews', description: '⭐ Google Reviews' },
+  { command: 'social', description: '📱 Facebook & Instagram' },
+  { command: 'ads', description: '📈 Google Ads' },
+  { command: 'analytics', description: '🧭 Website analytics' },
+  { command: 'reports', description: '📊 Client reports' },
+  { command: 'websites', description: '🌐 Websites' },
 ];
 
 async function homeScreen(): Promise<OutgoingMessage> {
@@ -195,8 +212,47 @@ ${note}` : text,
   };
 }
 
+/** Google Ads ('ad') or website analytics ('an': 7 days saved daily at 10 AM, 30 read live). */
+async function periodScreen(screen: 'ad' | 'an', days: 7 | 30): Promise<OutgoingMessage> {
+  return {
+    text: screen === 'ad' ? await adsScreenText(days) : await analyticsScreenText(days),
+    buttons: [
+      [
+        { text: `${days === 7 ? '✓ ' : ''}📅 7 days`, callback_data: `m:${screen}:7` },
+        { text: `${days === 30 ? '✓ ' : ''}🗓 30 days`, callback_data: `m:${screen}:30` },
+      ],
+      [{ text: '⬅️ Back to menu', callback_data: 'm:home' }],
+    ],
+  };
+}
+
 export async function sendMenu(chatId: number | string) {
   return sendMessage(chatId, await homeScreen());
+}
+
+const COMMAND_SCREENS: Record<string, () => Promise<OutgoingMessage>> = {
+  '/tasks': tasksHomeScreen,
+  '/today': () => taskListScreen('today'),
+  '/reviews': () => reviewsScreen(),
+  '/social': () => socialScreen(),
+  '/ads': () => periodScreen('ad', 7),
+  '/analytics': () => periodScreen('an', 7),
+  '/reports': reportsScreen,
+  '/websites': () => websitesScreen(),
+};
+
+/** A section command from the Menu button: sends that section's screen. False if it isn't one. */
+export async function handleMenuCommand(message: { text?: string; chat: { id: number } }): Promise<boolean> {
+  const command = (message.text || '').trim().split(/[\s@]/)[0].toLowerCase();
+  const screen = COMMAND_SCREENS[command];
+  if (!screen) return false;
+  try {
+    await sendMessage(message.chat.id, await screen());
+  } catch (error) {
+    console.error(`Menu command ${command} failed:`, error);
+    await sendMessage(message.chat.id, { text: '⚠️ Couldn’t load that right now. Please try again in a minute.' });
+  }
+  return true;
 }
 
 export async function handleMenuCallback(query: { id: string; data?: string; message?: { message_id: number; chat: { id: number }; text?: string } }) {
@@ -254,37 +310,11 @@ export async function handleMenuCallback(query: { id: string; data?: string; mes
       return answerCallback(query.id);
     }
 
-    if (screen === 'ad') {
-      // m:ad = last 7 days, m:ad:30 = last 30 days; the open period is marked ✓.
+    if (screen === 'ad' || screen === 'an') {
+      // m:ad / m:an = last 7 days, :30 = last 30 days; the open period is marked ✓.
       const days = action === '30' ? 30 : 7;
       await answerCallback(query.id, `Loading the last ${days} days…`);
-      await editMessage(chatId, messageId, {
-        text: await adsScreenText(days),
-        buttons: [
-          [
-            { text: `${days === 7 ? '✓ ' : ''}📅 7 days`, callback_data: 'm:ad:7' },
-            { text: `${days === 30 ? '✓ ' : ''}🗓 30 days`, callback_data: 'm:ad:30' },
-          ],
-          [{ text: '⬅️ Back to menu', callback_data: 'm:home' }],
-        ],
-      });
-      return;
-    }
-
-    if (screen === 'an') {
-      // m:an = last 7 days (saved daily at 10 AM), m:an:30 = last 30 days (read live).
-      const days = action === '30' ? 30 : 7;
-      await answerCallback(query.id, `Loading the last ${days} days…`);
-      await editMessage(chatId, messageId, {
-        text: await analyticsScreenText(days),
-        buttons: [
-          [
-            { text: `${days === 7 ? '✓ ' : ''}📅 7 days`, callback_data: 'm:an:7' },
-            { text: `${days === 30 ? '✓ ' : ''}🗓 30 days`, callback_data: 'm:an:30' },
-          ],
-          [{ text: '⬅️ Back to menu', callback_data: 'm:home' }],
-        ],
-      });
+      await editMessage(chatId, messageId, await periodScreen(screen, days));
       return;
     }
 

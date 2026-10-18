@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { handleCallback, handleReviewMessage } from '@/lib/review-telegram';
-import { handleMenuCallback, sendMenu } from '@/lib/telegram-menu';
+import { handleMenuCallback, handleMenuCommand, sendMenu } from '@/lib/telegram-menu';
 import { handleSocialCallback, handleSocialMessage } from '@/lib/social-telegram';
 import { handleTaskCallback, handleTaskMessage } from '@/lib/task-telegram';
 import { isAllowedChat, sendMessage } from '@/lib/telegram';
@@ -41,12 +41,14 @@ export async function POST(request: Request) {
     } else if (update.message?.chat) {
       const chatId = update.message.chat.id;
       if (isAllowedChat(chatId)) {
-        // Comment and review commands and edit replies first, then tasks (any other message is read
+        // Comment and review commands and edit replies first, then the Menu-button section
+        // commands (/tasks, /ads…), then tasks (any other message is read
         // by the AI as a task); menu words (x, menu, /start…) and unknown commands open the menu.
         // Comments go first: their edit marker "cref:" also contains the reviews' "ref:".
         const handled =
           (await handleSocialMessage(update.message)) ||
           (await handleReviewMessage(update.message)) ||
+          (await handleMenuCommand(update.message)) ||
           (await handleTaskMessage(update.message));
         if (!handled) await sendMenu(chatId);
       } else if (update.message.chat.type === 'private') {

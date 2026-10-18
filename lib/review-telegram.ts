@@ -489,7 +489,7 @@ export async function reviewQueueOverview() {
 
 /**
  * Handles review-specific messages: replies to an "Edit" prompt and the
- * /reviews and /check commands. Returns false when the message isn't for this module.
+ * /pending and /check commands (/reviews opens the menu's Reviews screen). Returns false when the message isn't for this module.
  */
 export async function handleReviewMessage(message: IncomingMessage): Promise<boolean> {
   const chatId = message.chat.id;
@@ -511,7 +511,7 @@ export async function handleReviewMessage(message: IncomingMessage): Promise<boo
   }
 
   const command = text.split(/[\s@]/)[0].toLowerCase();
-  if (command === '/reviews' || command === '/pending') { // /pending kept as an old alias
+  if (command === '/pending') { // lists the waiting reviews straight away
     await showWaitingReviews(chatId);
     return true;
   }

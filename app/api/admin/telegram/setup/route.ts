@@ -1,5 +1,6 @@
 import { isAdminAuthenticated } from '@/lib/admin-auth';
 import { telegram } from '@/lib/telegram';
+import { BOT_COMMANDS } from '@/lib/telegram-menu';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,14 +21,7 @@ export async function POST(request: Request) {
       allowed_updates: ['message', 'callback_query'],
       drop_pending_updates: true,
     });
-    await telegram('setMyCommands', {
-      commands: [
-        { command: 'menu', description: 'Open the main menu (or just type x)' },
-        { command: 'reviews', description: 'Show reviews waiting for approval' },
-        { command: 'check', description: 'Check Google for new reviews now' },
-        { command: 'comments', description: 'Show Facebook & Instagram comments waiting' },
-      ],
-    });
+    await telegram('setMyCommands', { commands: BOT_COMMANDS });
     const info = await telegram<{ url: string; pending_update_count: number; last_error_message?: string }>('getWebhookInfo', {});
     return Response.json({ success: true, webhook: info.url, lastError: info.last_error_message || null });
   } catch (error) {
