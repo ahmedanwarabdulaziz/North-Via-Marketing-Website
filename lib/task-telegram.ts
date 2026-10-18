@@ -29,6 +29,7 @@ import {
   missingFields,
   newId,
   releaseReminder,
+  runHour,
   saveDraft,
   setTaskStatus,
   snoozeTask,
@@ -462,7 +463,7 @@ export async function handleTaskCallback(query: CallbackQuery) {
       return answerCallback(query.id, 'Done');
     }
     if (action === 's') {
-      // tk:s:<id>:15 | 60 | tm — moves only the reminder; the due date stays.
+      // tk:s:<id>:1h | 3h | tm — moves only the reminder; the due date stays.
       if (task.status !== 'open') {
         await editMessage(chatId, messageId, taskCard(task, clients, ''));
         return answerCallback(query.id);
@@ -470,7 +471,8 @@ export async function handleTaskCallback(query: CallbackQuery) {
       const until = snoozeUntil(task, key);
       if (!until) return answerCallback(query.id, 'That option no longer works.');
       const snoozed = await snoozeTask(task.id, until);
-      const label = clockLabel(until);
+      // Reminders go out with the hourly run, so say when it will actually arrive.
+      const label = clockLabel(new Date(Math.floor(until.getTime() / 3_600_000) * 3_600_000));
       await editMessage(chatId, messageId, {
         text: [`💤 <b>Snoozed until ${label}</b>`, '', ...taskLines(snoozed, clients)].join('\n'),
         buttons: [
@@ -608,7 +610,7 @@ async function clientTasksScreen(clientId: string): Promise<OutgoingMessage> {
   return listMessage(title, picked, clients, 'tk:l:c');
 }
 
-// ---------- Reminders (called every minute by /api/tasks/due) ----------
+// ---------- Reminders (called every hour, on the hour, by /api/tasks/due) ----------
 
 /** "3:45 PM" today, "Mon 19 Oct, 9:00 AM" otherwise. */
 function clockLabel(at: Date) {
@@ -617,7 +619,10 @@ function clockLabel(at: Date) {
 }
 
 function snoozeUntil(task: Task, choice: string) {
-  if (choice === '15' || choice === '60') return new Date(Date.now() + Number(choice) * 60_000);
+  // Reminders are checked once an hour, on the hour: snoozing means "with a later run".
+  // ('15' and '60' are from cards sent before the hourly change.)
+  const hours = { '1h': 1, '3h': 3, '15': 1, '60': 1 }[choice];
+  if (hours) return new Date(runHour().getTime() + hours * 3_600_000);
   if (choice !== 'tm') return null;
   // Tomorrow at the task's own reminder time of day, not an earlier snooze's (all-day tasks: 9 AM).
   const usual = task.due_at && !task.all_day ? Date.parse(task.due_at) - task.remind_before_min * 60_000 : null;
@@ -641,8 +646,8 @@ function reminderCard(task: Task, clients: TaskClient[], now: Date): OutgoingMes
     buttons: [
       [
         { text: '✅ Done', callback_data: `tk:d:${task.id}` },
-        { text: '💤 15 min', callback_data: `tk:s:${task.id}:15` },
-        { text: '💤 1 hour', callback_data: `tk:s:${task.id}:60` },
+        { text: '💤 Next hour', callback_data: `tk:s:${task.id}:1h` },
+        { text: '💤 3 hours', callback_data: `tk:s:${task.id}:3h` },
       ],
       [
         { text: '📅 Tomorrow', callback_data: `tk:s:${task.id}:tm` },
@@ -681,7 +686,7 @@ export async function sendDueReminders(now = new Date()) {
 // ---------- Morning digest ----------
 
 const DIGEST_SETTING = 'tasks_morning_digest';
-const DIGEST_FROM = '08:00'; // Cairo
+const DIGEST_FROM = '09:00'; // Cairo
 
 const MISSING_LABEL: Record<MissingField, string> = {
   category: 'work or personal',
@@ -730,12 +735,13 @@ function digestMessage(today: string, groups: ReturnType<typeof groupTasks>, dra
 }
 
 /**
- * Once a day, on the first run at or after 8 AM Cairo: today's tasks, overdue ones and
+ * Once a day, on the first run at or after 9 AM Cairo: today's tasks, overdue ones and
  * unfinished drafts. The day is stored before sending so overlapping runs don't both send it.
  */
 export async function sendMorningDigest(now = new Date()) {
-  const { date: today, time } = cairoParts(now);
-  if (time < DIGEST_FROM) return { sent: false, reason: 'before 8 AM Cairo' };
+  // The run's hour, so a 9:00 run that fires a few seconds early still counts as 9 AM.
+  const { date: today, time } = cairoParts(runHour(now));
+  if (time < DIGEST_FROM) return { sent: false, reason: 'before 9 AM Cairo' };
   const last = await getSetting<{ day?: string }>(DIGEST_SETTING);
   if (last?.day === today) return { sent: false, reason: 'already sent today' };
   const chats = allowedChatIds();

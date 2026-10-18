@@ -1,19 +1,20 @@
 {
-  "name": "Tasks – reminders & 8 AM digest (every minute)",
+  "name": "Tasks – reminders & 9 AM digest (every hour)",
   "nodes": [
     {
       "parameters": {
         "rule": {
           "interval": [
             {
-              "field": "minutes",
-              "minutesInterval": 1
+              "field": "hours",
+              "hoursInterval": 1,
+              "triggerAtMinute": 0
             }
           ]
         }
       },
       "id": "b2e1d7d3-7e2f-4d49-8b62-2c3f1f7b0001",
-      "name": "Every minute",
+      "name": "Every hour",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
       "position": [
@@ -32,7 +33,7 @@
         }
       },
       "id": "b2e1d7d3-7e2f-4d49-8b62-2c3f1f7b0002",
-      "name": "Send due reminders (and the morning digest once a day)",
+      "name": "Send reminders due this hour (and the 9 AM digest)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
@@ -48,11 +49,11 @@
     }
   ],
   "connections": {
-    "Every minute": {
+    "Every hour": {
       "main": [
         [
           {
-            "node": "Send due reminders (and the morning digest once a day)",
+            "node": "Send reminders due this hour (and the 9 AM digest)",
             "type": "main",
             "index": 0
           }

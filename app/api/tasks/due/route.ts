@@ -5,9 +5,9 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
 /**
- * Called every minute by n8n on the VPS. Sends task reminders whose time has come
- * (missed ones catch up on the next run) and, once a day after 8 AM Cairo, the
- * morning digest of today's, overdue and unfinished tasks.
+ * Called every hour, on the hour, by n8n on the VPS. Sends every reminder due before
+ * the next run (a 5:35 task is reminded at 5:00; missed ones catch up on the next run)
+ * and, once a day from 9 AM Cairo, the morning digest of today's, overdue and unfinished tasks.
  */
 async function run(request: Request) {
   if (!isAutomationRequest(request)) return unauthorized();

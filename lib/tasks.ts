@@ -348,14 +348,28 @@ export async function listOpenTasks() {
 
 // ---------- Reminders ----------
 
-/** Reminders not sent yet, oldest first. Ones missed for over a week are left alone. */
+const HOUR_MS = 3_600_000;
+
+/**
+ * The hour a run belongs to. Runs are hourly on the hour, so a run that fires a few
+ * seconds early or late still counts as that hour (Cairo is a whole number of hours from UTC).
+ */
+export function runHour(now = new Date()) {
+  return new Date(Math.round(now.getTime() / HOUR_MS) * HOUR_MS);
+}
+
+/**
+ * Reminders not sent yet, oldest first: everything due before the next hourly run,
+ * so a 5:35 reminder goes out with the 5:00 run. Ones missed for over a week are left alone.
+ */
 export async function listDueReminders(now = new Date()) {
+  const nextRun = new Date(runHour(now).getTime() + HOUR_MS);
   const tasks = check(
     await supabase
       .from('tasks')
       .select()
       .eq('status', 'open')
-      .lte('remind_at', now.toISOString())
+      .lt('remind_at', nextRun.toISOString())
       .gte('remind_at', new Date(now.getTime() - 7 * 86_400_000).toISOString())
       .order('remind_at', { ascending: true })
       .limit(200)
