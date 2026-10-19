@@ -288,6 +288,7 @@ export interface GbpStoredReview {
   postedAt?: string;
   shortRef?: string; // compact id for Telegram buttons (callback data max 64 bytes)
   telegramSentAt?: string | null;
+  backlog?: 'waiting' | 'dismissed' | null; // old unanswered review from a full scan (see 0012)
   firstSeenAt: string;
   updatedAt: string;
 }

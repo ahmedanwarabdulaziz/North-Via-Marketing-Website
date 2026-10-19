@@ -1,6 +1,7 @@
 import { getDigestSchedule, nextDigestRun, saveDigestSchedule } from './digest-schedule';
 import { DIGEST_TIMEZONES } from './digest-schedule-options';
 import { checkReviewsNow, reviewQueueOverview, showWaitingReviews } from './review-telegram';
+import { backlogOverview, draftBacklog, releaseBacklog, scanForOldReviews, type BacklogScope } from './review-engine';
 import { InlineButton, OutgoingMessage, answerCallback, editMessage, escapeHtml as h, sendMessage } from './telegram';
 import { runWebsiteChecks, websiteOverview, websitesScreenText } from './website-monitor';
 import { listCommentQueue } from './social-sync';
@@ -124,7 +125,7 @@ function formatHour(hour: number) {
 }
 
 async function reviewsScreen(note?: string): Promise<OutgoingMessage> {
-  const [{ total, clients }, schedule] = await Promise.all([reviewQueueOverview(), getDigestSchedule()]);
+  const [{ total, clients }, schedule, backlog] = await Promise.all([reviewQueueOverview(), getDigestSchedule(), backlogOverview().catch(() => null)]);
   const tzLabel = DIGEST_TIMEZONES.find((t) => t.value === schedule.timezone)?.label || schedule.timezone;
   const next = nextDigestRun(schedule);
   const nextText = next
@@ -147,6 +148,7 @@ async function reviewsScreen(note?: string): Promise<OutgoingMessage> {
       ? `⏰ Daily digest: ${schedule.hours.map(formatHour).join(', ')} · ${h(tzLabel)}${nextText ? ` · next ${h(nextText)}` : ''}`
       : '⏸ Daily digest is paused.'
   );
+  if (backlog?.total) lines.push('', `📦 <b>${backlog.total}</b> old unanswered review${backlog.total === 1 ? '' : 's'} found by the full scan, not drafted yet.`);
   if (note) lines.push('', note);
 
   return {
@@ -156,6 +158,9 @@ async function reviewsScreen(note?: string): Promise<OutgoingMessage> {
         { text: '📋 Show waiting reviews', callback_data: 'm:gr:show' },
         { text: '🔎 Check Google now', callback_data: 'm:gr:check' },
       ],
+      backlog?.total
+        ? [{ text: `📦 Choose old reviews to answer (${backlog.total})`, callback_data: 'm:gr:bl' }]
+        : [{ text: '🗂 Find old unanswered reviews', callback_data: 'm:gr:scan' }],
       [
         schedule.enabled
           ? { text: '⏸ Pause daily digest', callback_data: 'm:gr:pause' }
@@ -163,6 +168,44 @@ async function reviewsScreen(note?: string): Promise<OutgoingMessage> {
         { text: '🌐 Open panel', url: PANEL_URL },
       ],
       [{ text: '⬅️ Back to menu', callback_data: 'm:home' }],
+    ],
+  };
+}
+
+/** Old unanswered reviews from the full scan, and what to draft. */
+async function backlogScreen(note?: string): Promise<OutgoingMessage> {
+  const b = await backlogOverview();
+  if (!b.total) {
+    return {
+      text: ['📦 <b>Old unanswered reviews</b>', '', note || '✅ None waiting. Every review the full scan found is answered or already in your queue.'].join('\n'),
+      buttons: [
+        [{ text: '🗂 Scan again', callback_data: 'm:gr:scan' }],
+        [{ text: '⬅️ Back', callback_data: 'm:gr' }],
+      ],
+    };
+  }
+  const lines = [
+    '📦 <b>Old unanswered reviews</b>',
+    `<b>${b.total}</b> found · ${b.last3m} from the last 3 months · ${b.last12m} from the last 12 months`,
+    '',
+    ...b.clients.map((c) => `• ${h(c.name)} — ${c.total}${c.low ? ` (${c.low} with 1–3★)` : ''}`),
+    '',
+    'Which ones should I draft replies for? They come to you for approval like any other review (5★ in bulk per client). <b>Nothing is posted without your OK.</b>',
+    '<i>The hourly checks never draft these on their own.</i>',
+  ];
+  if (note) lines.push('', note);
+  const row: InlineButton[] = [];
+  if (b.last3m) row.push({ text: `✍️ Last 3 months (${b.last3m})`, callback_data: 'm:gr:bl3' });
+  if (b.last12m > b.last3m) row.push({ text: `✍️ Last 12 months (${b.last12m})`, callback_data: 'm:gr:bl12' });
+  return {
+    text: lines.join('\n'),
+    buttons: [
+      ...(row.length ? [row] : []),
+      [
+        { text: `✍️ All (${b.total})`, callback_data: 'm:gr:blall' },
+        { text: '🙈 Leave them', callback_data: 'm:gr:blnone' },
+      ],
+      [{ text: '⬅️ Back', callback_data: 'm:gr' }],
     ],
   };
 }
@@ -301,6 +344,44 @@ export async function handleMenuCallback(query: { id: string; data?: string; mes
     }
 
     if (screen === 'gr') {
+      if (action === 'scan' || action === 'scanmore') {
+        await answerCallback(query.id, 'Reading every review from Google…');
+        await editMessage(chatId, messageId, { text: '🗂 <b>Reading every review from Google…</b>\n<i>This takes up to a minute.</i>' });
+        const run = await scanForOldReviews({ restart: action === 'scan', timeBudgetMs: 42_000 });
+        if (!run.complete) {
+          await editMessage(chatId, messageId, {
+            text: `🗂 Read ${run.scanned} of ${run.total} locations so far (${run.found} unanswered found). Tap Continue for the rest.`,
+            buttons: [[{ text: '▶️ Continue', callback_data: 'm:gr:scanmore' }], [{ text: '⬅️ Back', callback_data: 'm:gr' }]],
+          });
+          return;
+        }
+        const errors = run.errors.length ? `\n⚠️ Couldn’t read: ${run.errors.map((e) => h(e.location)).join(', ')}` : '';
+        await editMessage(chatId, messageId, await backlogScreen(`🗂 <i>Read all ${run.total} locations: ${run.found} new unanswered found.</i>${errors}`));
+        return;
+      }
+      if (action === 'bl') {
+        await editMessage(chatId, messageId, await backlogScreen());
+        return answerCallback(query.id);
+      }
+      if (action === 'bl3' || action === 'bl12' || action === 'blall' || action === 'blnone') {
+        const scope = ({ bl3: '3m', bl12: '12m', blall: 'all', blnone: 'none' } as const)[action];
+        await answerCallback(query.id, scope === 'none' ? 'Leaving them…' : 'Queuing them for drafts…');
+        const result = await releaseBacklog(scope as BacklogScope | 'none');
+        if (scope === 'none') {
+          await editMessage(chatId, messageId, await reviewsScreen(`🙈 <i>Left ${result.dismissed} old reviews unanswered. They won’t come up again.</i>`));
+          return;
+        }
+        // Start drafting right away; the hourly runs continue with the rest.
+        const drafted = await draftBacklog({ timeBudgetMs: 35_000 }).catch(() => ({ drafted: 0, remaining: result.released }));
+        await editMessage(
+          chatId,
+          messageId,
+          await reviewsScreen(
+            `✍️ <i>${result.released} queued; ${drafted.drafted} drafted already${drafted.remaining ? `, the other ${drafted.remaining} over the next hourly runs (about 20 an hour)` : ''}. Tap 📋 Show waiting reviews to approve.${result.remaining ? ` ${result.remaining} older ones are still parked.` : ''}</i>`
+          )
+        );
+        return;
+      }
       if (action === 'show') {
         await answerCallback(query.id, 'Sending waiting reviews…');
         await showWaitingReviews(chatId);

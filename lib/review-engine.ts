@@ -9,10 +9,8 @@ import type { GbpLocation, GbpReplySettings, GbpReview, GbpStoredReview } from '
 export const GBP_REVIEWS = 'gbp_reviews' as const;
 export const GBP_REPLY_SETTINGS = 'gbp_reply_settings' as const;
 export const GBP_SYNC_STATUS = 'gbp_sync_status';
-// When each location last had all its reviews read (not just the newest page).
-const GBP_FULL_SCANS = 'gbp_full_scans';
-const FULL_SCAN_EVERY_MS = 24 * 3_600_000;
-const FULL_SCAN_TIME_MS = 25_000;
+// Progress of the on-demand full scan ("Find old unanswered reviews"), so it can continue across taps.
+const GBP_BACKLOG_SCAN = 'gbp_backlog_scan';
 
 const MAX_REPLY_LENGTH = 4000;
 // Budget guard: caps AI calls per run; remaining reviews are drafted on the next run.
@@ -234,25 +232,14 @@ export interface SyncSummary {
 }
 
 /**
- * Which location gets a full scan (every page of reviews) this run: one per run, the one
- * scanned longest ago, at most once a day each. The hourly runs otherwise read only the newest
- * page, which is where new reviews appear; the full scan catches older unanswered ones.
+ * The hourly check: the newest page (50) of each linked location, which is where new and edited
+ * reviews appear. Older unanswered reviews are found only on demand by scanForOldReviews.
  */
-async function pickFullScan(locations: GbpLocation[], scans: Record<string, string>, force: boolean) {
-  if (force) return new Set(locations.map((l) => l.id!));
-  const due = locations
-    .filter((l) => !scans[l.id!] || Date.now() - Date.parse(scans[l.id!]) > FULL_SCAN_EVERY_MS)
-    .sort((a, b) => (scans[a.id!] || '').localeCompare(scans[b.id!] || ''));
-  return new Set(due.slice(0, 1).map((l) => l.id!));
-}
-
-export async function syncAllReviews(options: { maxDrafts?: number; fullScanAll?: boolean } = {}): Promise<SyncSummary> {
+export async function syncAllReviews(options: { maxDrafts?: number } = {}): Promise<SyncSummary> {
   const maxDrafts = options.maxDrafts ?? DEFAULT_MAX_DRAFTS_PER_RUN;
   const startedAt = new Date().toISOString();
   const deadline = Date.now() + DRAFTING_TIME_BUDGET_MS;
   const locations = await listLinkedLocations();
-  const scans = (await getSetting<Record<string, string>>(GBP_FULL_SCANS)) || {};
-  const fullScan = await pickFullScan(locations, scans, Boolean(options.fullScanAll));
   const settingsCache = new Map<string, GbpReplySettings>();
   const businessNames = new Map<string, string>();
 
@@ -265,13 +252,7 @@ export async function syncAllReviews(options: { maxDrafts?: number; fullScanAll?
   for (const location of locations) {
     let reviews: GbpReview[];
     try {
-      if (fullScan.has(location.id!)) {
-        const all = await fetchAllLocationReviews(location, { deadline: Date.now() + FULL_SCAN_TIME_MS });
-        reviews = all.reviews;
-        if (all.complete) scans[location.id!] = new Date().toISOString();
-      } else {
-        reviews = (await fetchLocationReviews(location)).reviews;
-      }
+      reviews = (await fetchLocationReviews(location)).reviews;
     } catch (error) {
       errors.push({ location: location.title, error: error instanceof Error ? error.message : String(error) });
       continue;
@@ -308,6 +289,7 @@ export async function syncAllReviews(options: { maxDrafts?: number; fullScanAll?
           ...base,
           status: existing?.status === 'posted' ? 'posted' : 'replied',
           existingReply: review.reviewReply.comment,
+          ...(existing?.backlog === 'waiting' ? { backlog: null } : {}), // answered on Google meanwhile
         });
         continue;
       }
@@ -362,7 +344,6 @@ export async function syncAllReviews(options: { maxDrafts?: number; fullScanAll?
     errors,
   };
 
-  await setSetting(GBP_FULL_SCANS, scans);
   await setSetting(GBP_SYNC_STATUS, summary);
   return summary;
 }
@@ -508,4 +489,118 @@ export async function approveFiveStarDrafts(reviewIds?: string[]) {
     }
   }
   return results;
+}
+
+// ---------- Old unanswered reviews (on-demand full scan) ----------
+
+interface BacklogScanProgress {
+  startedAt: string;
+  finishedAt?: string;
+  done: string[]; // location ids fully read
+  found: number;
+  errors: Array<{ location: string; error: string }>;
+}
+
+/**
+ * Reads every page of every linked location (only when the owner asks, from Telegram) and stores
+ * unanswered reviews it hasn't seen as backlog: skipped, so nothing drafts them, until the owner
+ * picks which to answer. Continues where it left off when one tap's time runs out.
+ */
+export async function scanForOldReviews(options: { restart?: boolean; timeBudgetMs?: number } = {}) {
+  const deadline = Date.now() + (options.timeBudgetMs ?? 40_000);
+  const locations = await listLinkedLocations();
+  const saved = options.restart ? null : await getSetting<BacklogScanProgress>(GBP_BACKLOG_SCAN);
+  const progress: BacklogScanProgress = saved && !saved.finishedAt ? saved : { startedAt: new Date().toISOString(), done: [], found: 0, errors: [] };
+
+  for (const location of locations) {
+    if (progress.done.includes(location.id!)) continue;
+    if (Date.now() > deadline - 10_000) break; // leave time to save and answer
+    let all;
+    try {
+      all = await fetchAllLocationReviews(location, { deadline });
+    } catch (error) {
+      progress.errors.push({ location: location.title, error: error instanceof Error ? error.message : String(error) });
+      progress.done.push(location.id!);
+      continue;
+    }
+    if (!all.complete) break; // ran out of time mid-location; the next tap reads it again
+
+    const stored = await getDocs<GbpStoredReview>(GBP_REVIEWS, all.reviews.map(reviewIdOf));
+    const writes: Array<{ id: string; data: object }> = [];
+    const now = new Date().toISOString();
+    for (const review of all.reviews) {
+      const ref = reviewIdOf(review);
+      const existing = stored.get(ref);
+      if (existing) {
+        // Known review answered on Google directly: record it, nothing else changes.
+        if (review.reviewReply && existing.status !== 'posted' && existing.status !== 'replied') {
+          writes.push({ id: ref, data: { status: 'replied', existingReply: review.reviewReply.comment, backlog: null, updatedAt: now } });
+        }
+        continue;
+      }
+      const base = {
+        ...toStored(review),
+        clientId: location.clientId,
+        locationId: location.id!,
+        locationTitle: location.title,
+        shortRef: reviewShortRef(ref),
+        firstSeenAt: now,
+        updatedAt: now,
+      };
+      if (review.reviewReply) writes.push({ id: ref, data: { ...base, status: 'replied', existingReply: review.reviewReply.comment } });
+      else {
+        writes.push({ id: ref, data: { ...base, status: 'skipped', backlog: 'waiting' } });
+        progress.found++;
+      }
+    }
+    if (writes.length) await setDocs(GBP_REVIEWS, writes, { merge: true });
+    progress.done.push(location.id!);
+    await setSetting(GBP_BACKLOG_SCAN, progress);
+  }
+
+  const complete = locations.every((l) => progress.done.includes(l.id!));
+  if (complete) progress.finishedAt = new Date().toISOString();
+  await setSetting(GBP_BACKLOG_SCAN, progress);
+  return { complete, scanned: progress.done.length, total: locations.length, found: progress.found, errors: progress.errors };
+}
+
+const DAY_MS = 86_400_000;
+export type BacklogScope = '3m' | '12m' | 'all';
+const SCOPE_DAYS: Record<BacklogScope, number> = { '3m': 92, '12m': 365, all: Infinity };
+
+/** The waiting backlog, per client, with how much falls in the last 3 and 12 months. */
+export async function backlogOverview() {
+  const waiting = await listDocs<GbpStoredReview>(GBP_REVIEWS, { where: { backlog: 'waiting' } });
+  const age = (r: GbpStoredReview) => (Date.now() - Date.parse(r.createTime)) / DAY_MS;
+  const byClient = new Map<string, { clientId: string; name: string; total: number; low: number }>();
+  for (const r of waiting) {
+    const entry = byClient.get(r.clientId) || { clientId: r.clientId, name: (await clientBrandName(r.clientId)) || r.locationTitle, total: 0, low: 0 };
+    entry.total++;
+    if (r.rating > 0 && r.rating <= 3) entry.low++;
+    byClient.set(r.clientId, entry);
+  }
+  return {
+    total: waiting.length,
+    last3m: waiting.filter((r) => age(r) <= SCOPE_DAYS['3m']).length,
+    last12m: waiting.filter((r) => age(r) <= SCOPE_DAYS['12m']).length,
+    clients: [...byClient.values()].sort((a, b) => b.total - a.total),
+  };
+}
+
+async function updateMany(ids: string[], data: object) {
+  // Google review ids are long; small batches keep the request URL short.
+  for (let i = 0; i < ids.length; i += 40) await updateDoc(GBP_REVIEWS, ids.slice(i, i + 40), data);
+}
+
+/** The owner's choice: queue the chosen part of the backlog for drafting, or leave all of it. */
+export async function releaseBacklog(scope: BacklogScope | 'none') {
+  const waiting = await listDocs<GbpStoredReview>(GBP_REVIEWS, { where: { backlog: 'waiting' } });
+  const now = new Date().toISOString();
+  if (scope === 'none') {
+    await updateMany(waiting.map((r) => r.id), { backlog: 'dismissed', updatedAt: now });
+    return { released: 0, remaining: 0, dismissed: waiting.length };
+  }
+  const chosen = waiting.filter((r) => (Date.now() - Date.parse(r.createTime)) / DAY_MS <= SCOPE_DAYS[scope]);
+  await updateMany(chosen.map((r) => r.id), { status: 'needs_draft', backlog: null, draftError: null, updatedAt: now });
+  return { released: chosen.length, remaining: waiting.length - chosen.length, dismissed: 0 };
 }

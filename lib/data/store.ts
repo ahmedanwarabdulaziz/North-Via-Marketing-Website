@@ -57,7 +57,7 @@ const TABLES = {
   },
   gbp_reviews: {
     pk: 'id',
-    fields: ['clientId', 'locationId', 'locationTitle', 'reviewName', 'reviewerName', 'rating', 'comment', 'createTime', 'updateTime', 'status', 'draft', 'draftGeneratedAt', 'draftError', 'existingReply', 'postedReply', 'postedAt', 'shortRef', 'telegramSentAt', 'firstSeenAt', 'updatedAt'],
+    fields: ['clientId', 'locationId', 'locationTitle', 'reviewName', 'reviewerName', 'rating', 'comment', 'createTime', 'updateTime', 'status', 'draft', 'draftGeneratedAt', 'draftError', 'existingReply', 'postedReply', 'postedAt', 'shortRef', 'telegramSentAt', 'backlog', 'firstSeenAt', 'updatedAt'],
   },
   gbp_telegram_batches: {
     pk: 'id',
