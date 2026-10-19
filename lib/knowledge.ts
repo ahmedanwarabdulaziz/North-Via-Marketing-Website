@@ -23,8 +23,17 @@ export interface KnowledgeItem {
   file_path: string | null;
   source_text: string | null;
   status: 'active' | 'removed';
+  category_id: string;
+  category_confirmed: boolean;
   extra: Record<string, unknown>;
   created_at: string;
+}
+
+export interface KnowledgeCategory {
+  id: string;
+  name: string;
+  emoji: string;
+  sort: number;
 }
 
 export interface LibraryClient {
@@ -41,14 +50,15 @@ export interface KnowledgeAnalysis {
   tags: string[];
   clientId: string | null;
   category: 'work' | 'personal' | null;
+  libraryCategoryId: string | null; // null = the AI wasn't sure; the item goes to Public and the bot asks
   taskRequest: string | null;
 }
 
-const COLUMNS = 'id, chat_id, type, title, summary, content, url, domain, tags, client_id, category, telegram_file_id, file_path, source_text, status, extra, created_at';
+const COLUMNS = 'id, chat_id, type, title, summary, content, url, domain, tags, client_id, category, telegram_file_id, file_path, source_text, status, category_id, category_confirmed, extra, created_at';
 
 // ---------- AI ----------
 
-function analysisPrompt(clients: LibraryClient[], kind: string) {
+function analysisPrompt(clients: LibraryClient[], kind: string, categories: KnowledgeCategory[]) {
   return `You file items into a marketing agency owner's knowledge library (the agency is in Cairo; content may be Arabic, English or mixed).
 The item is ${kind}. Return ONLY a JSON object:
 {
@@ -58,20 +68,28 @@ The item is ${kind}. Return ONLY a JSON object:
   "tags": string[],           // 2–6 short lowercase topic tags, e.g. "instagram", "reels", "pricing", "competitor", "seo"
   "client_id": string | null, // only if clearly about one of the clients below (by brand, owner or obvious reference)
   "category": "work" | "personal" | null,
+  "library_category_id": string | null, // the best library category id from the list below; null if none clearly fits
+  "library_category_sure": boolean,     // true only if that category is an obvious fit
   "task_request": string | null // only if the CAPTION asks to do something ("remind me…", "call them tomorrow"): that request, else null
 }
+
+Library categories (id | name):
+${categories.filter((c) => c.id !== 'public').map((c) => `${c.id} | ${c.name}`).join('\n')}
+("public" is only the fallback; don't pick it.)
 
 Clients (id | brand | owner):
 ${clients.map((c) => `${c.id} | ${c.name}${c.owner ? ` | ${c.owner}` : ''}`).join('\n') || '(none)'}`;
 }
 
-function toAnalysis(raw: Record<string, unknown>, clients: LibraryClient[], fallbackTitle: string): KnowledgeAnalysis {
+function toAnalysis(raw: Record<string, unknown>, clients: LibraryClient[], fallbackTitle: string, categories: KnowledgeCategory[]): KnowledgeAnalysis {
   const str = (v: unknown, max: number) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null);
   const clientId = str(raw.client_id, 100);
   const tags = Array.isArray(raw.tags)
     ? [...new Set(raw.tags.map((t) => String(t).toLowerCase().replace(/^#/, '').trim().replace(/\s+/g, '-')).filter((t) => t && t.length <= 30))].slice(0, 6)
     : [];
   const knownClient = clientId && clients.some((c) => c.id === clientId) ? clientId : null;
+  const categoryId = str(raw.library_category_id, 100);
+  const knownCategory = categoryId && categoryId !== 'public' && categories.some((c) => c.id === categoryId) ? categoryId : null;
   return {
     title: str(raw.title, 120) || fallbackTitle,
     summary: str(raw.summary, 1000),
@@ -79,18 +97,20 @@ function toAnalysis(raw: Record<string, unknown>, clients: LibraryClient[], fall
     tags,
     clientId: knownClient,
     category: raw.category === 'work' || raw.category === 'personal' ? raw.category : knownClient ? 'work' : null,
+    libraryCategoryId: knownCategory && raw.library_category_sure === true ? knownCategory : null,
     taskRequest: str(raw.task_request, 500),
   };
 }
 
 export async function analyzeScreenshot(image: AiImage, caption: string, clients: LibraryClient[]) {
+  const categories = await listCategories();
   const raw = await aiJson({
-    system: analysisPrompt(clients, 'a screenshot or photo'),
+    system: analysisPrompt(clients, 'a screenshot or photo', categories),
     user: caption ? `CAPTION: """${caption.slice(0, 1000)}"""` : 'No caption.',
     image,
     feature: 'knowledge',
   });
-  return toAnalysis(raw, clients, caption ? caption.slice(0, 80) : 'Screenshot');
+  return toAnalysis(raw, clients, caption ? caption.slice(0, 80) : 'Screenshot', categories);
 }
 
 export async function analyzeLink(url: string, page: PageInfo | null, note: string, clients: LibraryClient[]) {
@@ -101,14 +121,16 @@ export async function analyzeLink(url: string, page: PageInfo | null, note: stri
     page?.description ? `DESCRIPTION: ${page.description}` : '',
     page?.text ? `PAGE TEXT (start): """${page.text.slice(0, 5000)}"""` : page ? '' : '(The page could not be read; go by the URL and the note.)',
   ].filter(Boolean);
-  const raw = await aiJson({ system: analysisPrompt(clients, 'a web link'), user: lines.join('\n'), feature: 'knowledge' });
-  const analysis = toAnalysis(raw, clients, page?.title || note.slice(0, 80) || domainOf(url) || url);
+  const categories = await listCategories();
+  const raw = await aiJson({ system: analysisPrompt(clients, 'a web link', categories), user: lines.join('\n'), feature: 'knowledge' });
+  const analysis = toAnalysis(raw, clients, page?.title || note.slice(0, 80) || domainOf(url) || url, categories);
   return { ...analysis, content: page?.text ? page.text.slice(0, 4000) : null, taskRequest: analysis.taskRequest };
 }
 
 export async function analyzeNote(text: string, clients: LibraryClient[]) {
-  const raw = await aiJson({ system: analysisPrompt(clients, 'a note the owner typed'), user: `NOTE: """${text.slice(0, 4000)}"""`, feature: 'knowledge' });
-  return { ...toAnalysis(raw, clients, text.slice(0, 80)), content: text.slice(0, 4000), taskRequest: null };
+  const categories = await listCategories();
+  const raw = await aiJson({ system: analysisPrompt(clients, 'a note the owner typed', categories), user: `NOTE: """${text.slice(0, 4000)}"""`, feature: 'knowledge' });
+  return { ...toAnalysis(raw, clients, text.slice(0, 80), categories), content: text.slice(0, 4000), taskRequest: null };
 }
 
 // ---------- Web pages ----------
@@ -245,6 +267,8 @@ export async function saveKnowledge(item: {
         telegram_file_id: item.telegramFileId || null,
         file_path: item.filePath || null,
         source_text: item.sourceText || null,
+        category_id: a.libraryCategoryId || 'public',
+        category_confirmed: Boolean(a.libraryCategoryId),
         embedding: embedding ? JSON.stringify(embedding) : null,
         extra: { ...(item.extra || {}), ...(embedding ? {} : { needsEmbedding: true }) },
       })
@@ -270,8 +294,9 @@ export async function setKnowledgeStatus(id: string, status: KnowledgeItem['stat
   return check(await supabase.from('knowledge_items').update({ status }).eq('id', id).select(COLUMNS).single()) as KnowledgeItem;
 }
 
-export async function listKnowledge(opts: { limit?: number; clientId?: string | null; personal?: boolean } = {}) {
+export async function listKnowledge(opts: { limit?: number; clientId?: string | null; personal?: boolean; categoryId?: string } = {}) {
   let query = supabase.from('knowledge_items').select(COLUMNS).eq('status', 'active').order('created_at', { ascending: false }).limit(opts.limit ?? 10);
+  if (opts.categoryId) query = query.eq('category_id', opts.categoryId);
   if (opts.personal) query = query.eq('category', 'personal');
   else if (opts.clientId === '-') query = query.is('client_id', null).eq('category', 'work');
   else if (opts.clientId) query = query.eq('client_id', opts.clientId);
@@ -280,15 +305,17 @@ export async function listKnowledge(opts: { limit?: number; clientId?: string | 
 
 /** Active items per client id ('-' = work without a client, 'p' = personal) and per type. */
 export async function knowledgeCounts() {
-  const rows = check(await supabase.from('knowledge_items').select('type, client_id, category').eq('status', 'active').limit(5000)) as Array<Pick<KnowledgeItem, 'type' | 'client_id' | 'category'>>;
+  const rows = check(await supabase.from('knowledge_items').select('type, client_id, category, category_id').eq('status', 'active').limit(5000)) as Array<Pick<KnowledgeItem, 'type' | 'client_id' | 'category' | 'category_id'>>;
+  const byCategory = new Map<string, number>();
   const byClient = new Map<string, number>();
   const byType: Record<KnowledgeType, number> = { screenshot: 0, link: 0, note: 0 };
   for (const r of rows) {
     byType[r.type] += 1;
+    byCategory.set(r.category_id, (byCategory.get(r.category_id) || 0) + 1);
     const key = r.client_id || (r.category === 'personal' ? 'p' : r.category === 'work' ? '-' : 'other');
     byClient.set(key, (byClient.get(key) || 0) + 1);
   }
-  return { total: rows.length, byType, byClient };
+  return { total: rows.length, byType, byClient, byCategory };
 }
 
 /** Best matches for a search: by meaning when embeddings work, always by words too. */
@@ -316,4 +343,38 @@ export async function searchKnowledge(query: string, limit = 8) {
 export async function similarKnowledge(item: KnowledgeItem, limit = 6) {
   const found = await searchKnowledge(item.title + (item.tags.length ? ` ${item.tags.join(' ')}` : ''), limit + 1);
   return found.filter((i) => i.id !== item.id).slice(0, limit);
+}
+
+// ---------- Categories ----------
+
+let categoryCache: { at: number; list: KnowledgeCategory[] } | null = null;
+
+export async function listCategories(fresh = false) {
+  if (!fresh && categoryCache && Date.now() - categoryCache.at < 60_000) return categoryCache.list;
+  const list = check(await supabase.from('knowledge_categories').select('id, name, emoji, sort').order('sort').order('name')) as KnowledgeCategory[];
+  categoryCache = { at: Date.now(), list };
+  return list;
+}
+
+/** Adds a category (or returns the existing one with the same name, ignoring case). */
+export async function createCategory(name: string) {
+  const clean = name.replace(/\s+/g, ' ').trim().slice(0, 40);
+  if (!clean) throw new Error('Category name is empty.');
+  const existing = (await listCategories(true)).find((c) => c.name.toLowerCase() === clean.toLowerCase());
+  if (existing) return existing;
+  const created = check(
+    await supabase
+      .from('knowledge_categories')
+      .insert({ id: crypto.randomBytes(4).toString('base64url'), name: clean, emoji: '📁', sort: 100 })
+      .select('id, name, emoji, sort')
+      .single()
+  ) as KnowledgeCategory;
+  categoryCache = null;
+  return created;
+}
+
+export async function setItemCategory(id: string, categoryId: string) {
+  return check(
+    await supabase.from('knowledge_items').update({ category_id: categoryId, category_confirmed: true }).eq('id', id).select(COLUMNS).single()
+  ) as KnowledgeItem;
 }

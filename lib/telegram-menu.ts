@@ -15,6 +15,7 @@ import { analyticsScreenText } from './analytics-telegram';
 import { taskCounts, taskListScreen, tasksHomeScreen } from './task-telegram';
 import { aiUsageScreen, checkGroqNow } from './ai-usage-telegram';
 import { libraryCount, libraryHomeScreen } from './knowledge-telegram';
+import { startConversation } from './assistant-telegram';
 
 // Main bot menu. Button data is "m:<screen>" or "m:<screen>:<action>".
 // To add a new area (e.g. Tasks, Invoices), add a section here and a screen below.
@@ -76,6 +77,10 @@ const SECTIONS: MenuSection[] = [
     },
   },
   {
+    id: 'ch',
+    label: async () => '💬 Chat with AI',
+  },
+  {
     id: 'ai',
     label: async () => '🤖 AI usage',
   },
@@ -99,6 +104,8 @@ export const BOT_COMMANDS = [
   { command: 'websites', description: '🌐 Websites' },
   { command: 'library', description: '📚 Library (screenshots, links, notes)' },
   { command: 'find', description: '🔎 Search the library, e.g. /find reel ideas' },
+  { command: 'chat', description: '💬 Chat with AI about your tasks, clients and library' },
+  { command: 'end', description: '👋 End the chat' },
   { command: 'ai', description: '🤖 AI usage (Groq and Gemini)' },
 ];
 
@@ -361,6 +368,12 @@ export async function handleMenuCallback(query: { id: string; data?: string; mes
       }
       await editMessage(chatId, messageId, await reportsScreen());
       return answerCallback(query.id);
+    }
+
+    if (screen === 'ch') {
+      await answerCallback(query.id);
+      await startConversation(chatId, null);
+      return;
     }
 
     if (screen === 'kb') {

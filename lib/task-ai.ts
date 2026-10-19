@@ -82,7 +82,9 @@ Return ONLY a JSON object:
 }
 
 Rules:
-- intent "knowledge": the message is only a link, article, idea or info to save for later with nothing to do. "chat": a greeting or question to the bot. Otherwise "task".
+- intent "knowledge": the message is only a link, article, idea or info to save for later with nothing to do.
+  "chat": a greeting, or a QUESTION / request for help or advice ("what did I save about reels?", "what's on for Patriva this week?", "عندي ايه عن المنافسين؟", "give me ideas for…", "which of my saved stuff fits this task?"). A request to do or remember something is still "task".
+  Otherwise "task".
 - NEVER guess. Use null when the message doesn't say or clearly imply it. "Tomorrow" without a time → date set, time null, all_day false.
   "Tomorrow morning" → 10:00, "afternoon" → 15:00, "evening" → 19:00, "tonight" → 21:00, "end of day" → 17:00.
   A time with no date: today if that time is still ahead, else tomorrow.
@@ -329,4 +331,27 @@ function repeatMatches(date: string, rule: RepeatRule) {
   if (rule.freq === 'weekly' && rule.weekdays?.length) return rule.weekdays.includes(weekdayOf(date));
   if (rule.freq === 'monthly' && rule.monthDay) return Number(date.slice(8)) === rule.monthDay;
   return true;
+}
+
+/** Just the words in a voice note: Groq Whisper first, Gemini when Groq is unavailable. */
+export async function transcribeAudio(audio: TaskAudio): Promise<string> {
+  if (process.env.GROQ_API_KEY) {
+    try {
+      return await groqTranscribe(audio);
+    } catch (error) {
+      console.error('Whisper failed:', error instanceof Error ? error.message.slice(0, 200) : error);
+    }
+  }
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error('No speech-to-text model is available.');
+  const model = new GoogleGenerativeAI(apiKey).getGenerativeModel({ model: 'gemini-2.5-flash' }, { timeout: 30_000 });
+  const result = await trackGemini('gemini-2.5-flash', 'assistant', () =>
+    model.generateContent([
+      { text: 'Write down exactly what is said in this voice note, in its own language (Egyptian Arabic, English or mixed). Only the words, nothing else.' },
+      { inlineData: { mimeType: audio.mimeType, data: audio.data } },
+    ])
+  );
+  const text = result.response.text().trim();
+  if (!text) throw new Error('Nothing was heard in the voice note.');
+  return text;
 }

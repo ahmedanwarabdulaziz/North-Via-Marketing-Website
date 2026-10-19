@@ -4,6 +4,7 @@ import { handleMenuCallback, handleMenuCommand, sendMenu } from '@/lib/telegram-
 import { handleSocialCallback, handleSocialMessage } from '@/lib/social-telegram';
 import { handleTaskCallback, handleTaskMessage } from '@/lib/task-telegram';
 import { handleKnowledgeCallback, handleKnowledgeMessage } from '@/lib/knowledge-telegram';
+import { handleChatCallback } from '@/lib/assistant-telegram';
 import { isAllowedChat, sendMessage } from '@/lib/telegram';
 
 export const dynamic = 'force-dynamic';
@@ -38,6 +39,7 @@ export async function POST(request: Request) {
         else if (data.startsWith('sc:')) await handleSocialCallback(update.callback_query);
         else if (data.startsWith('tk:')) await handleTaskCallback(update.callback_query);
         else if (data.startsWith('kb:')) await handleKnowledgeCallback(update.callback_query);
+        else if (data.startsWith('ch:')) await handleChatCallback(update.callback_query);
         else await handleCallback(update.callback_query);
       }
     } else if (update.message?.chat) {

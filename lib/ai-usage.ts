@@ -5,7 +5,7 @@ import { supabase } from './supabase';
 // Groq returns its remaining limits in response headers, which are kept with the count.
 
 export type AiProvider = 'gemini' | 'groq';
-export type AiFeature = 'tasks' | 'reviews' | 'comments' | 'chat' | 'check' | 'knowledge';
+export type AiFeature = 'tasks' | 'reviews' | 'comments' | 'chat' | 'check' | 'knowledge' | 'assistant';
 
 export interface GroqLimits {
   requestsLimit?: number; // per day

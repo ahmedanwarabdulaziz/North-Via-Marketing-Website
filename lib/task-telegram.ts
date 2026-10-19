@@ -1,7 +1,8 @@
 import { listClientProfiles } from './admin-ops';
 import { getSetting, setSetting } from './data/store';
 import { saveTextToLibrary } from './knowledge-telegram';
-import { QUESTION_TEXT, understandTaskMessage, type TaskAudio, type TaskClient, type TaskUnderstanding } from './task-ai';
+import { activeChatSession, endConversation, handleChatMessage, startConversation } from './assistant-telegram';
+import { QUESTION_TEXT, transcribeAudio, understandTaskMessage, type TaskAudio, type TaskClient, type TaskUnderstanding } from './task-ai';
 import {
   WEEKDAYS,
   activeDraft,
@@ -259,18 +260,8 @@ function unknownClientNote(name: string | null) {
 
 async function startNewItem(chatId: number, result: TaskUnderstanding, clients: TaskClient[], ctx: { rawInput: string; source: string }) {
   if (result.intent === 'chat') {
-    await sendMessage(chatId, {
-      text: [
-        'Send me anything you need to do and I’ll save it, e.g.',
-        '• <i>Call Mona from Bake House Thursday 4pm</i>',
-        '• <i>Pay the internet bill on the 1st of every month</i>',
-        '• <i>اجتماع مع العميل بكرة الساعة ١١</i>',
-        '• 🎙 or just send a voice note',
-        '',
-        'Type <b>x</b> for the menu.',
-      ].join('\n'),
-      buttons: [[{ text: '✅ My tasks', callback_data: 'tk:l:home' }]],
-    });
+    // A question or a chat: open a conversation (it asks which model to use first).
+    await startConversation(chatId, ctx.rawInput);
     return;
   }
   if (result.intent === 'knowledge') {
@@ -343,6 +334,14 @@ export async function handleTaskMessage(message: IncomingMessage): Promise<boole
         await sendMessage(chatId, await taskListScreen('today'));
         return true;
       }
+      if (command === '/chat') {
+        await startConversation(chatId, text.replace(/^\S+\s*/, '').trim() || null);
+        return true;
+      }
+      if (command === '/end') {
+        await endConversation(chatId);
+        return true;
+      }
       return false;
     }
   }
@@ -368,8 +367,15 @@ export async function handleTaskMessage(message: IncomingMessage): Promise<boole
       return true;
     }
 
+    // An open conversation takes the message, unless a task question was asked after it.
+    const [chat, draft] = await Promise.all([activeChatSession(chatId), activeDraft(String(chatId))]);
+    if (chat && (!draft || Date.parse(chat.updated_at) >= Date.parse(draft.updated_at))) {
+      const words = audio ? await transcribeAudio(audio) : text;
+      await handleChatMessage(chatId, chat, [words, audio ? text : ''].filter(Boolean).join('\n'));
+      return true;
+    }
+
     // Otherwise an answer (typed or spoken) to the open question, if there is one.
-    const draft = await activeDraft(String(chatId));
     if (draft) {
       const result = await read({ current: draft.fields, asking: draft.asking });
       if (!result.separate) {

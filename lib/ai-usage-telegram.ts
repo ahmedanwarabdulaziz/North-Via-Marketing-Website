@@ -10,6 +10,7 @@ const FEATURE_LABELS: Record<string, string> = {
   comments: 'Comment checks',
   chat: 'Website chat',
   check: 'Live checks',
+  assistant: 'Chat with the bot',
   knowledge: 'Library',
 };
 
