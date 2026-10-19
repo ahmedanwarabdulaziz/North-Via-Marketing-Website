@@ -383,7 +383,10 @@ export async function listDueReminders(now = new Date()) {
  * (overlapping runs). Returns false when another run already claimed it.
  */
 export async function claimReminder(task: Task) {
-  let query = supabase.from('tasks').update({ reminded_at: new Date().toISOString() }).eq('id', task.id).eq('remind_at', task.remind_at!);
+  // A reminder for later this hour goes out early; stamping it with its own time (not "now")
+  // keeps the next run from seeing "sent before its time" and sending it again.
+  const sentFor = new Date(Math.max(Date.now(), Date.parse(task.remind_at!))).toISOString();
+  let query = supabase.from('tasks').update({ reminded_at: sentFor }).eq('id', task.id).eq('remind_at', task.remind_at!);
   query = task.reminded_at ? query.eq('reminded_at', task.reminded_at) : query.is('reminded_at', null);
   const claimed = check(await query.select('id')) as { id: string }[];
   return claimed.length > 0;
