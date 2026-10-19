@@ -468,3 +468,14 @@ export async function deleteDraft(id: string) {
   const { error } = await supabase.from('task_drafts').delete().eq('id', id);
   if (error) throw new Error(error.message);
 }
+
+/** "Done" taps since a time (repeating tasks stay open, so the events are the record), with their tasks. */
+export async function listDoneSince(since: Date) {
+  const events = check(
+    await supabase.from('task_events').select('task_id, created_at').eq('event', 'done').gte('created_at', since.toISOString()).order('created_at', { ascending: false }).limit(500)
+  ) as Array<{ task_id: string; created_at: string }>;
+  const ids = [...new Set(events.map((e) => e.task_id))];
+  const tasks = ids.length ? (check(await supabase.from('tasks').select().in('id', ids)) as Task[]) : [];
+  const byId = new Map(tasks.map((t) => [t.id, t]));
+  return events.map((e) => ({ at: e.created_at, task: byId.get(e.task_id) })).filter((e): e is { at: string; task: Task } => Boolean(e.task && e.task.status !== 'cancelled'));
+}

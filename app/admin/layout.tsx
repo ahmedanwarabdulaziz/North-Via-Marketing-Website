@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { logoutAdmin } from '@/app/actions/auth';
-import { Users, LayoutDashboard, Settings, LogOut, BarChart3, FileText, Star } from 'lucide-react';
+import { Users, LayoutDashboard, Settings, LogOut, BarChart3, FileText, Star, CheckSquare, BookOpen } from 'lucide-react';
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname() ?? '';
@@ -24,9 +24,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <nav className="flex-1 p-4 space-y-1">
           {[
             { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
+            { href: '/admin/tasks', label: 'Tasks', icon: CheckSquare },
             { href: '/admin/clients', label: 'Clients', icon: Users },
             { href: '/admin/ads', label: 'Google Ads', icon: BarChart3 },
             { href: '/admin/reviews', label: 'Google Reviews', icon: Star },
+            { href: '/admin/library', label: 'Library', icon: BookOpen },
             { href: '/admin/invoices', label: 'Invoices', icon: FileText },
             { href: '/admin/settings', label: 'Settings', icon: Settings },
           ].map(({ href, label, icon: Icon }) => {

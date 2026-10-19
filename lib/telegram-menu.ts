@@ -96,6 +96,7 @@ export const BOT_COMMANDS = [
   { command: 'tasks', description: '✅ Tasks' },
   { command: 'today', description: '📅 Today’s tasks' },
   { command: 'tomorrow', description: '🌅 Tomorrow’s tasks' },
+  { command: 'week', description: '🗓 Your week ahead by client' },
   { command: 'reviews', description: '⭐ Google Reviews' },
   { command: 'social', description: '📱 Facebook & Instagram' },
   { command: 'ads', description: '📈 Google Ads' },

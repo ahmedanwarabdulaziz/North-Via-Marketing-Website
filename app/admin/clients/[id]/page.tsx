@@ -20,6 +20,10 @@ import { analyticsConnected, describeGaError, getGa4Summary, refreshGa4Summary }
 import { listClaritySnapshots } from '@/lib/clarity';
 import { ClientSearchCard } from '@/components/admin/ClientSearchCard';
 import { describeSearchError, getSearchSummary, refreshSearchSummary, searchConsoleReady } from '@/lib/search-console';
+import { TasksBoard } from '@/components/admin/TasksBoard';
+import { listAdminTasks } from '@/lib/admin-tasks';
+import { cairoParts } from '@/lib/tasks';
+import { listKnowledge } from '@/lib/knowledge';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,7 +45,7 @@ export default async function ClientDetailPage({
     notFound();
   }
 
-  const [allClients, gbpConnection, gbpLocations, replySettings, websites, socialAccounts, metaConnections, socialStats, reviewQueue, adsCard] = await Promise.all([
+  const [allClients, gbpConnection, gbpLocations, replySettings, websites, socialAccounts, metaConnections, socialStats, reviewQueue, adsCard, clientTasks, libraryItems] = await Promise.all([
     listClientProfiles().catch(() => []),
     getGbpConnection(id).catch(() => null),
     listClientLocations(id).catch(() => []),
@@ -52,6 +56,8 @@ export default async function ClientDetailPage({
     socialOverview().then((all) => all.find((s) => s.clientId === id) || null).catch(() => null),
     listReviewQueue().then((q) => q.filter((r) => r.clientId === id && (r.status === 'draft_ready' || r.status === 'needs_draft'))).catch(() => []),
     clientAdsCard(id).catch(() => ({ connected: false, accounts: [] })),
+    listAdminTasks({ clientId: id }).catch(() => []),
+    listKnowledge({ clientId: id, limit: 100 }).catch(() => []),
   ]);
 
   // ---------- Website analytics (GA4 last 7 days vs the 7 before, latest Clarity day) ----------
@@ -94,8 +100,16 @@ export default async function ClientDetailPage({
   const searchStatus: OverviewTile['status'] = !client.searchConsoleSite ? 'off' : searchError ? 'warn' : 'ok';
   const analyticsStatus: OverviewTile['status'] = !client.ga4PropertyId && !clarityOn ? 'off' : gaError ? 'warn' : 'ok';
 
+  // Tasks for this client (from Telegram or the panel); overdue = before now in Cairo.
+  const now = cairoParts(new Date());
+  const openTasks = clientTasks.filter((t) => t.status === 'open');
+  const overdueTasks = openTasks.filter((t) => t.date && (t.date < now.date || (t.date === now.date && t.time && t.time < now.time)));
+  const nextTask = openTasks.filter((t) => t.date && !overdueTasks.includes(t)).sort((a, b) => `${a.date} ${a.time || ''}`.localeCompare(`${b.date} ${b.time || ''}`))[0];
+  const tasksStatus: OverviewTile['status'] = !openTasks.length ? 'off' : overdueTasks.length ? 'warn' : 'ok';
+
   const tabs: ClientTab[] = [
     { id: 'overview', label: 'Overview' },
+    { id: 'tasks', label: `Tasks${openTasks.length ? ` (${openTasks.length})` : ''}`, status: tasksStatus },
     { id: 'reviews', label: 'Google Reviews', status: reviewsStatus },
     { id: 'social', label: 'Facebook & Instagram', status: socialStatus },
     { id: 'ads', label: 'Google Ads', status: adsStatus },
@@ -106,6 +120,13 @@ export default async function ClientDetailPage({
   ];
 
   const overview: OverviewTile[] = [
+    {
+      tab: 'tasks',
+      title: 'Tasks',
+      status: tasksStatus,
+      value: !openTasks.length ? 'Nothing open' : overdueTasks.length ? `${overdueTasks.length} overdue` : `${plural(openTasks.length, 'open task')}`,
+      detail: nextTask ? `Next: ${nextTask.title}` : openTasks.length ? 'No dates set' : 'Send the Telegram bot a task for this client, or add one here.',
+    },
     {
       tab: 'reviews',
       title: 'Google Reviews',
@@ -163,6 +184,23 @@ export default async function ClientDetailPage({
   const initial = tab || (gbp ? 'reviews' : meta ? 'social' : ads ? 'ads' : ga ? 'analytics' : 'overview');
 
   const panels = {
+    tasks: (
+      <>
+        <div className="flex items-center justify-between gap-3 -mt-1">
+          <p className="text-sm text-zinc-500">Tasks for {client.brandName}, from Telegram or added here. Reminders go to Telegram.</p>
+          <Link href={`/admin/library?client=${id}`} className="text-sm text-blue-600 hover:underline shrink-0">
+            📚 Library items ({libraryItems.length})
+          </Link>
+        </div>
+        <TasksBoard
+          initial={clientTasks}
+          clients={allClients.filter((c) => c.id).map((c) => ({ id: c.id!, name: c.brandName }))}
+          today={now.date}
+          nowTime={now.time}
+          fixedClientId={id}
+        />
+      </>
+    ),
     reviews: (
       <>
         <ClientGbpCard

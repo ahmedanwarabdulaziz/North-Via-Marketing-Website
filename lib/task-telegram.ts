@@ -24,6 +24,7 @@ import {
   getDraft,
   getTask,
   groupTasks,
+  listDoneSince,
   listDrafts,
   listDueReminders,
   listOpenTasks,
@@ -332,6 +333,10 @@ export async function handleTaskMessage(message: IncomingMessage): Promise<boole
       }
       if (command === '/today') {
         await sendMessage(chatId, await taskListScreen('today'));
+        return true;
+      }
+      if (command === '/week') {
+        await sendMessage(chatId, await weeklySummaryMessage());
         return true;
       }
       if (command === '/chat') {
@@ -789,5 +794,112 @@ export async function sendMorningDigest(now = new Date()) {
   }
   // Drafts get mentioned in a few digests, then dropped.
   await deleteStaleDrafts();
+  return { sent: true, chats: chats.length };
+}
+
+// ---------- Sunday weekly summary ----------
+
+const WEEKLY_SETTING = 'tasks_weekly_summary';
+const WEEKLY_DAY = 0; // Sunday
+const WEEKLY_FROM = '20:00'; // Cairo
+
+/** The week ahead (the 7 days from tomorrow) by client, overdue tasks, and what got done in the last 7 days. */
+export async function weeklySummaryMessage(now = new Date()): Promise<OutgoingMessage> {
+  const today = cairoParts(now).date;
+  const start = addDays(today, 1);
+  const end = addDays(today, 7);
+  const [tasks, clients, done] = await Promise.all([listOpenTasks(), taskClients(), listDoneSince(new Date(now.getTime() - 7 * 86_400_000))]);
+  const groups = groupTasks(tasks, now);
+  const ahead = tasks
+    .filter((t) => t.due_at && cairoParts(new Date(t.due_at)).date >= start && cairoParts(new Date(t.due_at)).date <= end)
+    .sort((a, b) => Date.parse(a.due_at!) - Date.parse(b.due_at!));
+
+  // One block per client (by number of tasks), then agency work, then personal.
+  const blocks = new Map<string, Task[]>();
+  for (const t of ahead) {
+    const key = t.category === 'personal' ? 'p' : t.client_id || '-';
+    blocks.set(key, [...(blocks.get(key) || []), t]);
+  }
+  const order = [...blocks.keys()].sort((a, b) => {
+    const rank = (k: string) => (k === 'p' ? 2 : k === '-' ? 1 : 0);
+    return rank(a) - rank(b) || blocks.get(b)!.length - blocks.get(a)!.length;
+  });
+  const blockTitle = (k: string) => (k === 'p' ? '🏠 Personal' : k === '-' ? '🏢 Agency' : `💼 ${h(clientName(clients, k) || 'Client')}`);
+  const dayTime = (t: Task) => {
+    const { date, time } = cairoParts(new Date(t.due_at!));
+    return `${WEEKDAYS[weekdayOf(date)]}${t.all_day ? '' : ` ${formatTime(time).replace(':00', '')}`}`;
+  };
+
+  const lines = [`🗓 <b>Your week ahead — ${formatDate(start)} to ${formatDate(end)}</b>`];
+  lines.push(
+    [
+      ahead.length ? `${ahead.length} task${ahead.length === 1 ? '' : 's'} coming up` : 'Nothing scheduled yet.',
+      groups.overdue.length ? `⚠️ ${groups.overdue.length} overdue` : null,
+      groups.nodate.length ? `📝 ${groups.nodate.length} with no date` : null,
+    ]
+      .filter(Boolean)
+      .join(' · ')
+  );
+  for (const k of order) {
+    const list = blocks.get(k)!;
+    lines.push('', `<b>${blockTitle(k)}</b> (${list.length})`);
+    for (const t of list.slice(0, 6)) lines.push(`• ${dayTime(t)} · ${h(truncate(t.title, 90))}${t.repeat_rule ? ' 🔁' : ''}${t.priority === 'high' ? ' 🔴' : ''}`);
+    if (list.length > 6) lines.push(`<i>+${list.length - 6} more</i>`);
+  }
+
+  if (groups.overdue.length) {
+    lines.push('', `<b>⚠️ Still overdue</b>`);
+    for (const t of groups.overdue.slice(0, 6)) {
+      const client = clientName(clients, t.client_id);
+      lines.push(`• ${h(formatWhen(t))} · ${h(truncate(t.title, 80))}${client ? ` — <i>${h(client)}</i>` : ''}`);
+    }
+    if (groups.overdue.length > 6) lines.push(`<i>+${groups.overdue.length - 6} more</i>`);
+  }
+
+  // Last week's "Done" taps, by client.
+  const doneBy = new Map<string, number>();
+  for (const { task } of done) {
+    const key = task.category === 'personal' ? 'p' : task.client_id || '-';
+    doneBy.set(key, (doneBy.get(key) || 0) + 1);
+  }
+  lines.push(
+    '',
+    done.length
+      ? `✅ <b>Done last week: ${done.length}</b> — ${[...doneBy.entries()]
+          .sort((a, b) => b[1] - a[1])
+          .map(([k, n]) => `${k === 'p' ? '🏠 personal' : k === '-' ? 'agency' : h(clientName(clients, k) || 'client')} ${n}`)
+          .join(', ')}`
+      : '✅ <b>Done last week:</b> nothing marked done.'
+  );
+
+  return {
+    text: lines.join('\n'),
+    buttons: [
+      [
+        { text: '🗓 Next 7 days', callback_data: 'tk:l:week' },
+        { text: `⚠️ Overdue (${groups.overdue.length})`, callback_data: 'tk:l:overdue' },
+      ],
+      [{ text: '✅ All my tasks', callback_data: 'tk:l:home' }],
+    ],
+  };
+}
+
+/** Sundays, on the first hourly run at or after 8 PM Cairo; the week is stored first so overlapping runs don't both send it. */
+export async function sendWeeklySummary(now = new Date()) {
+  const { date: today, time } = cairoParts(runHour(now));
+  if (weekdayOf(today) !== WEEKLY_DAY) return { sent: false, reason: 'not Sunday' };
+  if (time < WEEKLY_FROM) return { sent: false, reason: 'before 8 PM Cairo' };
+  const last = await getSetting<{ day?: string }>(WEEKLY_SETTING);
+  if (last?.day === today) return { sent: false, reason: 'already sent this week' };
+  const chats = allowedChatIds();
+  if (!chats.length) return { sent: false, reason: 'no Telegram chats configured' };
+  await setSetting(WEEKLY_SETTING, { day: today, sentAt: now.toISOString() });
+  try {
+    const message = await weeklySummaryMessage(now);
+    for (const chatId of chats) await sendMessage(chatId, message);
+  } catch (error) {
+    await setSetting(WEEKLY_SETTING, last || {});
+    throw error;
+  }
   return { sent: true, chats: chats.length };
 }
