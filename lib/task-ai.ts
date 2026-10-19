@@ -222,7 +222,9 @@ export async function understandTaskMessage(
       const heard = audio ? await groqTranscribe(audio) : null;
       const groqMessage = heard ? `MESSAGE (voice note, transcribed): """${heard.slice(0, 4000)}"""${text ? ` Caption: """${text.slice(0, 1000)}"""` : ''}` : message;
       const groqPrompt = context ? prompt.replace(message, groqMessage) : groqMessage;
-      return toUnderstanding(await groqJson(systemPrompt(clients), groqPrompt), clients);
+      const understood = toUnderstanding(await groqJson(systemPrompt(clients), groqPrompt), clients);
+      // Whisper's transcript is what was said; keep it with the task like Gemini's "heard".
+      return heard ? { ...understood, heard } : understood;
     } catch (error) {
       lastError = error;
       const detail = error instanceof Error ? error.message : String(error);

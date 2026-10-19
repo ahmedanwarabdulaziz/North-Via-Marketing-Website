@@ -1,6 +1,6 @@
 # Tasks, Reminders & Knowledge Library Plan (Telegram + AI)
 
-Status: **Phase 1 and 2 built** (2026-10-18): text and voice notes, reminders with Done/Snooze (`/api/tasks/due`, hourly from n8n: `n8n/tasks-due-hourly.json`; reminders go out with the run at the start of their hour), 9 AM Cairo morning digest. Decided: auto-save with Undo, Cairo time.
+Status: **Phase 1 and 2 built** (2026-10-18): text and voice notes, reminders with Done/Snooze (`/api/tasks/due`, hourly from n8n: `n8n/tasks-due-hourly.json`; reminders go out with the run at the start of their hour), 9 AM Cairo morning digest. Decided: auto-save with Undo, Cairo time. **Phase 4 built** (2026-10-19): knowledge library — screenshots (Gemini vision, private `knowledge` bucket), links (page/YouTube read), `save:` notes, `/find` search by meaning (gemini-embedding-001 + pgvector) and words, 📚 Library menu. Groq is the first AI for text, Gemini the fallback; usage on the 🤖 AI usage screen.
 
 Send the bot a text, a voice note, a screenshot or a link. The AI works out what it is, fills in the details, asks only for what's missing, and saves it to Supabase. The bot then reminds you at the right time.
 

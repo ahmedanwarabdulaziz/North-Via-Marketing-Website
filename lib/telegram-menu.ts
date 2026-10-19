@@ -14,6 +14,7 @@ import { adsScreenText } from './ads-telegram';
 import { analyticsScreenText } from './analytics-telegram';
 import { taskCounts, taskListScreen, tasksHomeScreen } from './task-telegram';
 import { aiUsageScreen, checkGroqNow } from './ai-usage-telegram';
+import { libraryCount, libraryHomeScreen } from './knowledge-telegram';
 
 // Main bot menu. Button data is "m:<screen>" or "m:<screen>:<action>".
 // To add a new area (e.g. Tasks, Invoices), add a section here and a screen below.
@@ -68,6 +69,13 @@ const SECTIONS: MenuSection[] = [
     },
   },
   {
+    id: 'kb',
+    label: async () => {
+      const total = await libraryCount();
+      return `📚 Library${total ? ` (${total})` : ''}`;
+    },
+  },
+  {
     id: 'ai',
     label: async () => '🤖 AI usage',
   },
@@ -89,6 +97,8 @@ export const BOT_COMMANDS = [
   { command: 'analytics', description: '🧭 Website analytics' },
   { command: 'reports', description: '📊 Client reports' },
   { command: 'websites', description: '🌐 Websites' },
+  { command: 'library', description: '📚 Library (screenshots, links, notes)' },
+  { command: 'find', description: '🔎 Search the library, e.g. /find reel ideas' },
   { command: 'ai', description: '🤖 AI usage (Groq and Gemini)' },
 ];
 
@@ -247,6 +257,7 @@ const COMMAND_SCREENS: Record<string, () => Promise<OutgoingMessage>> = {
   '/analytics': () => periodScreen('an', 7),
   '/reports': reportsScreen,
   '/websites': () => websitesScreen(),
+  '/library': libraryHomeScreen,
   '/ai': () => aiUsageScreen(),
 };
 
@@ -349,6 +360,11 @@ export async function handleMenuCallback(query: { id: string; data?: string; mes
         return;
       }
       await editMessage(chatId, messageId, await reportsScreen());
+      return answerCallback(query.id);
+    }
+
+    if (screen === 'kb') {
+      await editMessage(chatId, messageId, await libraryHomeScreen());
       return answerCallback(query.id);
     }
 

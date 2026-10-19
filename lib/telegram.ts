@@ -11,6 +11,7 @@ export interface OutgoingMessage {
   buttons?: InlineButton[][];
   forceReply?: boolean;
   placeholder?: string; // hint shown in the reply box with forceReply
+  replyTo?: number; // message id to answer (shown quoted above it)
 }
 
 export function telegramConfigured() {
@@ -68,6 +69,18 @@ export async function sendMessage(chatId: number | string, message: OutgoingMess
     text: message.text,
     parse_mode: 'HTML',
     link_preview_options: { is_disabled: true },
+    reply_markup: markup(message),
+    ...(message.replyTo ? { reply_parameters: { message_id: message.replyTo, allow_sending_without_reply: true } } : {}),
+  });
+}
+
+/** Sends a photo already on Telegram (by file_id) with an HTML caption (max 1024 characters). */
+export async function sendPhoto(chatId: number | string, fileId: string, message: OutgoingMessage) {
+  return telegram('sendPhoto', {
+    chat_id: chatId,
+    photo: fileId,
+    caption: message.text,
+    parse_mode: 'HTML',
     reply_markup: markup(message),
   });
 }

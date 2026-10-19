@@ -1,5 +1,6 @@
 import { listClientProfiles } from './admin-ops';
 import { getSetting, setSetting } from './data/store';
+import { saveTextToLibrary } from './knowledge-telegram';
 import { QUESTION_TEXT, understandTaskMessage, type TaskAudio, type TaskClient, type TaskUnderstanding } from './task-ai';
 import {
   WEEKDAYS,
@@ -273,10 +274,8 @@ async function startNewItem(chatId: number, result: TaskUnderstanding, clients: 
     return;
   }
   if (result.intent === 'knowledge') {
-    // The knowledge library comes in a later phase; until then nothing is saved silently.
-    await sendMessage(chatId, {
-      text: '📚 That looks like something to keep for later, not a task. The knowledge library is coming soon. To save it as a task anyway, add what to do, e.g. “read this tomorrow”.',
-    });
+    // Info to keep, not something to do: it goes to the library (a link or a note).
+    await saveTextToLibrary(chatId, ctx.rawInput);
     return;
   }
   await proceed(chatId, result.fields, clients, {
@@ -286,6 +285,18 @@ async function startNewItem(chatId: number, result: TaskUnderstanding, clients: 
     source: ctx.source,
     heard: result.heard,
   });
+}
+
+/** Starts a task from text the bot made itself (e.g. "Make a task" on a library item or a screenshot caption). */
+export async function startTaskFromText(chatId: number, text: string, source: string) {
+  try {
+    const clients = await taskClients();
+    const result = await understandTaskMessage(text, clients);
+    await proceed(chatId, result.fields, clients, { rawInput: text, ai: result.raw, note: unknownClientNote(result.clientMentioned), source });
+  } catch (error) {
+    console.error('Task from text failed:', error);
+    await sendMessage(chatId, { text: '⚠️ I couldn’t make the task right now (the AI may be busy). Please try again in a minute.' });
+  }
 }
 
 // ---------- Messages ----------
@@ -314,7 +325,8 @@ export async function handleTaskMessage(message: IncomingMessage): Promise<boole
   } else {
     if (!text) {
       if (message.photo || message.document || message.video) {
-        await sendMessage(chatId, { text: '🖼 Screenshots and files are coming next. For now, please type it or send a voice note.' });
+        // Images are handled by the library before this; other files aren't read yet.
+        await sendMessage(chatId, { text: '📎 I can read text, voice notes, screenshots and links, but not videos or other files yet.' });
         return true;
       }
       return false;

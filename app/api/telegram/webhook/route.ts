@@ -3,6 +3,7 @@ import { handleCallback, handleReviewMessage } from '@/lib/review-telegram';
 import { handleMenuCallback, handleMenuCommand, sendMenu } from '@/lib/telegram-menu';
 import { handleSocialCallback, handleSocialMessage } from '@/lib/social-telegram';
 import { handleTaskCallback, handleTaskMessage } from '@/lib/task-telegram';
+import { handleKnowledgeCallback, handleKnowledgeMessage } from '@/lib/knowledge-telegram';
 import { isAllowedChat, sendMessage } from '@/lib/telegram';
 
 export const dynamic = 'force-dynamic';
@@ -36,6 +37,7 @@ export async function POST(request: Request) {
         if (data.startsWith('m:')) await handleMenuCallback(update.callback_query);
         else if (data.startsWith('sc:')) await handleSocialCallback(update.callback_query);
         else if (data.startsWith('tk:')) await handleTaskCallback(update.callback_query);
+        else if (data.startsWith('kb:')) await handleKnowledgeCallback(update.callback_query);
         else await handleCallback(update.callback_query);
       }
     } else if (update.message?.chat) {
@@ -49,6 +51,7 @@ export async function POST(request: Request) {
           (await handleSocialMessage(update.message)) ||
           (await handleReviewMessage(update.message)) ||
           (await handleMenuCommand(update.message)) ||
+          (await handleKnowledgeMessage(update.message)) ||
           (await handleTaskMessage(update.message));
         if (!handled) await sendMenu(chatId);
       } else if (update.message.chat.type === 'private') {
