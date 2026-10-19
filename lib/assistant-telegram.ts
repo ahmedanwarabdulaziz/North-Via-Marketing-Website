@@ -1,8 +1,9 @@
 import crypto from 'crypto';
 import { listClientProfiles } from './admin-ops';
-import { CHAT_MODELS, askAssistant, availableChatModels, claimsDone, type AssistantAction, type ChatMessage, type ChatModel } from './assistant';
-import { addDoc } from './data/store';
+import { CHAT_MODELS, CLIENT_FIELDS, actionSummary, askAssistant, availableChatModels, claimsDone, type AssistantAction, type ChatMessage, type ChatModel, type ClientField } from './assistant';
+import { addDoc, updateDoc } from './data/store';
 import { supabase } from './supabase';
+import { completeTask, formatWhen } from './tasks';
 import { startTaskFromText } from './task-telegram';
 import { InlineButton, OutgoingMessage, answerCallback, editMessage, escapeHtml as h, sendMessage, telegram, truncate } from './telegram';
 import { addWebsite, listClientWebsites, runWebsiteChecks } from './website-monitor';
@@ -156,16 +157,15 @@ async function answer(chatId: number, session: ChatSession, question: string) {
       // The history says plainly that proposals aren't done yet, so the model can't later assume they were.
       content: [reply.text, ...reply.actions.map((a) => `[PROPOSED, not done yet: ${actionSummary(a)}]`)].filter(Boolean).join('\n'),
       at: now,
-      actions: reply.actions,
+      actions: reply.actions.map((a) => ({ ...a, id: crypto.randomBytes(4).toString('base64url') })),
     },
   ].slice(-KEEP_MESSAGES);
   // Switch to the model that answered, so the next turn doesn't wait on the busy one again.
   await updateSession(session.id, { messages, model: reply.usedModel.model, provider: reply.usedModel.provider, pending_question: null });
 
-  const msgIndex = messages.length - 1;
-  const buttons: InlineButton[][] = reply.actions.map((a, i) => [{ text: actionButton(a), callback_data: `ch:a:${session.id}:${msgIndex}:${i}` }]);
+  const buttons: InlineButton[][] = [];
   for (const item of reply.items.slice(0, 4)) buttons.push([{ text: `📚 ${truncate(item.title, 45)}`, callback_data: `kb:o:${item.id}` }]);
-  for (const task of reply.tasks.slice(0, Math.max(0, 6 - buttons.length))) buttons.push([{ text: `📌 ${truncate(task.title, 45)}`, callback_data: `tk:o:${task.id}` }]);
+  for (const task of reply.tasks.slice(0, Math.max(0, 5 - buttons.length))) buttons.push([{ text: `📌 ${truncate(task.title, 45)}`, callback_data: `tk:o:${task.id}` }]);
   buttons.push([
     { text: '🔁 Switch model', callback_data: `ch:s:${session.id}` },
     { text: '✖️ End chat', callback_data: `ch:e:${session.id}` },
@@ -174,28 +174,48 @@ async function answer(chatId: number, session: ChatSession, question: string) {
   const footer = reply.fellBackFrom
     ? `<i>— ${h(reply.usedModel.label)} (${h(reply.fellBackFrom.label)} was busy)</i>`
     : `<i>— ${h(reply.usedModel.label)}</i>`;
-  // What the bot will really do is spelled out, so a reply that sounds "done" can't mislead.
-  const status = reply.actions.length
-    ? `\n\n⏳ <b>Not done yet</b>. Tap ✅ to confirm:\n${reply.actions.map((a) => `• ${h(actionSummary(a))}`).join('\n')}`
-    : claimsDone(reply.text) && !history.slice(-4).some((m) => m.content.startsWith('[DONE by the bot]'))
-      ? '\n\n⚠️ <i>Nothing was changed. I can only change things through the ✅ buttons.</i>'
+  const warning =
+    !reply.actions.length && claimsDone(reply.text) && !history.slice(-4).some((m) => m.content.startsWith('[DONE by the bot]'))
+      ? '\n\n⚠️ <i>Nothing was changed. Changes only happen through a ✅ Confirm card.</i>'
       : '';
-  const body = reply.text ? toTelegramHtml(reply.text) : reply.actions.length ? 'Here’s what I can do:' : '…';
-  await sendMessage(chatId, { text: `${truncate(body, 3400)}${status}\n\n${footer}`, buttons });
-}
+  const body = reply.text ? toTelegramHtml(reply.text) : reply.actions.length ? 'Here’s what I prepared:' : '…';
+  await sendMessage(chatId, { text: `${truncate(body, 3400)}${warning}\n\n${footer}`, buttons });
 
-function actionSummary(a: AssistantAction) {
-  if (a.type === 'task') return `Save task: ${truncate(a.text, 150)}`;
-  if (a.type === 'add_client') {
-    return `Add client ${a.brand}${a.owner ? ` (owner ${a.owner})` : ''}${a.website ? ` and check ${new URL(a.website).hostname} hourly` : ''}`;
+  // One confirmation card per change: exactly what will be saved, Confirm / Cancel.
+  const proposed = messages[messages.length - 1].actions || [];
+  for (const a of proposed) {
+    await sendMessage(chatId, {
+      text: actionCard(a),
+      buttons: [
+        [
+          { text: '✅ Confirm', callback_data: `ch:a:${session.id}:${a.id}` },
+          { text: '✖️ Cancel', callback_data: `ch:x:${session.id}:${a.id}` },
+        ],
+      ],
+    });
   }
-  return `Check website ${new URL(a.url).hostname} hourly for ${a.client}`;
 }
 
-function actionButton(a: AssistantAction) {
-  if (a.type === 'task') return `✅ Save task: ${truncate(a.text, 32)}`;
-  if (a.type === 'add_client') return `✅ Add client: ${truncate(a.brand, 28)}${a.website ? ' + website check' : ''}`;
-  return `✅ Check website: ${truncate(new URL(a.url).hostname.replace(/^www\./, ''), 30)}`;
+const host = (u?: string | null) => (u ? new URL(u).hostname.replace(/^www\./, '') : '');
+
+/** The confirmation card: what will change, field by field. */
+function actionCard(a: AssistantAction) {
+  if (a.type === 'task') return ['📝 <b>Confirm: save a task</b>', '', h(a.text), '', '<i>The task bot reads it and asks if a date or client is missing.</i>'].join('\n');
+  if (a.type === 'add_client') {
+    const rows = (Object.keys(CLIENT_FIELDS) as ClientField[]).filter((k) => a.fields[k]).map((k) => `• ${CLIENT_FIELDS[k]}: <b>${h(a.fields[k]!)}</b>`);
+    return [
+      '➕ <b>Confirm: add a new client</b>',
+      '',
+      ...rows,
+      ...(a.checkWebsite ? ['', `🌐 Also check ${h(host(a.fields.websiteUrl))} every hour (uptime + SSL).`] : []),
+    ].join('\n');
+  }
+  if (a.type === 'update_client') {
+    const rows = (Object.keys(a.changes) as ClientField[]).map((k) => `• ${CLIENT_FIELDS[k]}: ${a.before[k] ? `<s>${h(a.before[k]!)}</s>` : '<i>(empty)</i>'} → <b>${h(a.changes[k]!)}</b>`);
+    return [`✏️ <b>Confirm: update ${h(a.clientName)}</b>`, '', ...rows].join('\n');
+  }
+  if (a.type === 'add_website') return [`🌐 <b>Confirm: check a website every hour</b>`, '', `• Client: <b>${h(a.clientName)}</b>`, `• Address: <b>${h(a.url)}</b>`].join('\n');
+  return [`✅ <b>Confirm: mark task done</b>`, '', h(a.title)].join('\n');
 }
 
 function findClient(clients: Array<{ id?: string; brandName: string }>, name: string) {
@@ -209,50 +229,76 @@ async function addSiteCheck(clientId: string, url: string, label?: string | null
   await runWebsiteChecks({ ids: [site.id] }).catch((error) => console.error('First website check failed:', error));
   const checked = (await listClientWebsites(clientId)).find((s) => s.id === site.id);
   const status = checked?.status === 'up' ? `🟢 up${checked.lastResponseMs ? ` (${(checked.lastResponseMs / 1000).toFixed(1)}s)` : ''}` : checked?.status === 'down' ? '🔴 down right now' : 'first check pending';
-  return `🌐 ${new URL(site.url).hostname} is now checked every hour: ${status}.`;
+  return `🌐 ${host(site.url)} is now checked every hour: ${status}.`;
 }
 
-/** Runs one confirmed action for real and says exactly what happened. */
-async function runAction(chatId: number, a: AssistantAction): Promise<{ ok: boolean; message: string }> {
+/** Runs one confirmed change for real; the text says exactly what happened (Telegram HTML). */
+async function runAction(chatId: number, a: AssistantAction): Promise<{ ok: boolean; message: string; card: string }> {
   if (a.type === 'task') {
     await startTaskFromText(chatId, a.text, 'chat');
-    return { ok: true, message: `task "${truncate(a.text, 80)}" sent to the task flow` };
+    return { ok: true, message: `task "${truncate(a.text, 80)}" sent to the task bot`, card: `📝 <b>Sent to the task bot</b>\n${h(a.text)}\n<i>Its card is below.</i>` };
+  }
+  if (a.type === 'complete_task') {
+    const { task, movedTo } = await completeTask(a.taskId);
+    const text = movedTo ? `marked "${a.title}" done; next one ${formatWhen(task)}` : `marked "${a.title}" done`;
+    return { ok: true, message: text, card: `✅ <b>Done:</b> ${h(a.title)}${movedTo ? `\n🔁 Next one: ${h(formatWhen(task))}` : ''}` };
   }
   const clients = await listClientProfiles();
   if (a.type === 'add_client') {
-    const existing = findClient(clients, a.brand);
-    if (existing && existing.brandName.trim().toLowerCase() === a.brand.trim().toLowerCase()) {
-      return { ok: false, message: `${existing.brandName} is already a client, nothing added` };
+    const brand = a.fields.brandName!;
+    if (clients.some((c) => c.brandName.trim().toLowerCase() === brand.toLowerCase())) {
+      return { ok: false, message: `${brand} is already a client, nothing added`, card: `⚠️ <b>${h(brand)}</b> is already a client. Nothing was added.` };
     }
     const now = new Date().toISOString();
     const id = await addDoc('clients', {
-      brandName: a.brand,
-      ownerName: a.owner || '',
-      email: a.email || '',
-      mobileNumber: a.phone || '',
-      websiteUrl: a.website || '',
+      brandName: brand,
+      ownerName: a.fields.ownerName || '',
+      email: a.fields.email || '',
+      mobileNumber: a.fields.mobileNumber || '',
+      websiteUrl: a.fields.websiteUrl || '',
+      facebookLink: a.fields.facebookLink || '',
+      instagramLink: a.fields.instagramLink || '',
+      tiktokLink: a.fields.tiktokLink || '',
+      googleLink: a.fields.googleLink || '',
       createdAt: now,
       updatedAt: now,
     });
-    const lines = [`✅ Added client <b>${h(a.brand)}</b>${a.owner ? ` (owner ${h(a.owner)})` : ''}.`];
-    if (a.website) {
+    const lines = [`✅ <b>Added client ${h(brand)}</b>${a.fields.ownerName ? ` (owner ${h(a.fields.ownerName)})` : ''}.`];
+    let message = `added client ${brand} (id ${id})`;
+    if (a.checkWebsite && a.fields.websiteUrl) {
       try {
-        lines.push(h(await addSiteCheck(id, a.website)));
+        lines.push(h(await addSiteCheck(id, a.fields.websiteUrl)));
+        message += ` and started the hourly check for ${a.fields.websiteUrl}`;
       } catch (error) {
         lines.push(`⚠️ The website check wasn’t added: ${h(error instanceof Error ? error.message : String(error))}`);
+        message += `; the website check failed`;
       }
     }
-    await sendMessage(chatId, { text: lines.join('\n') });
-    return { ok: true, message: `added client ${a.brand} (id ${id})${a.website ? ` with website ${a.website}` : ''}` };
+    lines.push(`<a href="https://www.northviamarketing.com/admin/clients/${encodeURIComponent(id)}">Open in the panel</a>`);
+    return { ok: true, message, card: lines.join('\n') };
   }
-  const client = findClient(clients, a.client);
-  if (!client?.id) return { ok: false, message: `no client named "${a.client}", so the website wasn't added. Add the client first` };
+  if (a.type === 'update_client') {
+    const client = clients.find((c) => c.id === a.clientId);
+    if (!client) return { ok: false, message: `client ${a.clientName} no longer exists`, card: `⚠️ ${h(a.clientName)} wasn’t found. Nothing changed.` };
+    await updateDoc('clients', a.clientId, { ...a.changes, updatedAt: new Date().toISOString() });
+    const rows = (Object.keys(a.changes) as ClientField[]).map((k) => `• ${CLIENT_FIELDS[k]}: <b>${h(a.changes[k]!)}</b>`);
+    return {
+      ok: true,
+      message: `updated ${a.clientName}: ${(Object.keys(a.changes) as ClientField[]).map((k) => `${CLIENT_FIELDS[k]} = ${a.changes[k]}`).join(', ')}`,
+      card: [`✅ <b>Updated ${h(a.clientName)}</b>`, ...rows].join('\n'),
+    };
+  }
+  // add_website: the client may have been added a moment ago in this same chat.
+  const client = (a.clientId && clients.find((c) => c.id === a.clientId)) || findClient(clients, a.clientName);
+  if (!client?.id) {
+    return { ok: false, message: `no client named "${a.clientName}", so the website wasn't added`, card: `⚠️ There’s no client named “${h(a.clientName)}”. Add the client first.` };
+  }
   try {
     const text = await addSiteCheck(client.id, a.url, a.label);
-    await sendMessage(chatId, { text: `✅ ${h(text)}\n<i>Client: ${h(client.brandName)}</i>` });
-    return { ok: true, message: `website ${a.url} added to the hourly checks for ${client.brandName}` };
+    return { ok: true, message: `website ${a.url} added to the hourly checks for ${client.brandName}`, card: `✅ ${h(text)}\n<i>Client: ${h(client.brandName)}</i>` };
   } catch (error) {
-    return { ok: false, message: error instanceof Error ? error.message : String(error) };
+    const reason = error instanceof Error ? error.message : String(error);
+    return { ok: false, message: reason, card: `⚠️ Not added: ${h(reason)}` };
   }
 }
 
@@ -298,26 +344,47 @@ export async function handleChatCallback(query: CallbackQuery) {
       await editMessage(chatId, messageId, { text: '👋 Chat ended. Messages go back to tasks and the library.' });
       return answerCallback(query.id, 'Chat ended');
     }
-    if (action === 'a') {
-      // ch:a:<session>:<message index>:<action index>
-      const [, , , msgIndex, actionIndex] = (query.data || '').split(':');
+    if (action === 'a' || action === 'x') {
+      // ch:a:<session>:<change id> confirms, ch:x:… cancels.
       const messages = session.messages || [];
-      const proposed = messages[Number(msgIndex)]?.actions?.[Number(actionIndex)];
-      if (!proposed) return answerCallback(query.id, 'That suggestion is no longer available.');
+      const proposed = messages.flatMap((m) => m.actions || []).find((a) => a.id === value);
+      if (!proposed) {
+        await editMessage(chatId, messageId, { text: '<i>This change has expired. Ask again.</i>' });
+        return answerCallback(query.id);
+      }
       if (proposed.done) return answerCallback(query.id, 'Already done.');
+      if (proposed.cancelled) return answerCallback(query.id, 'Already cancelled.');
+
+      if (action === 'x') {
+        proposed.cancelled = true;
+        messages.push({ role: 'assistant', content: `[CANCELLED by the owner] ${actionSummary(proposed)}`, at: new Date().toISOString() });
+        await updateSession(session.id, { messages: messages.slice(-KEEP_MESSAGES) });
+        await editMessage(chatId, messageId, { text: `✖️ <i>Cancelled: ${h(actionSummary(proposed))}</i>` });
+        return answerCallback(query.id, 'Cancelled');
+      }
+
+      // Mark it before running, so a double tap can't run it twice.
+      proposed.done = true;
+      await updateSession(session.id, { messages });
       await answerCallback(query.id, 'Working on it…');
-      let outcome: { ok: boolean; message: string };
+      let outcome: { ok: boolean; message: string; card: string };
       try {
         outcome = await runAction(chatId, proposed);
       } catch (error) {
         console.error('Chat action failed:', error);
-        outcome = { ok: false, message: error instanceof Error ? error.message : String(error) };
+        const reason = error instanceof Error ? error.message : String(error);
+        outcome = { ok: false, message: reason, card: `⚠️ <b>Not done:</b> ${h(reason)}` };
       }
-      if (!outcome.ok) await sendMessage(chatId, { text: `⚠️ Not done: ${h(outcome.message)}.` });
       // The real outcome goes into the conversation, so later answers can't contradict it.
-      if (outcome.ok) messages[Number(msgIndex)].actions![Number(actionIndex)].done = true;
-      messages.push({ role: 'assistant', content: `${outcome.ok ? '[DONE by the bot]' : '[FAILED]'} ${outcome.message}`, at: new Date().toISOString() });
-      await updateSession(session.id, { messages: messages.slice(-KEEP_MESSAGES) });
+      const latest = (await getSession(session.id))?.messages || messages;
+      const stored = latest.flatMap((m) => m.actions || []).find((a) => a.id === value);
+      if (stored) stored.done = outcome.ok;
+      latest.push({ role: 'assistant', content: `${outcome.ok ? '[DONE by the bot]' : '[FAILED]'} ${outcome.message}`, at: new Date().toISOString() });
+      await updateSession(session.id, { messages: latest.slice(-KEEP_MESSAGES) });
+      await editMessage(chatId, messageId, {
+        text: outcome.card,
+        buttons: outcome.ok ? [] : [[{ text: '🔁 Try again', callback_data: `ch:a:${session.id}:${value}` }]],
+      });
       return;
     }
     return answerCallback(query.id);

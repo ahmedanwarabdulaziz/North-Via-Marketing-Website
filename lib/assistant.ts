@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { listClientProfiles } from './admin-ops';
+import { aiJson } from './ai-json';
 import { aiUsageDay, groqFetch, isRateLimitError, listAiUsage, trackGemini, type AiUsageRow } from './ai-usage';
 import { listCategories, searchKnowledge, type KnowledgeItem } from './knowledge';
 import { cairoParts, describeRepeat, formatWhen, groupTasks, listOpenTasks, WEEKDAYS, weekdayOf, type Task } from './tasks';
@@ -65,7 +66,7 @@ export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   at?: string;
-  actions?: Array<AssistantAction & { done?: boolean }>; // proposed in this reply; done once the owner confirmed
+  actions?: Array<AssistantAction & { id?: string; done?: boolean; cancelled?: boolean }>; // proposed in this reply; done once the owner confirmed
 }
 
 interface ChatContext {
@@ -145,52 +146,145 @@ How to answer:
 - If nothing in the library fits, say so plainly, and you may give your own ideas (say they're yours).
 - Formatting: plain text for Telegram; you may use **bold** and "- " bullets. No tables, no headings.
 
-What you can and can't do — be honest about it:
-- You CANNOT change anything yourself: you can't save, add, edit, delete or send anything. NEVER say you did, saved, added, registered or fixed something ("done", "تم", "سجلت", "ضفت", "خلاص") unless the conversation shows a line starting with [DONE by the bot].
-- You CAN propose an action. The bot shows it as a button and does it only when the owner taps it. Say it like: "I can add it — tap ✅ below to confirm." / "أقدر أضيفه — دوس ✅ تحت عشان أأكد."
-- Lines starting with [DONE by the bot] or [FAILED] in the conversation are what really happened. Trust them over anything said before.
-- To propose, end your reply with one line per action (max 3), exactly in this form, JSON on one line:
-  ACTION: {"type":"task","text":"<the task as the owner would say it to their task bot, with client, day and time if known>"}
-  ACTION: {"type":"add_client","brand":"<brand name>","owner":"<owner name or null>","website":"<https://… or null>","phone":"<or null>","email":"<or null>"}
-  ACTION: {"type":"add_website","client":"<existing client brand name>","url":"<https://…>","label":"<short label or null>"}
-  add_client with a website also starts the hourly website check for it, so don't add a separate add_website for the same site.
-- Only propose actions the owner asked for or agreed to. For anything else (editing a client, ads, reviews, invoices…) say you can't do it from the chat and that it's in the admin panel.`;
+Changes — be honest:
+- You never change anything yourself. The bot prepares changes and shows a confirmation card for each one; it happens only when the owner taps ✅ Confirm.
+- The changes prepared for THIS message are listed under "PLANNED CHANGES" in the owner's message. If there are some, describe them in one short line and say to tap ✅ Confirm on the card below (e.g. "جهزتلك إضافة العميل — دوس ✅ Confirm تحت"). Don't repeat all the details; the card shows them.
+- If the owner asked for a change but PLANNED CHANGES is "none", say what's missing (e.g. the client name) or that it can't be done from the chat (ads, reviews, invoices, deleting things are in the admin panel).
+- NEVER say something is done, saved, added or updated ("done", "تم", "سجلت", "ضفت", "خلاص") unless the conversation shows a line starting with [DONE by the bot]. Lines starting with [DONE by the bot] or [FAILED] are what really happened; trust them.`;
+
+// ---------- Changes the bot can make (after a confirm tap) ----------
+
+export const CLIENT_FIELDS = {
+  brandName: 'Brand name',
+  ownerName: 'Owner',
+  email: 'Email',
+  mobileNumber: 'Phone',
+  websiteUrl: 'Website',
+  facebookLink: 'Facebook',
+  instagramLink: 'Instagram',
+  tiktokLink: 'TikTok',
+  googleLink: 'Google Business link',
+} as const;
+export type ClientField = keyof typeof CLIENT_FIELDS;
 
 export type AssistantAction =
   | { type: 'task'; text: string }
-  | { type: 'add_client'; brand: string; owner: string | null; website: string | null; phone: string | null; email: string | null }
-  | { type: 'add_website'; client: string; url: string; label: string | null };
+  | { type: 'add_client'; fields: Partial<Record<ClientField, string>>; checkWebsite: boolean }
+  | { type: 'update_client'; clientId: string; clientName: string; changes: Partial<Record<ClientField, string>>; before: Partial<Record<ClientField, string>> }
+  | { type: 'add_website'; clientId: string | null; clientName: string; url: string; label: string | null }
+  | { type: 'complete_task'; taskId: string; title: string };
 
-function parseActions(raw: string): AssistantAction[] {
+interface PlannerClient {
+  id: string;
+  brandName: string;
+  ownerName?: string;
+  email?: string;
+  mobileNumber?: string;
+  websiteUrl?: string;
+  facebookLink?: string;
+  instagramLink?: string;
+  tiktokLink?: string;
+  googleLink?: string;
+}
+
+function plannerPrompt(clients: PlannerClient[], tasks: Task[]) {
+  return `You prepare changes a marketing agency owner asks their Telegram bot for. You only PREPARE them; the owner confirms each one with a button.
+Read the LATEST message (earlier lines are context: a "yes / do it / go ahead" confirms what was discussed just before).
+Return ONLY JSON: {"actions": [ ... ]} with at most 3 actions, or {"actions": []} when the latest message asks for no change (a question, chit-chat, or details are missing).
+
+Action types:
+{"type":"task","text":"<the task as the owner would say it to their task bot, with client, day and time if known>"}
+{"type":"add_client","brandName":"…","ownerName":null,"email":null,"mobileNumber":null,"websiteUrl":null,"facebookLink":null,"instagramLink":null,"tiktokLink":null,"googleLink":null,"check_website":true}
+  (check_website true = also start the hourly uptime check for its website; true unless the owner says not to)
+{"type":"update_client","client_id":"<id from the list>","changes":{"<field>":"<new value>"}}
+  fields: brandName, ownerName, email, mobileNumber, websiteUrl, facebookLink, instagramLink, tiktokLink, googleLink. Only fields that change.
+{"type":"add_website","client_id":"<id from the list, or null when the client is being added in this same reply>","client_name":"…","url":"https://…","label":null}
+  (an extra page or site to check hourly for an existing client; not needed for a new client's main website)
+{"type":"complete_task","task_id":"<id from the task list>"}
+
+Rules:
+- Only what the owner clearly asks for (or confirms) now. Never repeat a change the conversation shows as [DONE by the bot].
+- A new client needs at least a brand name; otherwise return no action (the reply will ask for it).
+- Use ids exactly from the lists. URLs with https://. Keep names as the owner wrote them.
+
+CLIENTS (id | brand | owner | email | phone | website | facebook | instagram | tiktok | google):
+${clients.map((c) => [c.id, c.brandName, c.ownerName, c.email, c.mobileNumber, c.websiteUrl, c.facebookLink, c.instagramLink, c.tiktokLink, c.googleLink].map((v) => v || '-').join(' | ')).join('\n') || '(none)'}
+
+OPEN TASKS (id | title | when):
+${tasks.slice(0, 40).map((t) => `${t.id} | ${t.title} | ${formatWhen(t)}`).join('\n') || '(none)'}`;
+}
+
+function cleanUrl(value: unknown) {
+  const s = typeof value === 'string' ? value.trim() : '';
+  if (!s || s.toLowerCase() === 'null') return null;
+  try {
+    return new URL(/^https?:\/\//i.test(s) ? s : `https://${s}`).toString();
+  } catch {
+    return null;
+  }
+}
+
+function cleanText(value: unknown, max = 120) {
+  const s = typeof value === 'string' ? value.trim() : '';
+  return s && s.toLowerCase() !== 'null' ? s.slice(0, max) : null;
+}
+
+const URL_FIELDS: ClientField[] = ['websiteUrl', 'facebookLink', 'instagramLink', 'tiktokLink', 'googleLink'];
+
+function cleanFields(source: Record<string, unknown>) {
+  const out: Partial<Record<ClientField, string>> = {};
+  for (const key of Object.keys(CLIENT_FIELDS) as ClientField[]) {
+    const value = URL_FIELDS.includes(key) ? cleanUrl(source[key]) : cleanText(source[key]);
+    if (value) out[key] = value;
+  }
+  return out;
+}
+
+/** Checks the planner's JSON against the real clients and tasks; anything that doesn't match is dropped. */
+export function toActions(raw: Record<string, unknown>, clients: PlannerClient[], tasks: Task[]): AssistantAction[] {
+  const list = Array.isArray(raw.actions) ? (raw.actions as Record<string, unknown>[]) : [];
   const actions: AssistantAction[] = [];
-  const s = (v: unknown, max = 200) => (typeof v === 'string' && v.trim() && v.trim().toLowerCase() !== 'null' ? v.trim().slice(0, max) : null);
-  const url = (v: unknown) => {
-    const value = s(v, 300);
-    if (!value) return null;
-    const withScheme = /^https?:\/\//i.test(value) ? value : `https://${value}`;
-    try {
-      return new URL(withScheme).toString();
-    } catch {
-      return null;
-    }
-  };
-  for (const line of raw.matchAll(/^\s*ACTION:\s*(\{.*\})\s*$/gim)) {
-    try {
-      const a = JSON.parse(line[1]) as Record<string, unknown>;
-      if (a.type === 'task' && s(a.text, 500)) actions.push({ type: 'task', text: s(a.text, 500)! });
-      else if (a.type === 'add_client' && s(a.brand, 80)) {
-        actions.push({ type: 'add_client', brand: s(a.brand, 80)!, owner: s(a.owner, 80), website: url(a.website), phone: s(a.phone, 40), email: s(a.email, 120) });
-      } else if (a.type === 'add_website' && s(a.client, 80) && url(a.url)) {
-        actions.push({ type: 'add_website', client: s(a.client, 80)!, url: url(a.url)!, label: s(a.label, 60) });
+  for (const a of list.slice(0, 3)) {
+    if (a.type === 'task' && cleanText(a.text, 500)) actions.push({ type: 'task', text: cleanText(a.text, 500)! });
+    else if (a.type === 'add_client') {
+      const fields = cleanFields(a);
+      if (!fields.brandName) continue;
+      if (clients.some((c) => c.brandName.trim().toLowerCase() === fields.brandName!.toLowerCase())) continue; // already a client
+      actions.push({ type: 'add_client', fields, checkWebsite: a.check_website !== false && Boolean(fields.websiteUrl) });
+    } else if (a.type === 'update_client') {
+      const client = clients.find((c) => c.id === a.client_id);
+      if (!client || !a.changes || typeof a.changes !== 'object') continue;
+      const changes = cleanFields(a.changes as Record<string, unknown>);
+      const before: Partial<Record<ClientField, string>> = {};
+      for (const key of Object.keys(changes) as ClientField[]) {
+        if ((client[key] || '') === changes[key]) delete changes[key];
+        else before[key] = client[key] || '';
       }
-    } catch {
-      // a malformed action line is dropped; the text answer still goes out
+      if (Object.keys(changes).length) actions.push({ type: 'update_client', clientId: client.id, clientName: client.brandName, changes, before });
+    } else if (a.type === 'add_website') {
+      const url = cleanUrl(a.url);
+      const client = clients.find((c) => c.id === a.client_id);
+      const name = client?.brandName || cleanText(a.client_name, 80);
+      if (url && name) actions.push({ type: 'add_website', clientId: client?.id || null, clientName: name, url, label: cleanText(a.label, 60) });
+    } else if (a.type === 'complete_task') {
+      const task = tasks.find((t) => t.id === a.task_id);
+      if (task) actions.push({ type: 'complete_task', taskId: task.id, title: task.title });
     }
   }
-  // Older style, still accepted.
-  const taskLine = raw.match(/^\s*TASK:\s*(.+)$/im);
-  if (taskLine && !actions.some((a) => a.type === 'task')) actions.push({ type: 'task', text: taskLine[1].trim().slice(0, 500) });
-  return actions.slice(0, 3);
+  // A new client's main website is checked by add_client already.
+  return actions.filter(
+    (a) => !(a.type === 'add_website' && actions.some((b) => b.type === 'add_client' && b.checkWebsite && b.fields.websiteUrl === a.url))
+  );
+}
+
+/** One line per change, for the history and the reply. */
+export function actionSummary(a: AssistantAction) {
+  const host = (u?: string) => (u ? new URL(u).hostname.replace(/^www\./, '') : '');
+  if (a.type === 'task') return `Save task: ${a.text.slice(0, 150)}`;
+  if (a.type === 'add_client') return `Add client ${a.fields.brandName}${a.checkWebsite ? ` and check ${host(a.fields.websiteUrl)} hourly` : ''}`;
+  if (a.type === 'update_client') return `Update ${a.clientName}: ${Object.keys(a.changes).map((k) => CLIENT_FIELDS[k as ClientField]).join(', ')}`;
+  if (a.type === 'add_website') return `Check ${host(a.url)} hourly for ${a.clientName}`;
+  return `Mark task done: ${a.title}`;
 }
 
 /** True when the text says something was done, which only the bot's buttons can do. */
@@ -240,8 +334,29 @@ async function callModel(m: ChatModel, context: string, history: ChatMessage[], 
   return stripThinking(result.response.text());
 }
 
+/**
+ * Works out the changes the latest message asks for. Always the strong model (Groq GPT-OSS 120B,
+ * Gemini as fallback) in strict JSON, whatever model the owner chats with, so a light chat model
+ * can't break them. A failure means no changes, never a wrong one.
+ */
+async function planActions(question: string, history: ChatMessage[], clients: PlannerClient[], tasks: Task[]) {
+  const recent = history.slice(-4).map((m) => `${m.role === 'user' ? 'OWNER' : 'BOT'}: ${m.content.slice(0, 500)}`);
+  try {
+    const raw = await aiJson({
+      system: plannerPrompt(clients, tasks),
+      user: [...recent, `LATEST (OWNER): ${question.slice(0, 2000)}`].join('\n'),
+      feature: 'assistant',
+      timeBudgetMs: 20_000,
+    });
+    return toActions(raw, clients, tasks);
+  } catch (error) {
+    console.error('Action planner failed:', error instanceof Error ? error.message.slice(0, 200) : error);
+    return [];
+  }
+}
+
 export interface AssistantReply {
-  text: string; // without tags and ACTION lines
+  text: string; // without tags
   actions: AssistantAction[];
   items: KnowledgeItem[]; // library items the answer used
   tasks: Task[]; // tasks the answer mentioned
@@ -250,28 +365,31 @@ export interface AssistantReply {
 }
 
 /**
- * Answers with the chosen model; if it fails (busy, out of quota), the next available model
- * answers and the reply says so.
+ * Plans the changes, then answers with the chosen model; if it fails (busy, out of quota), the
+ * next available model answers and the reply says so.
  */
 export async function askAssistant(chosen: ChatModel, question: string, history: ChatMessage[]): Promise<AssistantReply> {
-  const context = await buildContext(question, history);
-  const available = await availableChatModels();
+  const [context, available, profiles] = await Promise.all([buildContext(question, history), availableChatModels(), listClientProfiles()]);
+  const clients = profiles.filter((c) => c.id && c.brandName) as PlannerClient[];
+  const actions = await planActions(question, history, clients, context.tasks);
   const order = [chosen, ...available.filter((m) => m.key !== chosen.key)].slice(0, 3);
+  const planned = `\n\n(PLANNED CHANGES for this message: ${actions.length ? actions.map(actionSummary).join('; ') : 'none'})`;
 
   let lastError: unknown;
   for (const m of order) {
     try {
-      const raw = await callModel(m, context.text, history, question);
+      const raw = await callModel(m, context.text, history, question + planned);
       if (!raw) throw new Error('Empty answer.');
       const ids = (prefix: string) => [...new Set([...raw.matchAll(new RegExp(`\\[${prefix}:([A-Za-z0-9_-]{8})\\]`, 'g'))].map((x) => x[1]))];
       const text = raw
         .replace(/^\s*(ACTION|TASK):.*$/gim, '')
         .replace(/\s*\[(K|T):[A-Za-z0-9_-]{8}\]/g, '')
         .replace(/\s*\[(DONE by the bot|FAILED|PROPOSED[^\]]*)\]/gi, '')
+        .replace(/\(?PLANNED CHANGES[^)\n]*\)?/gi, '')
         .trim();
       return {
         text,
-        actions: parseActions(raw),
+        actions,
         items: ids('K').map((id) => context.items.find((k) => k.id === id)).filter(Boolean) as KnowledgeItem[],
         tasks: ids('T').map((id) => context.tasks.find((t) => t.id === id)).filter(Boolean) as Task[],
         usedModel: m,
