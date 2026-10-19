@@ -262,18 +262,39 @@ export async function listLinkedLocations() {
   return listDocs<GbpLocation>(GBP_LOCATIONS, { where: { linked: true } });
 }
 
-export async function fetchLocationReviews(location: GbpLocation) {
+/** One page (up to 50) of a location's reviews, newest change first. */
+export async function fetchLocationReviews(location: GbpLocation, pageToken?: string) {
   return withClientAuth(location.clientId, async (auth) => {
-    const res = await auth.request<{ reviews?: GbpReview[]; averageRating?: number; totalReviewCount?: number }>({
+    const res = await auth.request<{ reviews?: GbpReview[]; averageRating?: number; totalReviewCount?: number; nextPageToken?: string }>({
       url: `https://mybusiness.googleapis.com/v4/${location.accountName}/${location.locationName}/reviews`,
-      params: { pageSize: 50, orderBy: 'updateTime desc' },
+      params: { pageSize: 50, orderBy: 'updateTime desc', ...(pageToken ? { pageToken } : {}) },
     });
     return {
       reviews: res.data.reviews || [],
       averageRating: res.data.averageRating || 0,
       totalReviewCount: res.data.totalReviewCount || 0,
+      nextPageToken: res.data.nextPageToken || null,
     };
   });
+}
+
+/**
+ * Every review of a location, page by page (Google returns 50 at a time). Stops at `maxPages`
+ * or the time limit and says whether it got them all.
+ */
+export async function fetchAllLocationReviews(location: GbpLocation, opts: { maxPages?: number; deadline?: number } = {}) {
+  const reviews: GbpReview[] = [];
+  let pageToken: string | undefined;
+  let pages = 0;
+  let total = 0;
+  do {
+    const page = await fetchLocationReviews(location, pageToken);
+    reviews.push(...page.reviews);
+    total = page.totalReviewCount;
+    pageToken = page.nextPageToken || undefined;
+    pages++;
+  } while (pageToken && pages < (opts.maxPages ?? 40) && Date.now() < (opts.deadline ?? Infinity));
+  return { reviews, totalReviewCount: total, complete: !pageToken };
 }
 
 /** Publishes a public reply. Only call after an explicit human approval. */

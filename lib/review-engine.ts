@@ -2,13 +2,17 @@ import crypto from 'crypto';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { trackGemini } from './ai-usage';
 import { getDoc, getDocs, getSetting, listDocs, setDoc, setDocs, setSetting, updateDoc } from './data/store';
-import { GBP_LOCATIONS, fetchLocationReviews, listLinkedLocations, publishReviewReply } from './google-business';
+import { GBP_LOCATIONS, fetchAllLocationReviews, fetchLocationReviews, listLinkedLocations, publishReviewReply } from './google-business';
 import { LANGUAGE_OPTIONS, LENGTH_OPTIONS, TONE_OPTIONS, defaultReplySettings } from './review-reply-options';
 import type { GbpLocation, GbpReplySettings, GbpReview, GbpStoredReview } from '@/types/database';
 
 export const GBP_REVIEWS = 'gbp_reviews' as const;
 export const GBP_REPLY_SETTINGS = 'gbp_reply_settings' as const;
 export const GBP_SYNC_STATUS = 'gbp_sync_status';
+// When each location last had all its reviews read (not just the newest page).
+const GBP_FULL_SCANS = 'gbp_full_scans';
+const FULL_SCAN_EVERY_MS = 24 * 3_600_000;
+const FULL_SCAN_TIME_MS = 25_000;
 
 const MAX_REPLY_LENGTH = 4000;
 // Budget guard: caps AI calls per run; remaining reviews are drafted on the next run.
@@ -229,11 +233,26 @@ export interface SyncSummary {
   errors: Array<{ location: string; error: string }>;
 }
 
-export async function syncAllReviews(options: { maxDrafts?: number } = {}): Promise<SyncSummary> {
+/**
+ * Which location gets a full scan (every page of reviews) this run: one per run, the one
+ * scanned longest ago, at most once a day each. The hourly runs otherwise read only the newest
+ * page, which is where new reviews appear; the full scan catches older unanswered ones.
+ */
+async function pickFullScan(locations: GbpLocation[], scans: Record<string, string>, force: boolean) {
+  if (force) return new Set(locations.map((l) => l.id!));
+  const due = locations
+    .filter((l) => !scans[l.id!] || Date.now() - Date.parse(scans[l.id!]) > FULL_SCAN_EVERY_MS)
+    .sort((a, b) => (scans[a.id!] || '').localeCompare(scans[b.id!] || ''));
+  return new Set(due.slice(0, 1).map((l) => l.id!));
+}
+
+export async function syncAllReviews(options: { maxDrafts?: number; fullScanAll?: boolean } = {}): Promise<SyncSummary> {
   const maxDrafts = options.maxDrafts ?? DEFAULT_MAX_DRAFTS_PER_RUN;
   const startedAt = new Date().toISOString();
   const deadline = Date.now() + DRAFTING_TIME_BUDGET_MS;
   const locations = await listLinkedLocations();
+  const scans = (await getSetting<Record<string, string>>(GBP_FULL_SCANS)) || {};
+  const fullScan = await pickFullScan(locations, scans, Boolean(options.fullScanAll));
   const settingsCache = new Map<string, GbpReplySettings>();
   const businessNames = new Map<string, string>();
 
@@ -246,7 +265,13 @@ export async function syncAllReviews(options: { maxDrafts?: number } = {}): Prom
   for (const location of locations) {
     let reviews: GbpReview[];
     try {
-      reviews = (await fetchLocationReviews(location)).reviews;
+      if (fullScan.has(location.id!)) {
+        const all = await fetchAllLocationReviews(location, { deadline: Date.now() + FULL_SCAN_TIME_MS });
+        reviews = all.reviews;
+        if (all.complete) scans[location.id!] = new Date().toISOString();
+      } else {
+        reviews = (await fetchLocationReviews(location)).reviews;
+      }
     } catch (error) {
       errors.push({ location: location.title, error: error instanceof Error ? error.message : String(error) });
       continue;
@@ -337,6 +362,7 @@ export async function syncAllReviews(options: { maxDrafts?: number } = {}): Prom
     errors,
   };
 
+  await setSetting(GBP_FULL_SCANS, scans);
   await setSetting(GBP_SYNC_STATUS, summary);
   return summary;
 }
