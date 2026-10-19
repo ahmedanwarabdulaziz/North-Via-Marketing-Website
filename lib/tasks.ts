@@ -479,3 +479,41 @@ export async function listDoneSince(since: Date) {
   const byId = new Map(tasks.map((t) => [t.id, t]));
   return events.map((e) => ({ at: e.created_at, task: byId.get(e.task_id) })).filter((e): e is { at: string; task: Task } => Boolean(e.task && e.task.status !== 'cancelled'));
 }
+
+/** Open, dated, and its time (or, for all-day tasks, its day) has passed. */
+export function isOverdue(task: Pick<Task, 'due_at' | 'all_day' | 'status'>, now = new Date()) {
+  if (task.status !== 'open' || !task.due_at) return false;
+  return task.all_day ? cairoParts(new Date(task.due_at)).date < cairoParts(now).date : Date.parse(task.due_at) < now.getTime();
+}
+
+/**
+ * Moves a task to today or tomorrow, keeping its time of day. Moved to today with its time
+ * already gone, it goes to the next full hour (when the hourly reminder run picks it up).
+ * Its reminder is reset so it fires again at the new time.
+ */
+export async function moveTaskToDay(id: string, day: 'today' | 'tomorrow', now = new Date()) {
+  const task = await getTask(id);
+  if (!task) throw new Error('Task not found.');
+  const fields = fieldsFromTask(task);
+  const { date: today, time: nowTime } = cairoParts(now);
+  let date = day === 'today' ? today : addDays(today, 1);
+  let time = fields.time ?? null;
+  if (day === 'today' && time && !fields.allDay && time <= nowTime) {
+    const nextHour = Number(nowTime.slice(0, 2)) + 1;
+    if (nextHour > 23) date = addDays(today, 1); // too late tonight: same time tomorrow
+    else time = `${String(nextHour).padStart(2, '0')}:00`;
+  }
+  const moved = check(
+    await supabase.from('tasks').update(rowFromFields({ ...fields, date, time, noDate: false })).eq('id', id).select().single()
+  ) as Task;
+  await logTaskEvent(id, 'moved', { from: task.due_at, to: moved.due_at });
+  return moved;
+}
+
+/** Every overdue task to today or tomorrow. */
+export async function moveOverdueTasks(day: 'today' | 'tomorrow', now = new Date()) {
+  const overdue = (await listOpenTasks()).filter((t) => isOverdue(t, now));
+  const moved: Task[] = [];
+  for (const t of overdue) moved.push(await moveTaskToDay(t.id, day, now));
+  return moved;
+}

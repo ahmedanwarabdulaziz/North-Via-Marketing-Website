@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { CalendarDays, Check, ChevronLeft, ChevronRight, Home, List, Plus, Repeat, RotateCcw, Search, Trash2, X } from 'lucide-react';
-import { markTaskDone, saveTask, setTaskState, type TaskInput } from '@/app/actions/tasks';
+import { markTaskDone, moveTasks, saveTask, setTaskState, type TaskInput } from '@/app/actions/tasks';
 import type { AdminTask } from '@/lib/admin-tasks';
 import type { RepeatFreq } from '@/lib/tasks';
 
@@ -138,6 +138,19 @@ export function TasksBoard({
     setNotice({ kind: 'ok', text: result.movedTo ? `Done. Next one: ${whenLabel(result.task, today)}` : `Done: ${t.title}` });
   }
 
+  async function move(list: AdminTask[], day: 'today' | 'tomorrow') {
+    if (!list.length) return;
+    setBusy(list.length === 1 ? list[0].id : 'move-all');
+    const result = await moveTasks(
+      list.map((t) => t.id),
+      day
+    );
+    setBusy(null);
+    if (!result.success) return setNotice({ kind: 'error', text: result.error });
+    result.tasks.forEach(replace);
+    setNotice({ kind: 'ok', text: list.length === 1 ? `Moved to ${whenLabel(result.tasks[0], today)}: ${list[0].title}` : `Moved ${list.length} overdue tasks to ${day}.` });
+  }
+
   async function reopen(t: AdminTask) {
     setBusy(t.id);
     const result = await setTaskState(t.id, 'open');
@@ -206,6 +219,16 @@ export function TasksBoard({
             {t.notes && <span className="truncate max-w-[16rem]" dir="auto">· {t.notes}</span>}
           </div>
         </button>
+        {!isDone && isOverdue(t) && (
+          <div className="flex gap-1 shrink-0">
+            <button type="button" disabled={busy !== null} onClick={() => move([t], 'today')} className="px-2 py-1 text-xs rounded-md border border-zinc-200 bg-white hover:border-blue-300 hover:text-blue-700 disabled:opacity-50">
+              Today
+            </button>
+            <button type="button" disabled={busy !== null} onClick={() => move([t], 'tomorrow')} className="px-2 py-1 text-xs rounded-md border border-zinc-200 bg-white hover:border-blue-300 hover:text-blue-700 disabled:opacity-50">
+              Tomorrow
+            </button>
+          </div>
+        )}
       </li>
     );
   }
@@ -281,8 +304,20 @@ export function TasksBoard({
             .filter((g) => g.tasks.length)
             .map((g) => (
               <section key={g.key} className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
-                <h3 className={`px-4 py-2.5 text-sm font-semibold border-b border-zinc-100 bg-zinc-50/60 ${g.tone}`}>
-                  {g.title} <span className="text-zinc-400 font-normal">({g.tasks.length})</span>
+                <h3 className={`flex items-center justify-between gap-2 px-4 py-2.5 text-sm font-semibold border-b border-zinc-100 bg-zinc-50/60 ${g.tone}`}>
+                  <span>
+                    {g.title} <span className="text-zinc-400 font-normal">({g.tasks.length})</span>
+                  </span>
+                  {g.key === 'overdue' && (
+                    <span className="flex gap-1.5 font-normal">
+                      <button type="button" disabled={busy !== null} onClick={() => move(g.tasks, 'today')} className="px-2.5 py-1 text-xs rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">
+                        {busy === 'move-all' ? 'Moving…' : 'All to today'}
+                      </button>
+                      <button type="button" disabled={busy !== null} onClick={() => move(g.tasks, 'tomorrow')} className="px-2.5 py-1 text-xs rounded-md border border-zinc-200 bg-white text-zinc-700 hover:border-blue-300 disabled:opacity-50">
+                        All to tomorrow
+                      </button>
+                    </span>
+                  )}
                 </h3>
                 <ul className="divide-y divide-zinc-100">
                   {g.tasks.map((t) => (

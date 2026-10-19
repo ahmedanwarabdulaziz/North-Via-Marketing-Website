@@ -24,7 +24,10 @@ import {
   getDraft,
   getTask,
   groupTasks,
+  isOverdue,
   listDoneSince,
+  moveOverdueTasks,
+  moveTaskToDay,
   listDrafts,
   listDueReminders,
   listOpenTasks,
@@ -128,6 +131,14 @@ function taskLines(task: Task, clients: TaskClient[]) {
   ].filter(Boolean) as string[];
 }
 
+/** "Move all overdue" buttons, for the overdue list, the morning digest and the weekly summary. */
+function moveAllRow(): InlineButton[] {
+  return [
+    { text: '📅 All overdue to today', callback_data: 'tk:M:all:t' },
+    { text: '🌅 All to tomorrow', callback_data: 'tk:M:all:n' },
+  ];
+}
+
 function taskCard(task: Task, clients: TaskClient[], header: string, opts: { justSaved?: boolean } = {}): OutgoingMessage {
   if (task.status === 'cancelled') {
     return { text: [`↩️ <b>Removed</b>`, '', ...taskLines(task, clients)].join('\n'), buttons: [[{ text: '♻️ Restore', callback_data: `tk:r:${task.id}` }]] };
@@ -146,6 +157,14 @@ function taskCard(task: Task, clients: TaskClient[], header: string, opts: { jus
           ],
         ]
       : [
+          ...(isOverdue(task)
+            ? [
+                [
+                  { text: '📅 Move to today', callback_data: `tk:m:${task.id}:t` },
+                  { text: '🌅 Move to tomorrow', callback_data: `tk:m:${task.id}:n` },
+                ],
+              ]
+            : []),
           [
             { text: '☑️ Mark as done', callback_data: `tk:d:${task.id}` },
             { text: '✏️ Edit', callback_data: `tk:e:${task.id}` },
@@ -477,10 +496,32 @@ export async function handleTaskCallback(query: CallbackQuery) {
       return answerCallback(query.id);
     }
 
+    if (action === 'M') {
+      // tk:M:all:t|n — every overdue task to today or tomorrow.
+      const day = key === 'n' ? 'tomorrow' : 'today';
+      await answerCallback(query.id, day === 'today' ? 'Moving to today…' : 'Moving to tomorrow…');
+      const moved = await moveOverdueTasks(day);
+      await sendMessage(chatId, {
+        text: moved.length
+          ? [`${day === 'today' ? '📅' : '🌅'} <b>Moved ${moved.length} overdue task${moved.length === 1 ? '' : 's'} to ${day}</b>`, '', ...moved.slice(0, 15).map((t, i) => listLine(t, i + 1, clients)), ...(moved.length > 15 ? [`<i>+${moved.length - 15} more</i>`] : [])].join('\n')
+          : '✅ Nothing is overdue right now.',
+        buttons: [[{ text: '✅ All my tasks', callback_data: 'tk:l:home' }]],
+      });
+      return;
+    }
+
     const task = await getTask(id);
     if (!task) {
       await editMessage(chatId, messageId, { text: '<i>Task not found.</i>' });
       return answerCallback(query.id);
+    }
+
+    if (action === 'm') {
+      // tk:m:<id>:t|n — this task to today or tomorrow.
+      const day = key === 'n' ? 'tomorrow' : 'today';
+      const moved = await moveTaskToDay(task.id, day);
+      await editMessage(chatId, messageId, taskCard(moved, clients, `${day === 'today' ? '📅' : '🌅'} <b>Moved to ${formatWhen(moved)}</b>`));
+      return answerCallback(query.id, `Moved to ${day}`);
     }
 
     if (action === 'o') {
@@ -567,10 +608,11 @@ function listLine(t: Task, n: number, clients: TaskClient[]) {
   return `${n}. ${when ? `${when} · ` : ''}${h(truncate(t.title, 120))}${client ? ` — <i>${h(client)}</i>` : t.category === 'personal' ? ' 🏠' : ''}${t.repeat_rule ? ' 🔁' : ''}${t.priority === 'high' ? ' 🔴' : ''}`;
 }
 
-function listMessage(title: string, tasks: Task[], clients: TaskClient[], back: string): OutgoingMessage {
+function listMessage(title: string, tasks: Task[], clients: TaskClient[], back: string, extraRow?: InlineButton[]): OutgoingMessage {
   const shown = tasks.slice(0, 10);
   const lines = shown.map((t, i) => listLine(t, i + 1, clients));
   const buttons: InlineButton[][] = shown.map((t, i) => [{ text: `${i + 1}. ${truncate(t.title, 40)}`, callback_data: `tk:o:${t.id}` }]);
+  if (extraRow && tasks.length) buttons.push(extraRow);
   buttons.push([{ text: '⬅️ Back', callback_data: back }]);
   return {
     text: [
@@ -619,7 +661,7 @@ export async function tasksHomeScreen(): Promise<OutgoingMessage> {
 export async function taskListScreen(key: TaskListKey): Promise<OutgoingMessage> {
   if (!LIST_TITLES[key]) return tasksHomeScreen();
   const [tasks, clients] = await Promise.all([listOpenTasks(), taskClients()]);
-  return listMessage(LIST_TITLES[key], groupTasks(tasks)[key], clients, 'tk:l:home');
+  return listMessage(LIST_TITLES[key], groupTasks(tasks)[key], clients, 'tk:l:home', key === 'overdue' ? moveAllRow() : undefined);
 }
 
 async function clientsScreen(): Promise<OutgoingMessage> {
@@ -765,6 +807,7 @@ function digestMessage(today: string, groups: ReturnType<typeof groupTasks>, dra
       buttons.push([{ text: `📝 Finish: ${truncate(d.fields.title || 'Untitled', 34)}`, callback_data: `tk:q:${d.id}` }]);
     }
   }
+  if (groups.overdue.length) buttons.push(moveAllRow());
   buttons.push([{ text: '✅ All my tasks', callback_data: 'tk:l:home' }]);
   return { text: lines.join('\n'), buttons };
 }
@@ -879,6 +922,7 @@ export async function weeklySummaryMessage(now = new Date()): Promise<OutgoingMe
         { text: '🗓 Next 7 days', callback_data: 'tk:l:week' },
         { text: `⚠️ Overdue (${groups.overdue.length})`, callback_data: 'tk:l:overdue' },
       ],
+      ...(groups.overdue.length ? [moveAllRow()] : []),
       [{ text: '✅ All my tasks', callback_data: 'tk:l:home' }],
     ],
   };

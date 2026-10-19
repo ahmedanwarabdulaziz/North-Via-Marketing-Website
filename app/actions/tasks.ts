@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { requireAdmin } from '@/lib/admin-auth';
 import { toAdminTask } from '@/lib/admin-tasks';
-import { completeTask, createTask, getTask, setTaskStatus, updateTaskFields, type RepeatRule, type TaskFields } from '@/lib/tasks';
+import { completeTask, createTask, getTask, moveTaskToDay, setTaskStatus, updateTaskFields, type RepeatRule, type TaskFields } from '@/lib/tasks';
 
 export interface TaskInput {
   id?: string;
@@ -90,6 +90,20 @@ export async function setTaskState(id: string, status: 'open' | 'cancelled') {
     const task = await setTaskStatus(id, status);
     refresh(task.client_id);
     return { success: true as const, task: toAdminTask(task) };
+  } catch (error) {
+    return { success: false as const, error: errorMessage(error) };
+  }
+}
+
+/** Moves tasks (e.g. the overdue ones) to today or tomorrow, keeping their time of day. */
+export async function moveTasks(ids: string[], day: 'today' | 'tomorrow') {
+  await requireAdmin();
+  try {
+    const moved = [];
+    for (const id of ids.slice(0, 200)) moved.push(toAdminTask(await moveTaskToDay(id, day)));
+    revalidatePath('/admin/tasks');
+    for (const clientId of new Set(moved.map((t) => t.clientId).filter(Boolean))) revalidatePath(`/admin/clients/${clientId}`);
+    return { success: true as const, tasks: moved };
   } catch (error) {
     return { success: false as const, error: errorMessage(error) };
   }
