@@ -1,8 +1,11 @@
 import crypto from 'crypto';
-import { CHAT_MODELS, askAssistant, availableChatModels, type ChatMessage, type ChatModel } from './assistant';
+import { listClientProfiles } from './admin-ops';
+import { CHAT_MODELS, askAssistant, availableChatModels, claimsDone, type AssistantAction, type ChatMessage, type ChatModel } from './assistant';
+import { addDoc } from './data/store';
 import { supabase } from './supabase';
 import { startTaskFromText } from './task-telegram';
 import { InlineButton, OutgoingMessage, answerCallback, editMessage, escapeHtml as h, sendMessage, telegram, truncate } from './telegram';
+import { addWebsite, listClientWebsites, runWebsiteChecks } from './website-monitor';
 
 // Chatting with the bot. A question (typed or spoken) opens a conversation: the bot first asks
 // which model to use (only ones with free quota left), then answers from the library, tasks and
@@ -148,15 +151,21 @@ async function answer(chatId: number, session: ChatSession, question: string) {
   const messages: ChatMessage[] = [
     ...history,
     { role: 'user' as const, content: question, at: now },
-    { role: 'assistant' as const, content: reply.text + (reply.task ? `\nTASK: ${reply.task}` : ''), at: now, task: reply.task },
+    {
+      role: 'assistant' as const,
+      // The history says plainly that proposals aren't done yet, so the model can't later assume they were.
+      content: [reply.text, ...reply.actions.map((a) => `[PROPOSED, not done yet: ${actionSummary(a)}]`)].filter(Boolean).join('\n'),
+      at: now,
+      actions: reply.actions,
+    },
   ].slice(-KEEP_MESSAGES);
   // Switch to the model that answered, so the next turn doesn't wait on the busy one again.
   await updateSession(session.id, { messages, model: reply.usedModel.model, provider: reply.usedModel.provider, pending_question: null });
 
-  const buttons: InlineButton[][] = [];
+  const msgIndex = messages.length - 1;
+  const buttons: InlineButton[][] = reply.actions.map((a, i) => [{ text: actionButton(a), callback_data: `ch:a:${session.id}:${msgIndex}:${i}` }]);
   for (const item of reply.items.slice(0, 4)) buttons.push([{ text: `📚 ${truncate(item.title, 45)}`, callback_data: `kb:o:${item.id}` }]);
-  for (const task of reply.tasks.slice(0, Math.max(0, 5 - buttons.length))) buttons.push([{ text: `✅ ${truncate(task.title, 45)}`, callback_data: `tk:o:${task.id}` }]);
-  if (reply.task) buttons.push([{ text: '➕ Save as task', callback_data: `ch:t:${session.id}:${messages.length - 1}` }]);
+  for (const task of reply.tasks.slice(0, Math.max(0, 6 - buttons.length))) buttons.push([{ text: `📌 ${truncate(task.title, 45)}`, callback_data: `tk:o:${task.id}` }]);
   buttons.push([
     { text: '🔁 Switch model', callback_data: `ch:s:${session.id}` },
     { text: '✖️ End chat', callback_data: `ch:e:${session.id}` },
@@ -165,9 +174,86 @@ async function answer(chatId: number, session: ChatSession, question: string) {
   const footer = reply.fellBackFrom
     ? `<i>— ${h(reply.usedModel.label)} (${h(reply.fellBackFrom.label)} was busy)</i>`
     : `<i>— ${h(reply.usedModel.label)}</i>`;
-  const suggestion = reply.task ? `\n\n➕ <i>Task idea: ${h(truncate(reply.task, 200))}</i>` : '';
-  const body = reply.text ? toTelegramHtml(reply.text) : reply.task ? 'Here’s the task. Tap <b>➕ Save as task</b> to add it.' : '…';
-  await sendMessage(chatId, { text: `${truncate(body, 3600)}${suggestion}\n\n${footer}`, buttons });
+  // What the bot will really do is spelled out, so a reply that sounds "done" can't mislead.
+  const status = reply.actions.length
+    ? `\n\n⏳ <b>Not done yet</b>. Tap ✅ to confirm:\n${reply.actions.map((a) => `• ${h(actionSummary(a))}`).join('\n')}`
+    : claimsDone(reply.text) && !history.slice(-4).some((m) => m.content.startsWith('[DONE by the bot]'))
+      ? '\n\n⚠️ <i>Nothing was changed. I can only change things through the ✅ buttons.</i>'
+      : '';
+  const body = reply.text ? toTelegramHtml(reply.text) : reply.actions.length ? 'Here’s what I can do:' : '…';
+  await sendMessage(chatId, { text: `${truncate(body, 3400)}${status}\n\n${footer}`, buttons });
+}
+
+function actionSummary(a: AssistantAction) {
+  if (a.type === 'task') return `Save task: ${truncate(a.text, 150)}`;
+  if (a.type === 'add_client') {
+    return `Add client ${a.brand}${a.owner ? ` (owner ${a.owner})` : ''}${a.website ? ` and check ${new URL(a.website).hostname} hourly` : ''}`;
+  }
+  return `Check website ${new URL(a.url).hostname} hourly for ${a.client}`;
+}
+
+function actionButton(a: AssistantAction) {
+  if (a.type === 'task') return `✅ Save task: ${truncate(a.text, 32)}`;
+  if (a.type === 'add_client') return `✅ Add client: ${truncate(a.brand, 28)}${a.website ? ' + website check' : ''}`;
+  return `✅ Check website: ${truncate(new URL(a.url).hostname.replace(/^www\./, ''), 30)}`;
+}
+
+function findClient(clients: Array<{ id?: string; brandName: string }>, name: string) {
+  const key = name.trim().toLowerCase();
+  return clients.find((c) => c.brandName.trim().toLowerCase() === key) || clients.find((c) => c.brandName.toLowerCase().includes(key) || key.includes(c.brandName.toLowerCase()));
+}
+
+/** Starts the hourly check for a site and reads its first status. */
+async function addSiteCheck(clientId: string, url: string, label?: string | null) {
+  const site = await addWebsite({ clientId, url, label: label || undefined });
+  await runWebsiteChecks({ ids: [site.id] }).catch((error) => console.error('First website check failed:', error));
+  const checked = (await listClientWebsites(clientId)).find((s) => s.id === site.id);
+  const status = checked?.status === 'up' ? `🟢 up${checked.lastResponseMs ? ` (${(checked.lastResponseMs / 1000).toFixed(1)}s)` : ''}` : checked?.status === 'down' ? '🔴 down right now' : 'first check pending';
+  return `🌐 ${new URL(site.url).hostname} is now checked every hour: ${status}.`;
+}
+
+/** Runs one confirmed action for real and says exactly what happened. */
+async function runAction(chatId: number, a: AssistantAction): Promise<{ ok: boolean; message: string }> {
+  if (a.type === 'task') {
+    await startTaskFromText(chatId, a.text, 'chat');
+    return { ok: true, message: `task "${truncate(a.text, 80)}" sent to the task flow` };
+  }
+  const clients = await listClientProfiles();
+  if (a.type === 'add_client') {
+    const existing = findClient(clients, a.brand);
+    if (existing && existing.brandName.trim().toLowerCase() === a.brand.trim().toLowerCase()) {
+      return { ok: false, message: `${existing.brandName} is already a client, nothing added` };
+    }
+    const now = new Date().toISOString();
+    const id = await addDoc('clients', {
+      brandName: a.brand,
+      ownerName: a.owner || '',
+      email: a.email || '',
+      mobileNumber: a.phone || '',
+      websiteUrl: a.website || '',
+      createdAt: now,
+      updatedAt: now,
+    });
+    const lines = [`✅ Added client <b>${h(a.brand)}</b>${a.owner ? ` (owner ${h(a.owner)})` : ''}.`];
+    if (a.website) {
+      try {
+        lines.push(h(await addSiteCheck(id, a.website)));
+      } catch (error) {
+        lines.push(`⚠️ The website check wasn’t added: ${h(error instanceof Error ? error.message : String(error))}`);
+      }
+    }
+    await sendMessage(chatId, { text: lines.join('\n') });
+    return { ok: true, message: `added client ${a.brand} (id ${id})${a.website ? ` with website ${a.website}` : ''}` };
+  }
+  const client = findClient(clients, a.client);
+  if (!client?.id) return { ok: false, message: `no client named "${a.client}", so the website wasn't added. Add the client first` };
+  try {
+    const text = await addSiteCheck(client.id, a.url, a.label);
+    await sendMessage(chatId, { text: `✅ ${h(text)}\n<i>Client: ${h(client.brandName)}</i>` });
+    return { ok: true, message: `website ${a.url} added to the hourly checks for ${client.brandName}` };
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 /** A message inside an open conversation. */
@@ -212,11 +298,26 @@ export async function handleChatCallback(query: CallbackQuery) {
       await editMessage(chatId, messageId, { text: '👋 Chat ended. Messages go back to tasks and the library.' });
       return answerCallback(query.id, 'Chat ended');
     }
-    if (action === 't') {
-      const suggested = session.messages[Number(value)]?.task;
-      if (!suggested) return answerCallback(query.id, 'That suggestion is no longer available.');
-      await answerCallback(query.id, 'Making the task…');
-      await startTaskFromText(chatId, suggested, 'chat');
+    if (action === 'a') {
+      // ch:a:<session>:<message index>:<action index>
+      const [, , , msgIndex, actionIndex] = (query.data || '').split(':');
+      const messages = session.messages || [];
+      const proposed = messages[Number(msgIndex)]?.actions?.[Number(actionIndex)];
+      if (!proposed) return answerCallback(query.id, 'That suggestion is no longer available.');
+      if (proposed.done) return answerCallback(query.id, 'Already done.');
+      await answerCallback(query.id, 'Working on it…');
+      let outcome: { ok: boolean; message: string };
+      try {
+        outcome = await runAction(chatId, proposed);
+      } catch (error) {
+        console.error('Chat action failed:', error);
+        outcome = { ok: false, message: error instanceof Error ? error.message : String(error) };
+      }
+      if (!outcome.ok) await sendMessage(chatId, { text: `⚠️ Not done: ${h(outcome.message)}.` });
+      // The real outcome goes into the conversation, so later answers can't contradict it.
+      if (outcome.ok) messages[Number(msgIndex)].actions![Number(actionIndex)].done = true;
+      messages.push({ role: 'assistant', content: `${outcome.ok ? '[DONE by the bot]' : '[FAILED]'} ${outcome.message}`, at: new Date().toISOString() });
+      await updateSession(session.id, { messages: messages.slice(-KEEP_MESSAGES) });
       return;
     }
     return answerCallback(query.id);

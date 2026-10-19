@@ -65,7 +65,7 @@ export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   at?: string;
-  task?: string | null; // a task the assistant suggested in this reply
+  actions?: Array<AssistantAction & { done?: boolean }>; // proposed in this reply; done once the owner confirmed
 }
 
 interface ChatContext {
@@ -144,9 +144,61 @@ How to answer:
 - When they describe a task or project, connect it to what fits from the library and from their other tasks for that client, and say why it fits.
 - If nothing in the library fits, say so plainly, and you may give your own ideas (say they're yours).
 - Formatting: plain text for Telegram; you may use **bold** and "- " bullets. No tables, no headings.
-- If the owner asks you to save/remember/schedule something, or agrees to a next step you suggested, add as the LAST line:
-  TASK: <the task as they'd say it to their task bot, with client, day and time if known>
-  Otherwise don't write a TASK line.`;
+
+What you can and can't do — be honest about it:
+- You CANNOT change anything yourself: you can't save, add, edit, delete or send anything. NEVER say you did, saved, added, registered or fixed something ("done", "تم", "سجلت", "ضفت", "خلاص") unless the conversation shows a line starting with [DONE by the bot].
+- You CAN propose an action. The bot shows it as a button and does it only when the owner taps it. Say it like: "I can add it — tap ✅ below to confirm." / "أقدر أضيفه — دوس ✅ تحت عشان أأكد."
+- Lines starting with [DONE by the bot] or [FAILED] in the conversation are what really happened. Trust them over anything said before.
+- To propose, end your reply with one line per action (max 3), exactly in this form, JSON on one line:
+  ACTION: {"type":"task","text":"<the task as the owner would say it to their task bot, with client, day and time if known>"}
+  ACTION: {"type":"add_client","brand":"<brand name>","owner":"<owner name or null>","website":"<https://… or null>","phone":"<or null>","email":"<or null>"}
+  ACTION: {"type":"add_website","client":"<existing client brand name>","url":"<https://…>","label":"<short label or null>"}
+  add_client with a website also starts the hourly website check for it, so don't add a separate add_website for the same site.
+- Only propose actions the owner asked for or agreed to. For anything else (editing a client, ads, reviews, invoices…) say you can't do it from the chat and that it's in the admin panel.`;
+
+export type AssistantAction =
+  | { type: 'task'; text: string }
+  | { type: 'add_client'; brand: string; owner: string | null; website: string | null; phone: string | null; email: string | null }
+  | { type: 'add_website'; client: string; url: string; label: string | null };
+
+function parseActions(raw: string): AssistantAction[] {
+  const actions: AssistantAction[] = [];
+  const s = (v: unknown, max = 200) => (typeof v === 'string' && v.trim() && v.trim().toLowerCase() !== 'null' ? v.trim().slice(0, max) : null);
+  const url = (v: unknown) => {
+    const value = s(v, 300);
+    if (!value) return null;
+    const withScheme = /^https?:\/\//i.test(value) ? value : `https://${value}`;
+    try {
+      return new URL(withScheme).toString();
+    } catch {
+      return null;
+    }
+  };
+  for (const line of raw.matchAll(/^\s*ACTION:\s*(\{.*\})\s*$/gim)) {
+    try {
+      const a = JSON.parse(line[1]) as Record<string, unknown>;
+      if (a.type === 'task' && s(a.text, 500)) actions.push({ type: 'task', text: s(a.text, 500)! });
+      else if (a.type === 'add_client' && s(a.brand, 80)) {
+        actions.push({ type: 'add_client', brand: s(a.brand, 80)!, owner: s(a.owner, 80), website: url(a.website), phone: s(a.phone, 40), email: s(a.email, 120) });
+      } else if (a.type === 'add_website' && s(a.client, 80) && url(a.url)) {
+        actions.push({ type: 'add_website', client: s(a.client, 80)!, url: url(a.url)!, label: s(a.label, 60) });
+      }
+    } catch {
+      // a malformed action line is dropped; the text answer still goes out
+    }
+  }
+  // Older style, still accepted.
+  const taskLine = raw.match(/^\s*TASK:\s*(.+)$/im);
+  if (taskLine && !actions.some((a) => a.type === 'task')) actions.push({ type: 'task', text: taskLine[1].trim().slice(0, 500) });
+  return actions.slice(0, 3);
+}
+
+/** True when the text says something was done, which only the bot's buttons can do. */
+export function claimsDone(text: string) {
+  // "Not yet" answers mention the same words ("لسه … عشان يتضاف"), so a negation means no claim.
+  if (/(not (done|added|saved) yet|haven'?t|didn'?t|لسه|لسا|مش هقدر|مقدرش|ما اتضافش|مش متضاف)/i.test(text)) return false;
+  return /(\b(done|added|saved|registered|created|updated|fixed)\b|تم[ ْ]|تمت|سجلت|سجلته|ضفت|ضفته|أضفت|اضفت|اتضاف|اتسجل|حفظت|خلاص)/i.test(text);
+}
 
 function stripThinking(text: string) {
   return text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
@@ -189,8 +241,8 @@ async function callModel(m: ChatModel, context: string, history: ChatMessage[], 
 }
 
 export interface AssistantReply {
-  text: string; // without tags and the TASK line
-  task: string | null;
+  text: string; // without tags and ACTION lines
+  actions: AssistantAction[];
   items: KnowledgeItem[]; // library items the answer used
   tasks: Task[]; // tasks the answer mentioned
   usedModel: ChatModel;
@@ -211,15 +263,15 @@ export async function askAssistant(chosen: ChatModel, question: string, history:
     try {
       const raw = await callModel(m, context.text, history, question);
       if (!raw) throw new Error('Empty answer.');
-      const taskLine = raw.match(/^\s*TASK:\s*(.+)$/im);
       const ids = (prefix: string) => [...new Set([...raw.matchAll(new RegExp(`\\[${prefix}:([A-Za-z0-9_-]{8})\\]`, 'g'))].map((x) => x[1]))];
       const text = raw
-        .replace(/^\s*TASK:.*$/im, '')
+        .replace(/^\s*(ACTION|TASK):.*$/gim, '')
         .replace(/\s*\[(K|T):[A-Za-z0-9_-]{8}\]/g, '')
+        .replace(/\s*\[(DONE by the bot|FAILED|PROPOSED[^\]]*)\]/gi, '')
         .trim();
       return {
         text,
-        task: taskLine ? taskLine[1].trim().slice(0, 500) : null,
+        actions: parseActions(raw),
         items: ids('K').map((id) => context.items.find((k) => k.id === id)).filter(Boolean) as KnowledgeItem[],
         tasks: ids('T').map((id) => context.tasks.find((t) => t.id === id)).filter(Boolean) as Task[],
         usedModel: m,
