@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { trackGemini } from './ai-usage';
 import { getDoc, getDocs, getSetting, listDocs, setDoc, setDocs, setSetting, updateDoc } from './data/store';
 import { GBP_LOCATIONS, fetchLocationReviews, listLinkedLocations, publishReviewReply } from './google-business';
 import { LANGUAGE_OPTIONS, LENGTH_OPTIONS, TONE_OPTIONS, defaultReplySettings } from './review-reply-options';
@@ -167,7 +168,7 @@ export async function generateReplyDraft(
       },
       { timeout: 20_000 }
     );
-    const result = await model.generateContent(reviewBlock);
+    const result = await trackGemini(modelName, 'reviews', () => model.generateContent(reviewBlock));
     const text = result.response.text().trim().replace(/^["“]|["”]$/g, '').trim();
     if (!text) throw new Error('AI returned an empty reply.');
     return text.slice(0, MAX_REPLY_LENGTH);

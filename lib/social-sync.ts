@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { trackGemini } from './ai-usage';
 import { getDoc, getDocs, listDocs, setDoc, setDocs, updateDoc } from './data/store';
 import {
   MetaApiError,
@@ -130,7 +131,7 @@ export async function assessComment(
           },
           { timeout: 20_000 }
         );
-        const result = await model.generateContent(input);
+        const result = await trackGemini(modelName, 'comments', () => model.generateContent(input));
         return parseAssessment(result.response.text());
       } catch (error) {
         lastError = error;

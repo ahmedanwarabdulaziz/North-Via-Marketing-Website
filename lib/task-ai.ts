@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { groqFetch, trackGemini } from './ai-usage';
 import { WEEKDAYS, addDays, cairoParts, formatTime, weekdayOf, type RepeatFreq, type RepeatRule, type TaskFields } from './tasks';
 
 // Turns a Telegram message (English, Arabic or mixed) into task fields.
@@ -260,7 +261,7 @@ export async function understandTaskMessage(
         },
         { timeout: Math.min(audio ? 30_000 : 15_000, timeLeft) }
       );
-      const result = await model.generateContent(parts);
+      const result = await trackGemini(modelName, 'tasks', () => model.generateContent(parts));
       const raw = JSON.parse(result.response.text()) as Record<string, unknown>;
       return toUnderstanding(raw, clients);
     } catch (error) {
@@ -286,14 +287,16 @@ function markFailed(model: string, ms = COOL_DOWN_MS) {
   restUntil.set(model, Date.now() + ms);
 }
 
-// ---------- Groq (fallback) ----------
+// ---------- Groq ----------
+
+const GROQ_TASK_MODEL = process.env.GROQ_TASK_MODEL || 'openai/gpt-oss-120b';
+const GROQ_WHISPER_MODEL = 'whisper-large-v3-turbo';
 
 async function groqJson(system: string, user: string) {
-  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: process.env.GROQ_TASK_MODEL || 'openai/gpt-oss-120b',
+  const data = await groqFetch<{ choices?: Array<{ message?: { content?: string } }> }>(
+    'chat/completions',
+    {
+      model: GROQ_TASK_MODEL,
       temperature: 0.1,
       max_tokens: 4096, // includes the model's reasoning
       reasoning_effort: 'low',
@@ -302,11 +305,9 @@ async function groqJson(system: string, user: string) {
         { role: 'system', content: system },
         { role: 'user', content: user },
       ],
-    }),
-    signal: AbortSignal.timeout(15_000),
-  });
-  if (!res.ok) throw new Error(`Groq ${res.status}: ${(await res.text()).slice(0, 200)}`);
-  const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
+    },
+    { model: GROQ_TASK_MODEL, feature: 'tasks' }
+  );
   return JSON.parse(data.choices?.[0]?.message?.content || '') as Record<string, unknown>;
 }
 
@@ -314,15 +315,9 @@ async function groqTranscribe(audio: TaskAudio) {
   const form = new FormData();
   const ext = audio.mimeType.includes('ogg') ? 'ogg' : audio.mimeType.split('/')[1]?.split(';')[0] || 'ogg';
   form.append('file', new Blob([Buffer.from(audio.data, 'base64')], { type: audio.mimeType }), `voice.${ext}`);
-  form.append('model', 'whisper-large-v3-turbo');
-  const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY}` },
-    body: form,
-    signal: AbortSignal.timeout(20_000),
-  });
-  if (!res.ok) throw new Error(`Groq Whisper ${res.status}: ${(await res.text()).slice(0, 200)}`);
-  const text = ((await res.json()) as { text?: string }).text?.trim();
+  form.append('model', GROQ_WHISPER_MODEL);
+  const data = await groqFetch<{ text?: string }>('audio/transcriptions', form, { model: GROQ_WHISPER_MODEL, feature: 'tasks', timeoutMs: 20_000 });
+  const text = data.text?.trim();
   if (!text) throw new Error('Groq Whisper heard nothing.');
   return text;
 }

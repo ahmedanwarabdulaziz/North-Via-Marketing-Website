@@ -13,6 +13,7 @@ import { listDocs } from './data/store';
 import { adsScreenText } from './ads-telegram';
 import { analyticsScreenText } from './analytics-telegram';
 import { taskCounts, taskListScreen, tasksHomeScreen } from './task-telegram';
+import { aiUsageScreen, checkGroqNow } from './ai-usage-telegram';
 
 // Main bot menu. Button data is "m:<screen>" or "m:<screen>:<action>".
 // To add a new area (e.g. Tasks, Invoices), add a section here and a screen below.
@@ -66,6 +67,10 @@ const SECTIONS: MenuSection[] = [
       return `🌐 Websites (${down.length ? `${down.length} down` : 'all up'})`;
     },
   },
+  {
+    id: 'ai',
+    label: async () => '🤖 AI usage',
+  },
 ];
 
 /**
@@ -84,6 +89,7 @@ export const BOT_COMMANDS = [
   { command: 'analytics', description: '🧭 Website analytics' },
   { command: 'reports', description: '📊 Client reports' },
   { command: 'websites', description: '🌐 Websites' },
+  { command: 'ai', description: '🤖 AI usage (Groq and Gemini)' },
 ];
 
 async function homeScreen(): Promise<OutgoingMessage> {
@@ -241,6 +247,7 @@ const COMMAND_SCREENS: Record<string, () => Promise<OutgoingMessage>> = {
   '/analytics': () => periodScreen('an', 7),
   '/reports': reportsScreen,
   '/websites': () => websitesScreen(),
+  '/ai': () => aiUsageScreen(),
 };
 
 /** A section command from the Menu button: sends that section's screen. False if it isn't one. */
@@ -342,6 +349,16 @@ export async function handleMenuCallback(query: { id: string; data?: string; mes
         return;
       }
       await editMessage(chatId, messageId, await reportsScreen());
+      return answerCallback(query.id);
+    }
+
+    if (screen === 'ai') {
+      if (action === 'live') {
+        await answerCallback(query.id, 'Asking Groq…');
+        await editMessage(chatId, messageId, await aiUsageScreen(await checkGroqNow()));
+        return;
+      }
+      await editMessage(chatId, messageId, await aiUsageScreen());
       return answerCallback(query.id);
     }
 
