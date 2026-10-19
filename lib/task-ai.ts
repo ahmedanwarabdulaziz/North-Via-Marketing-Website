@@ -155,6 +155,16 @@ export function toUnderstanding(raw: Record<string, unknown>, clients: TaskClien
     repeatCount: repeat && Number.isInteger(count) && count > 0 ? count : null,
     repeatForever: Boolean(repeat && raw.repeat_forever === true),
   };
+  // Models sometimes miscount weekdays: a repeat on Sundays must start on a Sunday.
+  if (fields.date && repeat && !repeatMatches(fields.date, repeat)) {
+    for (let i = 1; i <= 31; i++) {
+      const candidate = addDays(fields.date, i);
+      if (repeatMatches(candidate, repeat)) {
+        fields.date = candidate;
+        break;
+      }
+    }
+  }
   const intent = raw.intent === 'knowledge' || raw.intent === 'chat' ? raw.intent : 'task';
   return { intent, separate: raw.separate === true, fields, clientMentioned: knownClient ? null : str(raw.client_mentioned), heard: str(raw.heard), raw };
 }
@@ -191,10 +201,6 @@ export async function understandTaskMessage(
   context?: { current: TaskFields; asking?: keyof typeof QUESTION_TEXT | null },
   audio?: TaskAudio
 ): Promise<TaskUnderstanding> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error('GEMINI_API_KEY is not configured.');
-  const genAI = new GoogleGenerativeAI(apiKey);
-
   const message = audio
     ? `MESSAGE: the attached voice note.${text ? ` Caption: """${text.slice(0, 1000)}"""` : ''}`
     : `MESSAGE: """${text.slice(0, 4000)}"""`;
@@ -205,12 +211,33 @@ export async function understandTaskMessage(
         message,
       ].join('\n')
     : message;
+  const deadline = Date.now() + 50_000; // the Telegram webhook may run for 60 s
+  let lastError: unknown = new Error('No AI model is available right now.');
+
+  // Groq first: fast, with its own daily quota. When it's over the limit or down, Gemini takes
+  // over, and Groq is rested for a while (an hour when the daily quota is used up).
+  if (process.env.GROQ_API_KEY && !coolingDown('groq')) {
+    try {
+      const heard = audio ? await groqTranscribe(audio) : null;
+      const groqMessage = heard ? `MESSAGE (voice note, transcribed): """${heard.slice(0, 4000)}"""${text ? ` Caption: """${text.slice(0, 1000)}"""` : ''}` : message;
+      const groqPrompt = context ? prompt.replace(message, groqMessage) : groqMessage;
+      return toUnderstanding(await groqJson(systemPrompt(clients), groqPrompt), clients);
+    } catch (error) {
+      lastError = error;
+      const detail = error instanceof Error ? error.message : String(error);
+      console.error('Task AI: Groq failed:', detail.slice(0, 200));
+      if (!(error instanceof SyntaxError)) markFailed('groq', /\b429\b/.test(detail) ? (/per day|daily|\b(RPD|TPD)\b/i.test(detail) ? 60 : 2) * 60_000 : COOL_DOWN_MS);
+    }
+  }
+
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw lastError;
+  const genAI = new GoogleGenerativeAI(apiKey);
   // Gemini hears the audio itself (Arabic and English), so no separate speech-to-text step.
   const parts = audio ? [{ text: prompt }, { inlineData: { mimeType: audio.mimeType, data: audio.data } }] : prompt;
 
-  // Several models in turn, so one model being slow or down doesn't stop the bot: every error
-  // moves on to the next one, and a model that just failed is skipped for a few minutes.
-  // Groq is the last resort (text only; voice is turned into text with Whisper first).
+  // Several Gemini models in turn: every error moves on to the next one, and a model that
+  // just failed is skipped for a few minutes.
   const chain = [
     process.env.GEMINI_TASK_MODEL,
     'gemini-2.5-flash',
@@ -221,8 +248,6 @@ export async function understandTaskMessage(
   // Healthy models first; if every one failed recently, try them all again rather than give up.
   const healthy = chain.filter((m) => !coolingDown(m));
   const models = healthy.length ? healthy : chain;
-  const deadline = Date.now() + 50_000; // the Telegram webhook may run for 60 s
-  let lastError: unknown = new Error('No AI model is available right now.');
   for (const modelName of models) {
     const timeLeft = deadline - Date.now();
     if (timeLeft < 5_000) break;
@@ -245,33 +270,20 @@ export async function understandTaskMessage(
       if (!(error instanceof SyntaxError)) markFailed(modelName);
     }
   }
-
-  if (process.env.GROQ_API_KEY && deadline - Date.now() > 5_000) {
-    try {
-      const heard = audio ? await groqTranscribe(audio) : null;
-      const groqMessage = heard ? `MESSAGE (voice note, transcribed): """${heard.slice(0, 4000)}"""${text ? ` Caption: """${text.slice(0, 1000)}"""` : ''}` : message;
-      const groqPrompt = context ? prompt.replace(message, groqMessage) : groqMessage;
-      return toUnderstanding(await groqJson(systemPrompt(clients), groqPrompt), clients);
-    } catch (error) {
-      lastError = error;
-      console.error('Task AI: Groq failed:', error instanceof Error ? error.message.slice(0, 200) : error);
-      markFailed('groq');
-    }
-  }
   throw lastError;
 }
 
 // ---------- Model health ----------
 
 const COOL_DOWN_MS = 10 * 60_000;
-const failedAt = new Map<string, number>();
+const restUntil = new Map<string, number>();
 
 function coolingDown(model: string) {
-  return Date.now() - (failedAt.get(model) || 0) < COOL_DOWN_MS;
+  return Date.now() < (restUntil.get(model) || 0);
 }
 
-function markFailed(model: string) {
-  failedAt.set(model, Date.now());
+function markFailed(model: string, ms = COOL_DOWN_MS) {
+  restUntil.set(model, Date.now() + ms);
 }
 
 // ---------- Groq (fallback) ----------
@@ -281,16 +293,17 @@ async function groqJson(system: string, user: string) {
     method: 'POST',
     headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: process.env.GROQ_TASK_MODEL || 'llama-3.3-70b-versatile',
+      model: process.env.GROQ_TASK_MODEL || 'openai/gpt-oss-120b',
       temperature: 0.1,
-      max_tokens: 2048,
+      max_tokens: 4096, // includes the model's reasoning
+      reasoning_effort: 'low',
       response_format: { type: 'json_object' },
       messages: [
         { role: 'system', content: system },
         { role: 'user', content: user },
       ],
     }),
-    signal: AbortSignal.timeout(20_000),
+    signal: AbortSignal.timeout(15_000),
   });
   if (!res.ok) throw new Error(`Groq ${res.status}: ${(await res.text()).slice(0, 200)}`);
   const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
@@ -301,7 +314,7 @@ async function groqTranscribe(audio: TaskAudio) {
   const form = new FormData();
   const ext = audio.mimeType.includes('ogg') ? 'ogg' : audio.mimeType.split('/')[1]?.split(';')[0] || 'ogg';
   form.append('file', new Blob([Buffer.from(audio.data, 'base64')], { type: audio.mimeType }), `voice.${ext}`);
-  form.append('model', 'whisper-large-v3');
+  form.append('model', 'whisper-large-v3-turbo');
   const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
     method: 'POST',
     headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY}` },
@@ -314,3 +327,9 @@ async function groqTranscribe(audio: TaskAudio) {
   return text;
 }
 
+
+function repeatMatches(date: string, rule: RepeatRule) {
+  if (rule.freq === 'weekly' && rule.weekdays?.length) return rule.weekdays.includes(weekdayOf(date));
+  if (rule.freq === 'monthly' && rule.monthDay) return Number(date.slice(8)) === rule.monthDay;
+  return true;
+}
