@@ -17,6 +17,7 @@ import { taskCounts, taskListScreen, tasksHomeScreen } from './task-telegram';
 import { aiUsageScreen, checkGroqNow } from './ai-usage-telegram';
 import { libraryCount, libraryHomeScreen } from './knowledge-telegram';
 import { startConversation } from './assistant-telegram';
+import { postLocationsScreen } from './gbp-post-telegram';
 
 // Main bot menu. Button data is "m:<screen>" or "m:<screen>:<action>".
 // To add a new area (e.g. Tasks, Invoices), add a section here and a screen below.
@@ -42,6 +43,10 @@ const SECTIONS: MenuSection[] = [
       const { total } = await reviewQueueOverview();
       return `⭐ Google Reviews${total ? ` (${total} waiting)` : ''}`;
     },
+  },
+  {
+    id: 'gp',
+    label: async () => '📝 Google post',
   },
   {
     id: 'sm',
@@ -99,6 +104,7 @@ export const BOT_COMMANDS = [
   { command: 'tomorrow', description: '🌅 Tomorrow’s tasks' },
   { command: 'week', description: '🗓 Your week ahead by client' },
   { command: 'reviews', description: '⭐ Google Reviews' },
+  { command: 'post', description: '📝 New Google post (photo + voice → AI writes it)' },
   { command: 'social', description: '📱 Facebook & Instagram' },
   { command: 'ads', description: '📈 Google Ads' },
   { command: 'analytics', description: '🧭 Website analytics' },
@@ -303,6 +309,7 @@ const COMMAND_SCREENS: Record<string, () => Promise<OutgoingMessage>> = {
   '/today': () => taskListScreen('today'),
   '/tomorrow': () => taskListScreen('tomorrow'),
   '/reviews': () => reviewsScreen(),
+  '/post': postLocationsScreen,
   '/social': () => socialScreen(),
   '/ads': () => periodScreen('ad', 7),
   '/analytics': () => periodScreen('an', 7),
@@ -449,6 +456,11 @@ export async function handleMenuCallback(query: { id: string; data?: string; mes
         return;
       }
       await editMessage(chatId, messageId, await reportsScreen());
+      return answerCallback(query.id);
+    }
+
+    if (screen === 'gp') {
+      await editMessage(chatId, messageId, await postLocationsScreen());
       return answerCallback(query.id);
     }
 

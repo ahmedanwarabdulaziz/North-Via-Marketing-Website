@@ -28,12 +28,14 @@ export async function aiJson(opts: {
   feature: AiFeature;
   image?: AiImage;
   timeBudgetMs?: number;
+  geminiFirst?: boolean; // writing that needs care (e.g. Google posts): Gemini first, Groq only as a fallback
 }): Promise<Record<string, unknown>> {
   const deadline = Date.now() + (opts.timeBudgetMs ?? 45_000);
   let lastError: unknown = new Error('No AI model is available right now.');
 
   const groqModel = process.env.GROQ_TASK_MODEL || 'openai/gpt-oss-120b';
-  if (!opts.image && process.env.GROQ_API_KEY && !resting('groq')) {
+  const tryGroq = async (): Promise<Record<string, unknown> | null> => {
+    if (opts.image || !process.env.GROQ_API_KEY || resting('groq') || deadline - Date.now() < 5_000) return null;
     try {
       const data = await groqFetch<{ choices?: Array<{ message?: { content?: string } }> }>(
         'chat/completions',
@@ -55,11 +57,20 @@ export async function aiJson(opts: {
       lastError = error;
       console.error(`AI (${opts.feature}): Groq failed:`, error instanceof Error ? error.message.slice(0, 200) : error);
       if (!(error instanceof SyntaxError)) rest('groq', restFor(error));
+      return null;
     }
+  };
+  if (!opts.geminiFirst) {
+    const result = await tryGroq();
+    if (result) return result;
   }
 
   const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw lastError;
+  if (!apiKey) {
+    const result = opts.geminiFirst ? await tryGroq() : null;
+    if (result) return result;
+    throw lastError;
+  }
   const genAI = new GoogleGenerativeAI(apiKey);
   const healthy = GEMINI_CHAIN.filter((m) => !resting(m));
   const parts = opts.image ? [{ text: opts.user }, { inlineData: { mimeType: opts.image.mimeType, data: opts.image.data } }] : opts.user;
@@ -73,7 +84,7 @@ export async function aiJson(opts: {
           systemInstruction: opts.system,
           generationConfig: { temperature: 0.2, maxOutputTokens: 4096, responseMimeType: 'application/json' },
         },
-        { timeout: Math.min(opts.image ? 30_000 : 15_000, timeLeft) }
+        { timeout: Math.min(opts.image || opts.geminiFirst ? 30_000 : 15_000, timeLeft) }
       );
       const result = await trackGemini(modelName, opts.feature, () => model.generateContent(parts));
       return JSON.parse(result.response.text()) as Record<string, unknown>;
@@ -82,6 +93,10 @@ export async function aiJson(opts: {
       console.error(`AI (${opts.feature}): ${modelName} failed:`, error instanceof Error ? error.message.slice(0, 200) : error);
       if (!(error instanceof SyntaxError)) rest(modelName, restFor(error));
     }
+  }
+  if (opts.geminiFirst) {
+    const result = await tryGroq();
+    if (result) return result;
   }
   throw lastError;
 }

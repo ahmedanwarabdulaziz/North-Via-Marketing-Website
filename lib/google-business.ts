@@ -314,6 +314,74 @@ export async function publishReviewReply(location: GbpLocation, reviewName: stri
   await logAudit('gbp.reply_published', { clientId: location.clientId, reviewName, length: comment.length });
 }
 
+// ---------- Posts ----------
+
+export type LocalPostTopic = 'STANDARD' | 'EVENT' | 'OFFER';
+export type LocalPostAction = 'BOOK' | 'ORDER' | 'SHOP' | 'LEARN_MORE' | 'SIGN_UP' | 'CALL';
+
+interface GoogleDate {
+  year: number;
+  month: number;
+  day: number;
+}
+
+export interface LocalPostInput {
+  summary: string;
+  topicType: LocalPostTopic;
+  imageUrl?: string; // public or signed link Google downloads the photo from
+  callToAction?: { actionType: LocalPostAction; url?: string }; // CALL uses the profile's phone, no url
+  event?: { title: string; startDate: string; endDate: string }; // YYYY-MM-DD; required for EVENT and OFFER
+  offer?: { couponCode?: string; redeemOnlineUrl?: string; termsConditions?: string };
+}
+
+export interface LocalPost {
+  name: string;
+  state?: 'LOCAL_POST_STATE_UNSPECIFIED' | 'REJECTED' | 'LIVE' | 'PROCESSING';
+  searchUrl?: string;
+  summary?: string;
+}
+
+function googleDate(iso: string): GoogleDate {
+  const [year, month, day] = iso.split('-').map(Number);
+  return { year, month, day };
+}
+
+function postPath(location: GbpLocation) {
+  return `${location.accountName}/${location.locationName}/localPosts`;
+}
+
+/** Publishes a post on the location's profile. Only call after an explicit human approval. */
+export async function createLocalPost(location: GbpLocation, input: LocalPostInput) {
+  const data: Record<string, unknown> = { languageCode: 'en', summary: input.summary, topicType: input.topicType };
+  if (input.imageUrl) data.media = [{ mediaFormat: 'PHOTO', sourceUrl: input.imageUrl }];
+  if (input.callToAction && input.topicType !== 'OFFER') data.callToAction = input.callToAction;
+  if (input.event && input.topicType !== 'STANDARD') {
+    data.event = { title: input.event.title, schedule: { startDate: googleDate(input.event.startDate), endDate: googleDate(input.event.endDate) } };
+  }
+  if (input.offer && input.topicType === 'OFFER') data.offer = input.offer;
+
+  const post = await withClientAuth(location.clientId, async (auth) =>
+    (await auth.request<LocalPost>({ url: `https://mybusiness.googleapis.com/v4/${postPath(location)}`, method: 'POST', data })).data
+  );
+  await logAudit('gbp.post_published', { clientId: location.clientId, post: post.name, length: input.summary.length });
+  return post;
+}
+
+function checkPostName(location: GbpLocation, postName: string) {
+  if (!postName.startsWith(`${postPath(location)}/`)) throw new Error('Post does not belong to this location.');
+}
+
+export async function getLocalPost(location: GbpLocation, postName: string) {
+  checkPostName(location, postName);
+  return withClientAuth(location.clientId, async (auth) => (await auth.request<LocalPost>({ url: `https://mybusiness.googleapis.com/v4/${postName}` })).data);
+}
+
+export async function deleteLocalPost(location: GbpLocation, postName: string) {
+  checkPostName(location, postName);
+  await withClientAuth(location.clientId, (auth) => auth.request({ url: `https://mybusiness.googleapis.com/v4/${postName}`, method: 'DELETE' }));
+  await logAudit('gbp.post_deleted', { clientId: location.clientId, post: postName });
+}
+
 /** Revokes Google access and removes the client's stored connection and locations. */
 export async function disconnectClient(clientId: string) {
   const connection = await getGbpConnection(clientId);

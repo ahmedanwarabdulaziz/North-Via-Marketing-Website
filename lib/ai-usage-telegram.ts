@@ -12,6 +12,7 @@ const FEATURE_LABELS: Record<string, string> = {
   check: 'Live checks',
   assistant: 'Chat with the bot',
   knowledge: 'Library',
+  posts: 'Google posts',
 };
 
 function compact(n: number) {
