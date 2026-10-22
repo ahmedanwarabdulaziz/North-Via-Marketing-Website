@@ -84,22 +84,11 @@ function reviewCard(review: Review, clientName: string, note?: string): Outgoing
   if (note) lines.push('', note);
 
   const firstRow = review.draft
-    ? [{ text: '✅ Approve', callback_data: `a:${ref}` }, { text: '✏️ Edit', callback_data: `e:${ref}` }]
+    ? [{ text: '✅ Approve & send', callback_data: `A:${ref}` }, { text: '✏️ Edit', callback_data: `e:${ref}` }]
     : [{ text: '✏️ Write reply', callback_data: `e:${ref}` }];
   return {
     text: lines.join('\n'),
     buttons: [firstRow, [{ text: '🔄 Regenerate', callback_data: `g:${ref}` }, { text: '⏭ Skip', callback_data: `s:${ref}` }], ...share],
-  };
-}
-
-function confirmCard(review: Review, clientName: string): OutgoingMessage {
-  const card = reviewCard(review, clientName);
-  return {
-    text: `${card.text}\n\n❓ <b>Post this reply publicly on Google?</b>`,
-    buttons: [[
-      { text: '✅ Yes, post it', callback_data: `A:${review.shortRef}` },
-      { text: '↩️ Cancel', callback_data: `c:${review.shortRef}` },
-    ]],
   };
 }
 
@@ -415,12 +404,10 @@ export async function handleCallback(query: CallbackQuery) {
     }
 
     switch (action) {
-      case 'a':
-        await editMessage(chatId, messageId, confirmCard(review, clientName));
-        return answerCallback(query.id);
       case 'c':
         await editMessage(chatId, messageId, reviewCard(review, clientName));
         return answerCallback(query.id, 'Cancelled');
+      case 'a': // older cards still carry the old confirm-first button
       case 'A': {
         if (!review.draft) return answerCallback(query.id, 'No draft to post.');
         await answerCallback(query.id, 'Posting…');
@@ -512,7 +499,7 @@ export async function handleReviewMessage(message: IncomingMessage): Promise<boo
       await setReviewDraft(review.id, text);
       const updated = await getStoredReview(review.id);
       const clientName = (await clientNameMap()).get(review.clientId) || 'Client';
-      await sendMessage(chatId, reviewCard(updated!, clientName, '✏️ <i>Your edited reply. Tap Approve to post it.</i>'));
+      await sendMessage(chatId, reviewCard(updated!, clientName, '✏️ <i>Your edited reply. Tap Approve & send to post it.</i>'));
     }
     return true;
   }

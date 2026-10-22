@@ -77,7 +77,7 @@ export function commentCard(c: StoredComment, clientName: string, note?: string)
   if (note) lines.push('', note);
 
   const first = c.draft
-    ? [{ text: '✅ Approve', callback_data: `sc:a:${ref}` }, { text: '✏️ Edit', callback_data: `sc:e:${ref}` }]
+    ? [{ text: '✅ Approve & send', callback_data: `sc:A:${ref}` }, { text: '✏️ Edit', callback_data: `sc:e:${ref}` }]
     : [{ text: '✏️ Write reply', callback_data: `sc:e:${ref}` }];
   return {
     text: lines.join('\n'),
@@ -89,17 +89,12 @@ export function commentCard(c: StoredComment, clientName: string, note?: string)
   };
 }
 
-function confirmCard(c: StoredComment, clientName: string, kind: 'post' | 'hide'): OutgoingMessage {
+function confirmHideCard(c: StoredComment, clientName: string): OutgoingMessage {
   const card = commentCard(c, clientName);
-  return kind === 'post'
-    ? {
-        text: `${card.text}\n\n❓ <b>Post this reply publicly on ${c.platform === 'facebook' ? 'Facebook' : 'Instagram'}?</b>`,
-        buttons: [[{ text: '✅ Yes, post it', callback_data: `sc:A:${c.shortRef}` }, { text: '↩️ Cancel', callback_data: `sc:c:${c.shortRef}` }]],
-      }
-    : {
-        text: `${card.text}\n\n❓ <b>Hide this comment?</b> Everyone except the commenter and their friends will stop seeing it. Nothing is deleted.`,
-        buttons: [[{ text: '🙈 Yes, hide it', callback_data: `sc:H:${c.shortRef}` }, { text: '↩️ Cancel', callback_data: `sc:c:${c.shortRef}` }]],
-      };
+  return {
+    text: `${card.text}\n\n❓ <b>Hide this comment?</b> Everyone except the commenter and their friends will stop seeing it. Nothing is deleted.`,
+    buttons: [[{ text: '🙈 Yes, hide it', callback_data: `sc:H:${c.shortRef}` }, { text: '↩️ Cancel', callback_data: `sc:c:${c.shortRef}` }]],
+  };
 }
 
 // ---------- Sending ----------
@@ -232,17 +227,15 @@ export async function handleSocialCallback(query: CallbackQuery) {
     }
 
     switch (action) {
-      case 'a':
-        if (!comment.draft) return answerCallback(query.id, 'No reply to post.');
-        await editMessage(chatId, messageId, confirmCard(comment, clientName, 'post'));
-        return answerCallback(query.id);
       case 'h':
-        await editMessage(chatId, messageId, confirmCard(comment, clientName, 'hide'));
+        await editMessage(chatId, messageId, confirmHideCard(comment, clientName));
         return answerCallback(query.id);
       case 'c':
         await refresh();
         return answerCallback(query.id, 'Cancelled');
+      case 'a': // older cards still carry the old confirm-first button
       case 'A':
+        if (!comment.draft) return answerCallback(query.id, 'No reply to post.');
         await answerCallback(query.id, 'Posting…');
         await postApprovedCommentReply(comment.id);
         return refresh();
@@ -292,7 +285,7 @@ export async function handleSocialMessage(message: { text?: string; chat: { id: 
     else {
       await setCommentDraft(comment.id, text);
       const clientName = (await clientNames()).get(comment.clientId) || 'Client';
-      await sendMessage(chatId, commentCard((await getStoredComment(comment.id))!, clientName, '✏️ <i>Your edited reply. Tap Approve to post it.</i>'));
+      await sendMessage(chatId, commentCard((await getStoredComment(comment.id))!, clientName, '✏️ <i>Your edited reply. Tap Approve & send to post it.</i>'));
     }
     return true;
   }
