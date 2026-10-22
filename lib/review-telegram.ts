@@ -256,6 +256,13 @@ export async function sendReviewDigest(options: {
     // Counts are about what you haven't seen in Telegram yet. A review found by an
     // earlier check (e.g. the overnight sync) is still new here until it's been sent.
     options.summary ? `🔎 Checked ${options.summary.locationsChecked} location(s) on Google.` : '',
+    // Reviews seen for the first time (e.g. a client whose profile was just connected), per location.
+    ...(options.summary?.perLocation || [])
+      .filter((l) => l.newReviews > 0)
+      .map((l) => `📍 <b>${h(names.get(l.clientId) || l.location)}</b>: ${l.newReviews} new review${l.newReviews === 1 ? '' : 's'} found${
+        l.alreadyAnswered ? ` (${l.alreadyAnswered} already answered on Google)` : ''
+      }.`),
+    ...(options.summary?.errors || []).map((e) => `⚠️ ${h(e.location)}: ${h(truncate(e.error, 200))}`),
     toSend.length
       ? options.onlyUnsent
         ? `🆕 ${toSend.length} new review${toSend.length === 1 ? '' : 's'} waiting for your approval below.`

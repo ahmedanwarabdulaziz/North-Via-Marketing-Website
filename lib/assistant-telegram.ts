@@ -274,6 +274,8 @@ async function runAction(chatId: number, a: AssistantAction): Promise<{ ok: bool
         message += `; the website check failed`;
       }
     }
+    // Google reviews need the owner's Google sign-in, which only the panel can do.
+    lines.push('⭐ To check their Google reviews, connect the Google Business Profile on the client page and tick "Monitor reviews".');
     lines.push(`<a href="https://www.northviamarketing.com/admin/clients/${encodeURIComponent(id)}">Open in the panel</a>`);
     return { ok: true, message, card: lines.join('\n') };
   }

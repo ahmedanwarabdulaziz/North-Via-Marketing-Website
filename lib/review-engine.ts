@@ -228,6 +228,8 @@ export interface SyncSummary {
   draftsCreated: number;
   draftsDeferred: number;
   awaitingApproval: { fiveStar: number; needsReview: number };
+  // What each location returned, so a newly added client is visible even when nothing needs a reply.
+  perLocation?: Array<{ clientId: string; location: string; fetched: number; newReviews: number; alreadyAnswered: number }>;
   errors: Array<{ location: string; error: string }>;
 }
 
@@ -248,6 +250,7 @@ export async function syncAllReviews(options: { maxDrafts?: number } = {}): Prom
   let draftsDeferred = 0;
   let aiBusy = false;
   const errors: SyncSummary['errors'] = [];
+  const perLocation: NonNullable<SyncSummary['perLocation']> = [];
 
   for (const location of locations) {
     let reviews: GbpReview[];
@@ -268,10 +271,16 @@ export async function syncAllReviews(options: { maxDrafts?: number } = {}): Prom
     const stored = await getDocs<GbpStoredReview>(GBP_REVIEWS, reviews.map(reviewIdOf));
     const writes: Array<{ id: string; data: object }> = [];
     const write = (id: string, data: object) => writes.push({ id, data });
+    const stats = { clientId: location.clientId, location: location.title, fetched: reviews.length, newReviews: 0, alreadyAnswered: 0 };
+    perLocation.push(stats);
 
     for (const review of reviews) {
       const ref = reviewIdOf(review);
       const existing = stored.get(ref) || null;
+      if (!existing) {
+        stats.newReviews++;
+        if (review.reviewReply) stats.alreadyAnswered++;
+      }
       const now = new Date().toISOString();
       const base = {
         ...toStored(review),
@@ -341,6 +350,7 @@ export async function syncAllReviews(options: { maxDrafts?: number } = {}): Prom
       fiveStar: pendingReviews.filter((r) => r.rating === 5 && r.status === 'draft_ready').length,
       needsReview: pendingReviews.filter((r) => !(r.rating === 5 && r.status === 'draft_ready')).length,
     },
+    perLocation,
     errors,
   };
 

@@ -18,6 +18,11 @@ export default async function AdminReviewsPage() {
   ]);
   const clientNames = new Map(clients.map((c) => [c.id, c.brandName]));
   const reviews: InboxReview[] = queue.map((r) => ({ ...r, clientName: clientNames.get(r.clientId) || 'Unknown client' }));
+  // Every client with a monitored location, so a newly connected client shows here before it has reviews to approve.
+  const monitoredClients = Array.from(new Set(locations.map((l) => l.clientId))).map((id) => ({
+    id,
+    name: clientNames.get(id) || locations.find((l) => l.clientId === id)?.title || 'Unknown client',
+  }));
 
   return (
     <div className="p-6 md:p-8 max-w-5xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -39,7 +44,7 @@ export default async function AdminReviewsPage() {
         />
       </div>
 
-      <ReviewsInbox reviews={reviews} lastSync={lastSync} hasLocations={locations.length > 0} />
+      <ReviewsInbox reviews={reviews} lastSync={lastSync} hasLocations={locations.length > 0} monitoredClients={monitoredClients} />
     </div>
   );
 }

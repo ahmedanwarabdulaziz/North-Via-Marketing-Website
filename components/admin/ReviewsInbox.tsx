@@ -14,6 +14,7 @@ interface SyncInfo {
   newReviews: number;
   draftsCreated: number;
   draftsDeferred: number;
+  perLocation?: Array<{ clientId: string; location: string; fetched: number; newReviews: number; alreadyAnswered: number }>;
   errors: Array<{ location: string; error: string }>;
 }
 
@@ -240,25 +241,39 @@ function Empty({ text }: { text: string }) {
   );
 }
 
-export function ReviewsInbox({ reviews, lastSync, hasLocations }: { reviews: InboxReview[]; lastSync: SyncInfo | null; hasLocations: boolean }) {
+export function ReviewsInbox({
+  reviews,
+  lastSync,
+  hasLocations,
+  monitoredClients = [],
+}: {
+  reviews: InboxReview[];
+  lastSync: SyncInfo | null;
+  hasLocations: boolean;
+  monitoredClients?: Array<{ id: string; name: string }>;
+}) {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>('five');
   const [clientFilter, setClientFilter] = useState('');
   const [checking, setChecking] = useState(false);
   const [checkError, setCheckError] = useState<string | null>(null);
+  const [checkNote, setCheckNote] = useState<string | null>(null);
 
   const isPending = (r: InboxReview) => r.status === 'draft_ready' || r.status === 'needs_draft';
 
-  // Clients with something waiting come first, then alphabetical.
+  // Clients with something waiting come first, then alphabetical. Monitored clients with
+  // nothing in the queue yet (e.g. just connected) are listed too.
   const clients = useMemo(() => {
     const map = new Map<string, { id: string; name: string; pending: number }>();
+    for (const c of monitoredClients) map.set(c.id, { id: c.id, name: c.name, pending: 0 });
     for (const r of reviews) {
       const entry = map.get(r.clientId) || { id: r.clientId, name: r.clientName, pending: 0 };
       if (isPending(r)) entry.pending++;
       map.set(r.clientId, entry);
     }
     return Array.from(map.values()).sort((a, b) => b.pending - a.pending || a.name.localeCompare(b.name));
-  }, [reviews]);
+  }, [reviews, monitoredClients]);
+  const lastCheckOf = (clientId: string) => lastSync?.perLocation?.filter((l) => l.clientId === clientId) || [];
   const totalPending = clients.reduce((sum, c) => sum + c.pending, 0);
 
   const groups = useMemo(() => {
@@ -278,10 +293,13 @@ export function ReviewsInbox({ reviews, lastSync, hasLocations }: { reviews: Inb
   async function checkNow() {
     setChecking(true);
     setCheckError(null);
+    setCheckNote(null);
     const res = await fetch('/api/admin/reviews/sync', { method: 'POST' });
     const data = await res.json().catch(() => ({}));
     setChecking(false);
     if (!res.ok) setCheckError(data.error || 'Check failed.');
+    else if (data.telegramError) setCheckError(`Checked, but Telegram wasn't sent: ${data.telegramError}`);
+    else if (data.telegram) setCheckNote(`Sent to Telegram${data.telegram.reviewsSent ? ` (${data.telegram.reviewsSent} review${data.telegram.reviewsSent === 1 ? '' : 's'})` : ''}.`);
     router.refresh();
   }
 
@@ -317,6 +335,7 @@ export function ReviewsInbox({ reviews, lastSync, hasLocations }: { reviews: Inb
             </div>
           ))}
           {checkError && <div className="text-red-600 mt-1">{checkError}</div>}
+          {checkNote && <div className="text-emerald-700 mt-1">{checkNote}</div>}
         </div>
         <button
           onClick={checkNow}
@@ -364,10 +383,15 @@ export function ReviewsInbox({ reviews, lastSync, hasLocations }: { reviews: Inb
       {(() => {
         const list = groups[tab];
         if (list.length === 0) {
+          const checked = clientFilter ? lastCheckOf(clientFilter) : [];
           return (
             <Empty
               text={
-                tab === 'five' ? 'No 5★ drafts waiting. Nice.'
+                checked.length
+                  ? `Nothing here for this client. Last check: ${checked
+                      .map((l) => `${l.location}, ${l.fetched} recent review${l.fetched === 1 ? '' : 's'} on Google`)
+                      .join('; ')}. Reviews already answered on Google aren't listed.`
+                : tab === 'five' ? 'No 5★ drafts waiting. Nice.'
                 : tab === 'review' ? 'No reviews need individual approval.'
                 : 'Nothing here yet.'
               }
