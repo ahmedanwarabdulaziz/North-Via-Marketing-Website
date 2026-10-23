@@ -108,7 +108,7 @@ async function getClientAuth(clientId: string) {
 
   const oauth2Client = getOAuth2Client();
   oauth2Client.setCredentials({ refresh_token: decryptString(connection.encryptedRefreshToken) });
-  return oauth2Client;
+  return { auth: oauth2Client, connection };
 }
 
 async function markConnectionError(clientId: string, message: string) {
@@ -116,18 +116,35 @@ async function markConnectionError(clientId: string, message: string) {
 }
 
 function describeGoogleError(error: unknown) {
-  const err = error as { message?: string; response?: { status?: number; data?: { error?: { message?: string } } } };
+  const err = error as {
+    message?: string;
+    response?: { status?: number; data?: { error?: string | { message?: string }; error_description?: string } };
+  };
   const status = err.response?.status;
-  const message = err.response?.data?.error?.message || err.message || 'Unknown Google API error';
+  const data = err.response?.data;
+  // Google's token endpoint answers with a string code (invalid_grant, invalid_client, ...); the APIs with an object.
+  const tokenError = typeof data?.error === 'string' ? data.error : undefined;
+  const apiMessage = typeof data?.error === 'object' ? data.error.message : undefined;
+  const message = apiMessage || data?.error_description || err.message || 'Unknown Google API error';
   if (status === 429) return `Google API quota reached (${message}). Check that Business Profile API access is approved for this project.`;
-  if (status === 401 || message.includes('invalid_grant')) return 'Google access was revoked or expired. Ask the client to reconnect.';
+  if (tokenError === 'invalid_grant' || message.includes('invalid_grant')) {
+    return `Google access was revoked or expired (${data?.error_description || 'invalid_grant'}). Ask the client to reconnect.`;
+  }
+  // A wrong client ID/secret is our setup, not the client's login, so reconnecting would not help.
+  if (tokenError) return `Google sign-in failed (${tokenError}${data?.error_description ? `: ${data.error_description}` : ''}). Check GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.`;
+  if (status === 401) return `Google rejected the login (${message}). Ask the client to reconnect.`;
   return message;
 }
 
 async function withClientAuth<T>(clientId: string, fn: (auth: ReturnType<typeof getOAuth2Client>) => Promise<T>) {
-  const auth = await getClientAuth(clientId);
+  const { auth, connection } = await getClientAuth(clientId);
   try {
-    return await fn(auth);
+    const result = await fn(auth);
+    // A call that works proves the login is fine again, so drop an old error badge.
+    if (connection.status === 'error') {
+      await setDoc(GBP_CONNECTIONS, clientId, { status: 'connected', lastError: null, updatedAt: new Date().toISOString() }, { merge: true });
+    }
+    return result;
   } catch (error) {
     const message = describeGoogleError(error);
     if (message.includes('reconnect')) await markConnectionError(clientId, message);
@@ -193,7 +210,6 @@ async function fetchAvailableLocations(clientId: string) {
       } while (pageToken);
     }
 
-    await setDoc(GBP_CONNECTIONS, clientId, { status: 'connected', lastError: null, updatedAt: new Date().toISOString() }, { merge: true });
     return found.sort((a, b) => a.title.localeCompare(b.title));
   });
 }
@@ -385,7 +401,11 @@ export async function deleteLocalPost(location: GbpLocation, postName: string) {
 /** Revokes Google access and removes the client's stored connection and locations. */
 export async function disconnectClient(clientId: string) {
   const connection = await getGbpConnection(clientId);
-  if (connection) {
+  // Revoking ends the whole Google grant for that account, which would also log out
+  // every other client connected with the same Google account.
+  const shared = connection && (await listDocs<GbpConnection>(GBP_CONNECTIONS, { where: { googleEmail: connection.googleEmail } }))
+    .some((other) => other.id !== clientId);
+  if (connection && !shared) {
     try {
       await getOAuth2Client().revokeToken(decryptString(connection.encryptedRefreshToken));
     } catch (error) {
