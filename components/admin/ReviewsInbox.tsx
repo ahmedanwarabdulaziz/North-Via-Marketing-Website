@@ -67,7 +67,6 @@ function ApprovalCard({ review }: { review: InboxReview }) {
   const [error, setError] = useState<string | null>(review.status === 'needs_draft' ? review.draftError || null : null);
 
   async function act(kind: 'post' | 'regen' | 'skip') {
-    if (kind === 'post' && !confirm('Post this reply publicly on Google?')) return;
     setBusy(kind);
     setError(null);
     const result =
@@ -136,7 +135,6 @@ function FiveStarQueue({ reviews }: { reviews: InboxReview[] }) {
   }
 
   async function approveSelected() {
-    if (!confirm(`Post ${bulkIds.length} five-star repl${bulkIds.length === 1 ? 'y' : 'ies'} publicly on Google?`)) return;
     setPosting(true);
     setMessage(null);
     const res = await fetch('/api/admin/reviews/approve-five-star', {
@@ -177,7 +175,7 @@ function FiveStarQueue({ reviews }: { reviews: InboxReview[] }) {
             className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 disabled:opacity-50"
           >
             <CheckCircle2 className="w-4 h-4" />
-            {posting ? 'Posting…' : `Approve ${bulkIds.length} selected`}
+            {posting ? 'Posting…' : `Approve & post ${bulkIds.length} selected`}
           </button>
         </div>
       </div>
