@@ -31,7 +31,7 @@ import type { GbpStoredReview } from '@/types/database';
 // Telegram review approvals.
 // Button data (max 64 bytes) is "<action>:<id>" where id is a review shortRef or a batch id:
 //   a/A approve → confirm   e edit   g regenerate   s skip   c cancel
-//   b/B bulk 5★ → confirm   k cancel bulk   x show batch one by one
+//   b bulk 5★ approve & post (B/k: old confirm step on earlier lists)   x show batch one by one
 const BATCHES = 'gbp_telegram_batches' as const;
 const MAX_CARDS_PER_DIGEST = 25;
 const PANEL_URL = 'https://www.northviamarketing.com/admin/reviews';
@@ -119,23 +119,9 @@ function groupMessage(batchId: string, clientName: string, reviews: Review[], { 
   return {
     text,
     buttons: [[
-      { text: `✅ Approve all ${total}`, callback_data: `b:${batchId}` },
+      { text: `✅ Approve & post all ${total}`, callback_data: `b:${batchId}` },
       { text: '🔍 One by one', callback_data: `x:${batchId}` },
     ], whatsAppRow('b', batchId)],
-  };
-}
-
-function groupConfirmMessage(batchId: string, clientName: string, total: number, parts: number): OutgoingMessage {
-  return {
-    text: [
-      `⭐⭐⭐⭐⭐ <b>${h(clientName)}</b>`,
-      `❓ <b>Post all ${total} five-star replies publicly on Google?</b>`,
-      parts > 1 ? `<i>This includes every review in the ${parts} messages above.</i>` : '',
-    ].filter(Boolean).join('\n'),
-    buttons: [[
-      { text: `✅ Yes, post ${total}`, callback_data: `B:${batchId}` },
-      { text: '↩️ Cancel', callback_data: `k:${batchId}` },
-    ]],
   };
 }
 
@@ -357,11 +343,8 @@ export async function handleCallback(query: CallbackQuery) {
         await editMessage(chatId, messageId, { text: `⭐⭐⭐⭐⭐ <b>${h(batch.clientName)}</b> — nothing left to approve in this list.` });
         return answerCallback(query.id, 'Already handled.');
       }
-      if (action === 'b') {
-        await editMessage(chatId, messageId, groupConfirmMessage(id, batch.clientName, ready.length, batch.parts));
-        return answerCallback(query.id);
-      }
       if (action === 'k') {
+        // From the old "Post all?" step, still on lists sent before "Approve all" posted in one tap.
         // Restore the last part (the message holding the buttons), skipping anything handled meanwhile.
         const lastReady = ready.filter((r) => batch.lastPartIds.includes(r.id));
         await editMessage(chatId, messageId, groupMessage(id, batch.clientName, lastReady, {
@@ -372,7 +355,7 @@ export async function handleCallback(query: CallbackQuery) {
         }));
         return answerCallback(query.id, 'Cancelled');
       }
-      // B: confirmed — post each reply; ratings and status were re-checked above.
+      // b (Approve all) or B (the old confirm step): post each reply in one tap; ratings and status were re-checked above.
       await answerCallback(query.id, `Posting ${ready.length}…`);
       let posted = 0;
       const failed: string[] = [];
