@@ -5,9 +5,12 @@ import { headers } from 'next/headers';
 import { revalidatePath } from 'next/cache';
 import { getDoc, updateDoc } from '@/lib/data/store';
 import {
+  AGENCY_CONNECT_ID,
   createConnectToken,
   disconnectClient,
+  previewAgencyLocations,
   previewClientLocations,
+  saveAgencyLocationLinks,
   saveClientLocationSelection,
 } from '@/lib/google-business';
 import { listClientProfiles } from '@/lib/admin-ops';
@@ -37,6 +40,36 @@ export async function getGbpConnectUrl(clientId: string, via: 'admin' | 'client_
   try {
     const token = await createConnectToken(clientId, via);
     return { success: true, url: `${await siteOrigin()}/api/google/business/connect?token=${encodeURIComponent(token)}` };
+  } catch (error) {
+    return { success: false, error: errorMessage(error) };
+  }
+}
+
+/** Sign-in link for the one agency Google account used by clients without their own login. */
+export async function getAgencyGbpConnectUrl() {
+  return getGbpConnectUrl(AGENCY_CONNECT_ID, 'admin');
+}
+
+export async function previewAgencyGbpLocations() {
+  await requireAdmin();
+  try {
+    const locations = await previewAgencyLocations();
+    return {
+      success: true,
+      locations: locations.map(({ locationId, title, address, clientId }) => ({ locationId, title, address, clientId })),
+    };
+  } catch (error) {
+    return { success: false, error: errorMessage(error) };
+  }
+}
+
+export async function saveAgencyGbpLinks(links: Record<string, string | null>) {
+  await requireAdmin();
+  try {
+    const count = await saveAgencyLocationLinks(links);
+    revalidatePath('/admin/reviews');
+    revalidatePath('/admin/clients/[id]', 'page');
+    return { success: true, count };
   } catch (error) {
     return { success: false, error: errorMessage(error) };
   }

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { MapPin, ListChecks, Unplug, Link2, Copy, Check, AlertTriangle, Star } from 'lucide-react';
 import { disconnectGbp, getGbpConnectUrl } from '@/app/actions/google-business';
@@ -12,15 +13,18 @@ interface Props {
   connection: { googleEmail: string; status: 'connected' | 'error'; lastError?: string; connectedAt: string } | null;
   locations: Array<GbpLocation & { id: string }>;
   notice?: 'connected' | 'error';
+  agencyEmail?: string; // the shared Google account on the Reviews page, if connected
 }
 
-export function ClientGbpCard({ clientId, connection, locations, notice }: Props) {
+export function ClientGbpCard({ clientId, connection, locations, notice, agencyEmail }: Props) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [clientLink, setClientLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const monitored = locations.filter((l) => l.linked);
+  // Linked on the Reviews page through the shared Google account rather than a login of its own.
+  const viaAgency = !connection && monitored.length > 0 && Boolean(agencyEmail);
   // Right after connecting, open the picker straight away.
   const [pickerOpen, setPickerOpen] = useState(notice === 'connected' && Boolean(connection) && monitored.length === 0);
 
@@ -79,6 +83,12 @@ export function ClientGbpCard({ clientId, connection, locations, notice }: Props
               {' · '}
               {monitored.length} location{monitored.length === 1 ? '' : 's'} monitored
             </p>
+          ) : viaAgency ? (
+            <p className="text-sm text-zinc-500 mt-1">
+              Through the shared Google account <span className="font-medium text-zinc-700">{agencyEmail}</span>
+              {' · '}
+              {monitored.length} location{monitored.length === 1 ? '' : 's'} monitored
+            </p>
           ) : (
             <p className="text-sm text-zinc-500 mt-1">
               Connect the client&apos;s Google account to monitor reviews and draft replies. Replies always need your approval.
@@ -105,6 +115,14 @@ export function ClientGbpCard({ clientId, connection, locations, notice }: Props
               Disconnect
             </button>
           </div>
+        ) : viaAgency ? (
+          <Link
+            href="/admin/reviews"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-zinc-200 text-zinc-700 text-sm font-medium rounded-xl hover:bg-zinc-50 shrink-0"
+          >
+            <ListChecks className="w-4 h-4" />
+            Change on Reviews page
+          </Link>
         ) : (
           <div className="flex flex-col sm:items-end gap-2 shrink-0">
             <button
@@ -170,7 +188,7 @@ export function ClientGbpCard({ clientId, connection, locations, notice }: Props
         </div>
       )}
 
-      {connection && monitored.length > 0 && (
+      {(connection || viaAgency) && monitored.length > 0 && (
         <ul className="divide-y divide-zinc-100">
           {monitored.map((location) => (
             <li key={location.id} className="px-6 py-4 flex items-center justify-between gap-4">

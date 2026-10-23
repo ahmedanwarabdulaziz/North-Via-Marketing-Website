@@ -3,7 +3,7 @@ import { ClientSwitcher } from '@/components/admin/ClientSwitcher';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { Edit3, ArrowLeft, Building2, User, Mail, Phone } from 'lucide-react';
-import { getGbpConnection, listClientLocations } from '@/lib/google-business';
+import { getAgencyConnection, getGbpConnection, listClientLocations } from '@/lib/google-business';
 import { ClientGbpCard } from '@/components/admin/ClientGbpCard';
 import { ReplyStyleCard } from '@/components/admin/ReplyStyleCard';
 import { getReplySettings, listReviewQueue } from '@/lib/review-engine';
@@ -45,9 +45,10 @@ export default async function ClientDetailPage({
     notFound();
   }
 
-  const [allClients, gbpConnection, gbpLocations, replySettings, websites, socialAccounts, metaConnections, socialStats, reviewQueue, adsCard, clientTasks, libraryItems] = await Promise.all([
+  const [allClients, gbpConnection, gbpAgency, gbpLocations, replySettings, websites, socialAccounts, metaConnections, socialStats, reviewQueue, adsCard, clientTasks, libraryItems] = await Promise.all([
     listClientProfiles().catch(() => []),
     getGbpConnection(id).catch(() => null),
+    getAgencyConnection().catch(() => null),
     listClientLocations(id).catch(() => []),
     getReplySettings(id),
     listClientWebsites(id).catch(() => []),
@@ -91,7 +92,9 @@ export default async function ClientDetailPage({
 
   // ---------- Status per area (tab dots and overview tiles) ----------
   const monitoredLocations = gbpLocations.filter((l) => l.linked);
-  const reviewsStatus: OverviewTile['status'] = !gbpConnection ? 'off' : gbpConnection.status === 'error' || !monitoredLocations.length ? 'warn' : 'ok';
+  // Reviews work with the client's own Google login or through the shared one on the Reviews page.
+  const gbpActive = Boolean(gbpConnection) || monitoredLocations.length > 0;
+  const reviewsStatus: OverviewTile['status'] = !gbpActive ? 'off' : gbpConnection?.status === 'error' || !monitoredLocations.length ? 'warn' : 'ok';
   const socialStatus: OverviewTile['status'] = !socialAccounts.length ? 'off' : socialAccounts.some((a) => a.lastError) ? 'warn' : 'ok';
   const adsStatus: OverviewTile['status'] = !adsCard.accounts.length ? 'off' : adsCard.connected ? 'ok' : 'warn';
   const enabledSites = websites.filter((w) => w.enabled);
@@ -131,8 +134,8 @@ export default async function ClientDetailPage({
       tab: 'reviews',
       title: 'Google Reviews',
       status: reviewsStatus,
-      value: !gbpConnection ? 'Not connected' : reviewQueue.length ? plural(reviewQueue.length, 'reply') + ' waiting' : 'All answered',
-      detail: !gbpConnection ? 'Connect the Business Profile to monitor reviews.' : `${plural(monitoredLocations.length, 'location')} monitored`,
+      value: !gbpActive ? 'Not connected' : reviewQueue.length ? plural(reviewQueue.length, 'reply') + ' waiting' : 'All answered',
+      detail: !gbpActive ? 'Connect the Business Profile to monitor reviews.' : `${plural(monitoredLocations.length, 'location')} monitored`,
     },
     {
       tab: 'social',
@@ -212,8 +215,9 @@ export default async function ClientDetailPage({
           }
           locations={gbpLocations}
           notice={gbp === 'connected' || gbp === 'error' ? gbp : undefined}
+          agencyEmail={gbpAgency?.accountEmail}
         />
-        {gbpConnection && <ReplyStyleCard initial={replySettings} />}
+        {(gbpConnection || gbpLocations.some((l) => l.linked)) && <ReplyStyleCard initial={replySettings} />}
       </>
     ),
     social: (

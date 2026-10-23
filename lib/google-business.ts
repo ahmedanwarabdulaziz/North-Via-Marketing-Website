@@ -3,10 +3,15 @@ import { SignJWT, jwtVerify } from 'jose';
 import { addDoc, deleteDocs, getDoc, getDocs, listDocs, setDoc, setDocs } from './data/store';
 import { decryptString, encryptString } from './encryption';
 import { googleRedirectUri } from './google-oauth';
-import type { GbpConnection, GbpLocation, GbpReview } from '@/types/database';
+import type { GbpConnection, GbpLocation, GbpReview, GoogleConnection } from '@/types/database';
 
 export const GBP_CONNECTIONS = 'gbp_connections' as const;
 export const GBP_LOCATIONS = 'gbp_locations' as const;
+
+// One Google login for the agency, connected on the Reviews page. Clients without a login of
+// their own use it. Stored in google_connections next to the shared Ads and Analytics logins.
+export const AGENCY_CONNECT_ID = '_agency'; // the `cid` of its connect token
+const AGENCY_CONNECTION_DOC = 'gbp_agency_connection';
 
 const GBP_SCOPES = [
   'https://www.googleapis.com/auth/business.manage',
@@ -81,6 +86,21 @@ export async function completeGbpConnection(code: string, clientId: string, via:
   }
 
   const now = new Date().toISOString();
+  if (clientId === AGENCY_CONNECT_ID) {
+    await setDoc('google_connections', AGENCY_CONNECTION_DOC, {
+      provider: 'google',
+      accountEmail: googleEmail,
+      encryptedAccessToken: '',
+      encryptedRefreshToken: encryptString(tokens.refresh_token),
+      tokenExpiry: 0,
+      scopes,
+      createdAt: (await getAgencyConnection())?.createdAt || now,
+      updatedAt: now,
+    } satisfies GoogleConnection);
+    await logAudit('gbp.agency_connected', { googleEmail });
+    return;
+  }
+
   const existing = await getGbpConnection(clientId);
 
   const connection: GbpConnection = {
@@ -102,12 +122,20 @@ export async function getGbpConnection(clientId: string) {
   return getDoc<GbpConnection>(GBP_CONNECTIONS, clientId);
 }
 
-async function getClientAuth(clientId: string) {
-  const connection = await getGbpConnection(clientId);
-  if (!connection) throw new Error('This client has not connected a Google Business Profile.');
+export async function getAgencyConnection() {
+  return getDoc<GoogleConnection>('google_connections', AGENCY_CONNECTION_DOC);
+}
+
+/** The client's own login when it has one, else the agency's. `null` asks for the agency's. */
+async function getClientAuth(clientId: string | null) {
+  const connection = clientId ? await getGbpConnection(clientId) : null;
+  const encrypted = connection?.encryptedRefreshToken || (await getAgencyConnection())?.encryptedRefreshToken;
+  if (!encrypted) {
+    throw new Error(clientId ? 'This client has not connected a Google Business Profile.' : 'Connect the Google account on the Reviews page first.');
+  }
 
   const oauth2Client = getOAuth2Client();
-  oauth2Client.setCredentials({ refresh_token: decryptString(connection.encryptedRefreshToken) });
+  oauth2Client.setCredentials({ refresh_token: decryptString(encrypted) });
   return { auth: oauth2Client, connection };
 }
 
@@ -136,19 +164,20 @@ function describeGoogleError(error: unknown) {
   return message;
 }
 
-async function withClientAuth<T>(clientId: string, fn: (auth: ReturnType<typeof getOAuth2Client>) => Promise<T>) {
+async function withClientAuth<T>(clientId: string | null, fn: (auth: ReturnType<typeof getOAuth2Client>) => Promise<T>) {
   const { auth, connection } = await getClientAuth(clientId);
   try {
     const result = await fn(auth);
     // A call that works proves the login is fine again, so drop an old error badge.
-    if (connection.status === 'error') {
-      await setDoc(GBP_CONNECTIONS, clientId, { status: 'connected', lastError: null, updatedAt: new Date().toISOString() }, { merge: true });
+    if (connection?.status === 'error') {
+      await setDoc(GBP_CONNECTIONS, connection.id, { status: 'connected', lastError: null, updatedAt: new Date().toISOString() }, { merge: true });
     }
     return result;
   } catch (error) {
     const message = describeGoogleError(error);
-    if (message.includes('reconnect')) await markConnectionError(clientId, message);
-    throw new Error(message);
+    // The agency login has no badge; its errors show in the review check instead.
+    if (connection && message.includes('reconnect')) await markConnectionError(connection.id, message);
+    throw new Error(clientId ? message : message.replace('Ask the client to reconnect.', 'Reconnect the Google account on the Reviews page.'));
   }
 }
 
@@ -174,8 +203,8 @@ interface AvailableLocation {
   address: string;
 }
 
-/** Every location the client's Google account can manage. Reads from Google only; saves nothing. */
-async function fetchAvailableLocations(clientId: string) {
+/** Every location the client's (or with `null` the agency's) Google account can manage. Reads from Google only; saves nothing. */
+async function fetchAvailableLocations(clientId: string | null) {
   return withClientAuth(clientId, async (auth) => {
     const accountNames: string[] = [];
     let pageToken: string | undefined;
@@ -266,6 +295,70 @@ export async function saveClientLocationSelection(clientId: string, selectedIds:
 
   await setDocs(GBP_LOCATIONS, chosen);
   await setDocs(GBP_LOCATIONS, dropped.map((id) => ({ id, data: { linked: false, updatedAt: now } })), { merge: true });
+  return chosen.length;
+}
+
+export interface AgencyLocationChoice extends AvailableLocation {
+  clientId: string | null; // the client it's monitored for, if any
+}
+
+/** Every location the agency's Google account manages, with the client each is linked to. */
+export async function previewAgencyLocations(): Promise<AgencyLocationChoice[]> {
+  const available = await fetchAvailableLocations(null);
+  const storedById = await getDocs<GbpLocation>(GBP_LOCATIONS, available.map((l) => l.locationId));
+  return available.map((location) => {
+    const stored = storedById.get(location.locationId);
+    return { ...location, clientId: stored?.linked ? stored.clientId : null };
+  });
+}
+
+/**
+ * Saves the Reviews page's links: locationId → client to monitor it for, or null to stop.
+ * Locations left out of `links` are not touched. Details are re-read from Google.
+ */
+export async function saveAgencyLocationLinks(links: Record<string, string | null>) {
+  const choices = await previewAgencyLocations();
+  const now = new Date().toISOString();
+  const chosen: Array<{ id: string; data: GbpLocation }> = [];
+  const dropped: string[] = [];
+
+  for (const choice of choices) {
+    if (!(choice.locationId in links)) continue;
+    const clientId = links[choice.locationId];
+    if (clientId) {
+      chosen.push({
+        id: choice.locationId,
+        data: {
+          clientId,
+          accountName: choice.accountName,
+          locationName: choice.locationName,
+          title: choice.title,
+          address: choice.address,
+          linked: true,
+          replyMode: 'approval_required',
+          lastSyncedAt: now,
+          updatedAt: now,
+        },
+      });
+    } else if (choice.clientId) {
+      dropped.push(choice.locationId);
+    }
+  }
+
+  await setDocs(GBP_LOCATIONS, chosen);
+  await setDocs(GBP_LOCATIONS, dropped.map((id) => ({ id, data: { linked: false, updatedAt: now } })), { merge: true });
+
+  // A client's own login would win over the agency's, so drop it once the agency's account
+  // covers every location monitored for that client. Not revoked: it's often the same Google account.
+  const reachable = new Set(choices.map((c) => c.locationId));
+  for (const clientId of new Set(chosen.map((c) => c.data.clientId))) {
+    if (!(await getGbpConnection(clientId))) continue;
+    const monitored = (await listClientLocations(clientId)).filter((l) => l.linked);
+    if (monitored.every((l) => reachable.has(l.id))) {
+      await deleteDocs(GBP_CONNECTIONS, { clientId });
+      await logAudit('gbp.client_moved_to_agency_login', { clientId });
+    }
+  }
   return chosen.length;
 }
 
@@ -403,8 +496,10 @@ export async function disconnectClient(clientId: string) {
   const connection = await getGbpConnection(clientId);
   // Revoking ends the whole Google grant for that account, which would also log out
   // every other client connected with the same Google account.
-  const shared = connection && (await listDocs<GbpConnection>(GBP_CONNECTIONS, { where: { googleEmail: connection.googleEmail } }))
-    .some((other) => other.id !== clientId);
+  const shared =
+    connection &&
+    ((await getAgencyConnection())?.accountEmail === connection.googleEmail ||
+      (await listDocs<GbpConnection>(GBP_CONNECTIONS, { where: { googleEmail: connection.googleEmail } })).some((other) => other.id !== clientId));
   if (connection && !shared) {
     try {
       await getOAuth2Client().revokeToken(decryptString(connection.encryptedRefreshToken));

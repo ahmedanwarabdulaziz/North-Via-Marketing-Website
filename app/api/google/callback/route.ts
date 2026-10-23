@@ -3,7 +3,7 @@ import { google } from 'googleapis';
 import { setDoc } from '@/lib/data/store';
 import { encryptString } from '@/lib/encryption';
 import { GoogleConnection } from '@/types/database';
-import { completeGbpConnection, verifyConnectToken } from '@/lib/google-business';
+import { AGENCY_CONNECT_ID, completeGbpConnection, verifyConnectToken } from '@/lib/google-business';
 import { isAdminAuthenticated } from '@/lib/admin-auth';
 import { googleRedirectUri } from '@/lib/google-oauth';
 
@@ -17,7 +17,9 @@ async function handleBusinessProfileCallback(request: Request, code: string | nu
 
   const { clientId, via } = verified;
   const doneUrl = (status: 'connected' | 'error') =>
-    via === 'admin'
+    clientId === AGENCY_CONNECT_ID
+      ? new URL(`/admin/reviews?gbp=${status}`, request.url)
+      : via === 'admin'
       ? new URL(`/admin/clients/${clientId}?gbp=${status}`, request.url)
       : new URL(`/connect/google?status=${status === 'connected' ? 'success' : 'error'}`, request.url);
 

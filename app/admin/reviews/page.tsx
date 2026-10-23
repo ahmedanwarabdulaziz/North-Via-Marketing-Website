@@ -1,5 +1,6 @@
 import { ReviewsInbox, type InboxReview } from '@/components/admin/ReviewsInbox';
-import { listLinkedLocations } from '@/lib/google-business';
+import { getAgencyConnection, listLinkedLocations } from '@/lib/google-business';
+import { AgencyGbpCard } from '@/components/admin/AgencyGbpCard';
 import { getLatestSyncSummary, listReviewQueue } from '@/lib/review-engine';
 import { listClientProfiles } from '@/lib/admin-ops';
 import { DigestScheduleCard } from '@/components/admin/DigestScheduleCard';
@@ -8,13 +9,15 @@ import { Star } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
 
-export default async function AdminReviewsPage() {
-  const [queue, lastSync, clients, locations, schedule] = await Promise.all([
+export default async function AdminReviewsPage({ searchParams }: { searchParams: Promise<{ gbp?: string }> }) {
+  const { gbp } = await searchParams;
+  const [queue, lastSync, clients, locations, schedule, agency] = await Promise.all([
     listReviewQueue(),
     getLatestSyncSummary(),
     listClientProfiles(),
     listLinkedLocations(),
     getDigestSchedule(),
+    getAgencyConnection().catch(() => null),
   ]);
   const clientNames = new Map(clients.map((c) => [c.id, c.brandName]));
   const reviews: InboxReview[] = queue.map((r) => ({ ...r, clientName: clientNames.get(r.clientId) || 'Unknown client' }));
@@ -35,6 +38,14 @@ export default async function AdminReviewsPage() {
           New reviews are checked automatically and drafted by AI in each client&apos;s style. 5★ replies can be approved in bulk;
           4★ and below are approved one by one.
         </p>
+      </div>
+
+      <div className="mb-6">
+        <AgencyGbpCard
+          connection={agency ? { googleEmail: agency.accountEmail } : null}
+          clients={clients.map((c) => ({ id: c.id, name: c.brandName || 'Unnamed client' })).sort((a, b) => a.name.localeCompare(b.name))}
+          notice={gbp === 'connected' || gbp === 'error' ? gbp : undefined}
+        />
       </div>
 
       <div className="mb-6">
