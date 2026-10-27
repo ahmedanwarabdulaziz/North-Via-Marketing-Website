@@ -23,41 +23,49 @@ async function clientsWithMetaAds() {
   return clients.sort((a, b) => a.brandName.localeCompare(b.brandName));
 }
 
+export type MetaAdsPeriod = 'today' | 7 | 30;
+
 /**
- * Last 7 (or 30) days vs the same length before, per client with a linked ad account.
+ * Today so far, or the last 7 (or 30) full days vs the same length before, per client
+ * with a linked ad account. Today has no comparison: a part day against a full one misleads.
  * Telegram allows 4096 characters per message, so with many clients the ad lists get shorter.
  */
-export async function metaAdsScreenText(days: 7 | 30 = 7) {
+export async function metaAdsScreenText(period: MetaAdsPeriod = 'today') {
   for (const adLimit of [5, 3, 1]) {
-    const text = await metaAdsScreenTextWith(adLimit, days);
+    const text = await metaAdsScreenTextWith(adLimit, period);
     if (text.length <= 3900 || adLimit === 1) return text.slice(0, 4000);
   }
   return '';
 }
 
-async function metaAdsScreenTextWith(adLimit: number, days: 7 | 30) {
+async function metaAdsScreenTextWith(adLimit: number, period: MetaAdsPeriod) {
   const clients = await clientsWithMetaAds();
-  const lines = ['📘 <b>Facebook Ads</b>', `<i>Last ${days} days vs the ${days} before</i>`, ''];
+  const today = period === 'today';
+  const days = today ? 1 : period;
+  const lines = ['📘 <b>Facebook Ads</b>', `<i>${today ? 'Today so far' : `Last ${days} days vs the ${days} before`}</i>`, ''];
   if (!clients.length) {
     lines.push('No Facebook ad accounts are linked to clients yet.', 'Link them on each client page (Facebook Ads tab → Choose ad accounts).');
     return lines.join('\n');
   }
   for (const c of clients) {
     try {
-      const [cur, prev] = await Promise.all([fetchClientMetaAds(c.id, day(days), day(1)), fetchClientMetaAds(c.id, day(days * 2), day(days + 1))]);
-      if (!cur || !prev) continue;
+      const [cur, prev] = today
+        ? [await fetchClientMetaAds(c.id, day(0), day(0)), null]
+        : await Promise.all([fetchClientMetaAds(c.id, day(days), day(1)), fetchClientMetaAds(c.id, day(days * 2), day(days + 1))]);
+      if (!cur || (!today && !prev)) continue;
       const t = cur.totals;
+      const p = prev?.totals || t; // today: no arrows
       const ran = cur.ads.filter((a) => a.impressions > 0);
       lines.push(
         `<b>${h(c.brandName)}</b>`,
-        `👀 ${t.reach.toLocaleString('en-CA')} reach${arrow(t.reach, prev.totals.reach)} · 👆 ${t.clicks} clicks${arrow(t.clicks, prev.totals.clicks)}`,
-        `💰 ${money(t.spend, cur.currency)}${arrow(t.spend, prev.totals.spend)}${t.clicks ? ` · ${money(t.spend / t.clicks, cur.currency)} per click` : ''}${t.linkClicks ? ` · 🔗 ${t.linkClicks} link clicks` : ''}`,
+        `👀 ${t.reach.toLocaleString('en-CA')} reach${today ? '' : arrow(t.reach, p.reach)} · 👆 ${t.clicks} clicks${today ? '' : arrow(t.clicks, p.clicks)}`,
+        `💰 ${money(t.spend, cur.currency)}${today ? '' : arrow(t.spend, p.spend)}${t.clicks ? ` · ${money(t.spend / t.clicks, cur.currency)} per click` : ''}${t.linkClicks ? ` · 🔗 ${t.linkClicks} link clicks` : ''}`,
         ...(ran.length
           ? [
               `📣 ${ran.length > adLimit ? `Top ${adLimit} of ${ran.length} ads` : ran.length === 1 ? 'Ad' : 'Ads'} (clicks):`,
               ...ran.slice(0, adLimit).map((a, i) => `${i + 1}. ${h(a.name)} — ${a.clicks}`),
             ]
-          : ['No ads ran in this period.']),
+          : [today ? 'No ads have run yet today.' : 'No ads ran in this period.']),
         ''
       );
     } catch (error) {

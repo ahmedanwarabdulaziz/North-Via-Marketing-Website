@@ -12,7 +12,7 @@ import { whatsAppShareLink } from './whatsapp-share';
 import { listClientProfiles } from './admin-ops';
 import { listDocs } from './data/store';
 import { adsScreenText } from './ads-telegram';
-import { metaAdsScreenText } from './meta-ads-telegram';
+import { metaAdsScreenText, type MetaAdsPeriod } from './meta-ads-telegram';
 import { analyticsScreenText } from './analytics-telegram';
 import { taskCounts, taskListScreen, tasksHomeScreen } from './task-telegram';
 import { aiUsageScreen, checkGroqNow } from './ai-usage-telegram';
@@ -292,10 +292,25 @@ ${note}` : text,
   };
 }
 
-/** Google Ads ('ad'), Facebook Ads ('fa') or website analytics ('an': 7 days saved daily at 10 AM, 30 read live). */
-async function periodScreen(screen: 'ad' | 'fa' | 'an', days: 7 | 30): Promise<OutgoingMessage> {
+/** Facebook Ads: today so far (the default, so new clicks show the same day), or 7 / 30 full days. */
+async function metaAdsScreen(period: MetaAdsPeriod): Promise<OutgoingMessage> {
   return {
-    text: screen === 'ad' ? await adsScreenText(days) : screen === 'fa' ? await metaAdsScreenText(days) : await analyticsScreenText(days),
+    text: await metaAdsScreenText(period),
+    buttons: [
+      [
+        { text: `${period === 'today' ? '✓ ' : ''}⏱ Today`, callback_data: 'm:fa:today' },
+        { text: `${period === 7 ? '✓ ' : ''}📅 7 days`, callback_data: 'm:fa:7' },
+        { text: `${period === 30 ? '✓ ' : ''}🗓 30 days`, callback_data: 'm:fa:30' },
+      ],
+      [{ text: '⬅️ Back to menu', callback_data: 'm:home' }],
+    ],
+  };
+}
+
+/** Google Ads ('ad') or website analytics ('an': 7 days saved daily at 10 AM, 30 read live). */
+async function periodScreen(screen: 'ad' | 'an', days: 7 | 30): Promise<OutgoingMessage> {
+  return {
+    text: screen === 'ad' ? await adsScreenText(days) : await analyticsScreenText(days),
     buttons: [
       [
         { text: `${days === 7 ? '✓ ' : ''}📅 7 days`, callback_data: `m:${screen}:7` },
@@ -318,7 +333,7 @@ const COMMAND_SCREENS: Record<string, () => Promise<OutgoingMessage>> = {
   '/post': postLocationsScreen,
   '/social': () => socialScreen(),
   '/ads': () => periodScreen('ad', 7),
-  '/fbads': () => periodScreen('fa', 7),
+  '/fbads': () => metaAdsScreen('today'),
   '/analytics': () => periodScreen('an', 7),
   '/reports': reportsScreen,
   '/websites': () => websitesScreen(),
@@ -433,8 +448,16 @@ export async function handleMenuCallback(query: { id: string; data?: string; mes
       return answerCallback(query.id);
     }
 
-    if (screen === 'ad' || screen === 'fa' || screen === 'an') {
-      // m:ad / m:fa / m:an = last 7 days, :30 = last 30 days; the open period is marked ✓.
+    if (screen === 'fa') {
+      // m:fa / m:fa:today = today so far, :7 / :30 = last 7 or 30 days.
+      const period = action === '7' ? 7 : action === '30' ? 30 : 'today';
+      await answerCallback(query.id, period === 'today' ? 'Loading today…' : `Loading the last ${period} days…`);
+      await editMessage(chatId, messageId, await metaAdsScreen(period));
+      return;
+    }
+
+    if (screen === 'ad' || screen === 'an') {
+      // m:ad / m:an = last 7 days, :30 = last 30 days; the open period is marked ✓.
       const days = action === '30' ? 30 : 7;
       await answerCallback(query.id, `Loading the last ${days} days…`);
       await editMessage(chatId, messageId, await periodScreen(screen, days));
