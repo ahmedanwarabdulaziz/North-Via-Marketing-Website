@@ -14,6 +14,9 @@ import { getMetaConnections, listClientAccounts, metaConfigured } from '@/lib/me
 import { socialOverview } from '@/lib/social-sync';
 import { ClientAdsCard } from '@/components/admin/ClientAdsCard';
 import { clientAdsCard } from '@/lib/ads-metrics';
+import { ClientMetaAdsCard } from '@/components/admin/ClientMetaAdsCard';
+import { clientMetaAdAccounts, describeMetaAdsError, fetchClientMetaAds, metaAdsConnected } from '@/lib/meta-ads';
+import { cairoDay } from '@/lib/social-sync';
 import { ClientTabs, type ClientTab, type OverviewTile } from '@/components/admin/ClientTabs';
 import { ClientAnalyticsCard } from '@/components/admin/ClientAnalyticsCard';
 import { analyticsConnected, describeGaError, getGa4Summary, refreshGa4Summary } from '@/lib/ga4';
@@ -61,6 +64,18 @@ export default async function ClientDetailPage({
     listKnowledge({ clientId: id, limit: 100 }).catch(() => []),
   ]);
 
+  // ---------- Facebook Ads (last 7 days including today, read live) ----------
+  const [fbAdsConnected, fbAdAccounts] = await Promise.all([metaAdsConnected().catch(() => false), clientMetaAdAccounts(id).catch(() => [])]);
+  let fbAds = null;
+  let fbAdsError: string | undefined;
+  if (fbAdAccounts.length) {
+    try {
+      fbAds = await fetchClientMetaAds(id, cairoDay(new Date(Date.now() - 6 * 86_400_000)), cairoDay());
+    } catch (error) {
+      fbAdsError = describeMetaAdsError(error);
+    }
+  }
+
   // ---------- Website analytics (GA4 last 7 days vs the 7 before, latest Clarity day) ----------
   const [gaConnected, claritySnapshots] = await Promise.all([analyticsConnected().catch(() => false), listClaritySnapshots(id).catch(() => [])]);
   // GA4 is refreshed once a day at 10 AM Cairo; fetched live only when there's no
@@ -97,6 +112,7 @@ export default async function ClientDetailPage({
   const reviewsStatus: OverviewTile['status'] = !gbpActive ? 'off' : gbpConnection?.status === 'error' || !monitoredLocations.length ? 'warn' : 'ok';
   const socialStatus: OverviewTile['status'] = !socialAccounts.length ? 'off' : socialAccounts.some((a) => a.lastError) ? 'warn' : 'ok';
   const adsStatus: OverviewTile['status'] = !adsCard.accounts.length ? 'off' : adsCard.connected ? 'ok' : 'warn';
+  const fbAdsStatus: OverviewTile['status'] = !fbAdAccounts.length ? 'off' : fbAdsError || !fbAdsConnected ? 'warn' : 'ok';
   const enabledSites = websites.filter((w) => w.enabled);
   const downSites = enabledSites.filter((w) => w.status === 'down');
   const websitesStatus: OverviewTile['status'] = !enabledSites.length ? 'off' : downSites.length ? 'warn' : 'ok';
@@ -116,6 +132,7 @@ export default async function ClientDetailPage({
     { id: 'reviews', label: 'Google Reviews', status: reviewsStatus },
     { id: 'social', label: 'Facebook & Instagram', status: socialStatus },
     { id: 'ads', label: 'Google Ads', status: adsStatus },
+    { id: 'fbads', label: 'Facebook Ads', status: fbAdsStatus },
     { id: 'websites', label: 'Websites', status: websitesStatus },
     { id: 'analytics', label: 'Analytics', status: analyticsStatus },
     { id: 'search', label: 'Search Console', status: searchStatus },
@@ -158,6 +175,15 @@ export default async function ClientDetailPage({
         : !adsCard.connected
           ? 'Google Ads needs reconnecting.'
           : adsCard.accounts.map((a) => a.name).join(', '),
+    },
+    {
+      tab: 'fbads',
+      title: 'Facebook Ads',
+      status: fbAdsStatus,
+      value: fbAds ? `${fbAds.totals.clicks.toLocaleString('en-CA')} clicks` : fbAdAccounts.length ? 'Linked' : 'Not linked',
+      detail: !fbAdAccounts.length
+        ? 'Link the Facebook ad account to track each ad’s reach and clicks.'
+        : fbAdsError || (fbAds ? `7 days · ${fbAds.totals.reach.toLocaleString('en-CA')} reach · ${plural(fbAds.ads.length, 'ad')}` : 'Facebook needs reconnecting.'),
     },
     {
       tab: 'websites',
@@ -231,6 +257,16 @@ export default async function ClientDetailPage({
       />
     ),
     ads: <ClientAdsCard clientId={id} connected={adsCard.connected} accounts={adsCard.accounts} notice={ads === 'connected' ? 'connected' : ads ? 'error' : undefined} />,
+    fbads: (
+      <ClientMetaAdsCard
+        clientId={id}
+        connected={fbAdsConnected}
+        accounts={fbAdAccounts.map((a) => ({ id: a.id, name: a.name, currency: a.currency }))}
+        summary={fbAds ? { currency: fbAds.currency, totals: fbAds.totals, ads: fbAds.ads } : null}
+        error={fbAdsError}
+        clientNames={Object.fromEntries(allClients.filter((c) => c.id).map((c) => [c.id!, c.brandName]))}
+      />
+    ),
     websites: <WebsitesCard clientId={id} initial={websites} suggestedUrl={client.websiteUrl || undefined} />,
     analytics: (
       <ClientAnalyticsCard

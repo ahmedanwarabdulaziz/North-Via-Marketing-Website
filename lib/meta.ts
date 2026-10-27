@@ -27,6 +27,7 @@ export const META_SCOPES = [
   'instagram_manage_comments', // reply to and hide Instagram comments
   'instagram_manage_insights',
   'business_management', // Pages owned through a business portfolio
+  'ads_read', // Facebook Ads numbers on the client page and in Telegram
 ];
 
 const STATE_PURPOSE = 'meta_connect';

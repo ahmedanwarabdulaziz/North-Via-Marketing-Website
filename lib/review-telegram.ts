@@ -26,6 +26,7 @@ import {
 import { whatsAppShareLink } from './whatsapp-share';
 import { websiteDigestLine } from './website-monitor';
 import { adsDigestLines } from './ads-telegram';
+import { metaAdsDigestLines } from './meta-ads-telegram';
 import type { GbpStoredReview } from '@/types/database';
 
 // Telegram review approvals.
@@ -246,11 +247,13 @@ export async function sendReviewDigest(options: {
     stillDrafting > 0 ? `✍️ ${stillDrafting} more are still being drafted — they'll be sent here once ready.` : '',
     earlier > 0 ? `${earlier} sent earlier still waiting — send /reviews to see them again.` : '',
   ].filter(Boolean).join('\n');
-  // Scheduled digests and "Check now" also carry the website and Google Ads status.
+  // Scheduled digests and "Check now" also carry the website, Google Ads and Facebook Ads status.
   const scheduled = options.summary && !options.followUp;
   const websiteLine = scheduled ? await websiteDigestLine().catch(() => '') : '';
-  const adsLines = scheduled ? await adsDigestLines().catch(() => []) : [];
-  const extras = [websiteLine, adsLines.join('\n')].filter(Boolean).join('\n\n');
+  const [adsLines, metaAdsLines] = scheduled
+    ? await Promise.all([adsDigestLines().catch(() => []), metaAdsDigestLines().catch(() => [])])
+    : [[], []];
+  const extras = [websiteLine, adsLines.join('\n'), metaAdsLines.join('\n')].filter(Boolean).join('\n\n');
   messages.push({ text: extras ? `${header}\n\n${extras}` : header, buttons: [[{ text: 'Open reviews panel', url: PANEL_URL }]] });
 
   const byClient = new Map<string, Review[]>();
