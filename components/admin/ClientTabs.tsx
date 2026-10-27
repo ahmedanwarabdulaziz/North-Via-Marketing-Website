@@ -43,10 +43,12 @@ export function ClientTabs({ tabs, panels, overview, initial }: { tabs: ClientTa
   return (
     <div>
       <div className="sticky top-0 z-10 -mx-6 md:-mx-8 px-6 md:px-8 bg-zinc-50/90 backdrop-blur border-b border-zinc-200 mb-6">
-        <nav className="flex gap-1 overflow-x-auto no-scrollbar" aria-label="Client sections">
+        {/* Wider screens wrap onto a second row so every tab shows; phones swipe, with the open tab scrolled into view. */}
+        <nav className="flex gap-x-1 overflow-x-auto no-scrollbar md:flex-wrap md:overflow-visible" aria-label="Client sections">
           {tabs.map((t) => (
             <button
               key={t.id}
+              ref={active === t.id ? (el) => el?.scrollIntoView({ block: 'nearest', inline: 'nearest' }) : undefined}
               type="button"
               onClick={() => open(t.id)}
               className={`shrink-0 inline-flex items-center gap-2 px-3.5 py-3 text-sm font-medium border-b-2 -mb-px transition-colors ${
