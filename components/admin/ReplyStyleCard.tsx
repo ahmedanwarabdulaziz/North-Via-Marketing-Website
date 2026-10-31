@@ -46,9 +46,9 @@ export function ReplyStyleCard({ initial }: { initial: GbpReplySettings }) {
       <div className="p-6 border-b border-zinc-100 bg-zinc-50/50">
         <h3 className="font-semibold text-zinc-900 flex items-center gap-2">
           <MessageSquare className="w-5 h-5 text-blue-500" />
-          Review reply style
+          Reply style
         </h3>
-        <p className="text-sm text-zinc-500 mt-1">How the AI drafts replies for this client. Every reply still needs approval before posting.</p>
+        <p className="text-sm text-zinc-500 mt-1">How the AI drafts replies for this client: Google reviews and Facebook & Instagram comments (comments always get short replies). Every reply still needs approval before posting.</p>
       </div>
 
       <div className="p-6 space-y-6">

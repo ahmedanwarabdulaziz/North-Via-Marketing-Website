@@ -243,18 +243,27 @@ export default async function ClientDetailPage({
           notice={gbp === 'connected' || gbp === 'error' ? gbp : undefined}
           agencyEmail={gbpAgency?.accountEmail}
         />
-        {(gbpConnection || gbpLocations.some((l) => l.linked)) && <ReplyStyleCard initial={replySettings} />}
+        {gbpActive && <ReplyStyleCard initial={replySettings} />}
       </>
     ),
     social: (
-      <ClientSocialCard
-        clientId={id}
-        configured={metaConfigured()}
-        adminConnected={metaConnections.some((c) => c.id === 'admin')}
-        accounts={socialAccounts.map((a) => ({ id: a.id, pageName: a.pageName, igUsername: a.igUsername, lastError: a.lastError }))}
-        stats={socialStats ? { fb: socialStats.fb, ig: socialStats.ig, latest: socialStats.latest, waiting: socialStats.waiting } : null}
-        notice={meta === 'connected' || meta === 'error' ? meta : undefined}
-      />
+      <>
+        <ClientSocialCard
+          clientId={id}
+          configured={metaConfigured()}
+          adminConnected={metaConnections.some((c) => c.id === 'admin')}
+          accounts={socialAccounts.map((a) => ({ id: a.id, pageName: a.pageName, igUsername: a.igUsername, lastError: a.lastError }))}
+          stats={socialStats ? { fb: socialStats.fb, ig: socialStats.ig, latest: socialStats.latest, waiting: socialStats.waiting } : null}
+          notice={meta === 'connected' || meta === 'error' ? meta : undefined}
+        />
+        {/* One reply style covers reviews and comments; it lives on the Reviews tab when Google is linked. */}
+        {socialAccounts.length > 0 &&
+          (gbpActive ? (
+            <p className="text-sm text-zinc-500 px-1">Comment replies follow this client&apos;s reply style, set on the Google reviews tab.</p>
+          ) : (
+            <ReplyStyleCard initial={replySettings} />
+          ))}
+      </>
     ),
     ads: <ClientAdsCard clientId={id} connected={adsCard.connected} accounts={adsCard.accounts} notice={ads === 'connected' ? 'connected' : ads ? 'error' : undefined} />,
     fbads: (
