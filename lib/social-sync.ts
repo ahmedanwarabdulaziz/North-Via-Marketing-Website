@@ -247,6 +247,21 @@ export async function syncSocial(options: { timeBudgetMs?: number } = {}): Promi
   const summary: SocialSyncSummary = { accounts: accounts.length, newComments: 0, assessed: 0, deferred: 0, risky: [], errors: [] };
   const now = new Date().toISOString();
 
+  // Reading the pages can take most of the budget, so comments already waiting are
+  // assessed while it runs; new ones join once the reading is done.
+  const readPages = readAccounts(accounts, now, summary);
+  const done = new Set<string>();
+  const backlog = (await listDocs<SocialComment>(COMMENTS, { where: { status: 'needs_draft' } })).filter((c) => !c.riskLevel);
+  const first = await assessQueue(backlog, deadline, done);
+  const fresh = (await readPages).filter((c) => !done.has(c.id));
+  const second = first.stopped ? { assessed: 0, risky: [] as StoredComment[] } : await assessQueue(fresh, deadline, done);
+  summary.assessed = first.assessed + second.assessed;
+  summary.deferred = backlog.length + fresh.length - summary.assessed;
+  summary.risky = [...first.risky, ...second.risky];
+  return summary;
+}
+
+async function readAccounts(accounts: Account[], now: string, summary: SocialSyncSummary) {
   const fresh: StoredComment[] = [];
   for (const account of accounts) {
     try {
@@ -286,26 +301,20 @@ export async function syncSocial(options: { timeBudgetMs?: number } = {}): Promi
       await markAccountError(account.id, message).catch(() => undefined);
     }
   }
-
-  // Older comments still waiting for an assessment go after the new ones.
-  const backlog = (await listDocs<SocialComment>(COMMENTS, { where: { status: 'needs_draft' } }))
-    .filter((c) => !c.riskLevel && !fresh.some((f) => f.id === c.id));
-  const queue = [...fresh, ...backlog];
-  const result = await assessQueue(queue, deadline);
-  summary.assessed = result.assessed;
-  summary.deferred = queue.length - result.assessed;
-  summary.risky = result.risky;
-  return summary;
+  return fresh;
 }
 
-async function assessQueue(queue: StoredComment[], deadline: number) {
+/** Assesses comments until the budget runs out; `done` holds the ids handled this run. */
+async function assessQueue(queue: StoredComment[], deadline: number, done: Set<string>) {
   const settingsCache = new Map<string, GbpReplySettings>();
   const names = new Map<string, string>();
   const risky: StoredComment[] = [];
   let assessed = 0;
 
   for (const comment of queue) {
-    if (assessed >= MAX_AI_PER_RUN || Date.now() + 12_000 > deadline) break;
+    if (done.size >= MAX_AI_PER_RUN || Date.now() + 12_000 > deadline) return { assessed, risky, stopped: true };
+    if (done.has(comment.id)) continue;
+    done.add(comment.id);
     if (!settingsCache.has(comment.clientId)) {
       settingsCache.set(comment.clientId, await getReplySettings(comment.clientId));
       const client = await getDoc<{ brandName?: string }>('clients', comment.clientId);
@@ -313,6 +322,9 @@ async function assessQueue(queue: StoredComment[], deadline: number) {
     }
     try {
       const a = await assessComment(settingsCache.get(comment.clientId)!, names.get(comment.clientId)!, comment);
+      // The page reading runs alongside and may have found it answered or hidden meanwhile.
+      const latest = await getDoc<SocialComment>(COMMENTS, comment.id);
+      if (latest && !isPendingComment(latest)) continue;
       const now = new Date().toISOString();
       const update = {
         riskLevel: a.risk,
@@ -323,6 +335,8 @@ async function assessQueue(queue: StoredComment[], deadline: number) {
         draftError: null,
         // Nothing to say and nothing risky (an emoji, a friend tag): no action needed.
         status: a.needsReply && a.reply ? 'draft_ready' : a.risk === 'none' ? 'skipped' : 'needs_draft',
+        // A card already sent without a draft goes out again with one.
+        ...(a.needsReply && a.reply && comment.telegramSentAt ? { telegramSentAt: null } : {}),
         updatedAt: now,
       };
       await updateDoc(COMMENTS, comment.id, update);
@@ -339,15 +353,15 @@ async function assessQueue(queue: StoredComment[], deadline: number) {
       }
     } catch (error) {
       await updateDoc(COMMENTS, comment.id, { draftError: error instanceof Error ? error.message.slice(0, 300) : String(error), updatedAt: new Date().toISOString() });
-      if (error instanceof AiBusyError) break;
+      if (error instanceof AiBusyError) return { assessed, risky, stopped: true };
     }
   }
-  return { assessed, risky };
+  return { assessed, risky, stopped: false };
 }
 
-// ---------- Queue and actions ----------
-
 const isPendingComment = (c: SocialComment) => c.status === 'draft_ready' || c.status === 'needs_draft';
+
+// ---------- Queue and actions ----------
 
 export async function listCommentQueue() {
   const items = await listDocs<SocialComment>(COMMENTS, { where: { status: ['draft_ready', 'needs_draft'] } });
