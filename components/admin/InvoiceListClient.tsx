@@ -201,9 +201,12 @@ export function InvoiceListClient({ invoices: initialInvoices }: { invoices: Adm
     return { invoiced, collected, outstanding, openCount, count: items.length };
   };
 
-  // Issue dates are stored as YYYY-MM-DD; read the month from the string so a
-  // UTC-midnight date doesn't slip into the previous month locally.
-  const monthKeyOf = (inv: AdminInvoiceItem) => (inv.issueDate || inv.createdAt || '').slice(0, 7) || 'unknown';
+  // An invoice belongs to the month its billing period starts in. Dates are
+  // stored as YYYY-MM-DD; read the month from the string so a UTC-midnight
+  // date doesn't slip into the previous month locally.
+  const periodDateOf = (inv: AdminInvoiceItem) =>
+    inv.billingPeriodFrom || (inv.serviceMonthKey ? `${inv.serviceMonthKey}-01` : '') || inv.issueDate || inv.createdAt || '';
+  const monthKeyOf = (inv: AdminInvoiceItem) => periodDateOf(inv).slice(0, 7) || 'unknown';
   const monthLabel = (key: string, short = false) => {
     if (key === 'unknown') return 'No date';
     const [y, m] = key.split('-').map(Number);
@@ -237,7 +240,7 @@ export function InvoiceListClient({ invoices: initialInvoices }: { invoices: Adm
 
   const tableInvoices = selectedInvoices
     .filter(inv => statusFilter === 'all' || (statusFilter === 'unpaid' ? invRemaining(inv) > 0 : invRemaining(inv) === 0))
-    .sort((a, b) => (b.issueDate || b.createdAt || '').localeCompare(a.issueDate || a.createdAt || ''));
+    .sort((a, b) => periodDateOf(b).localeCompare(periodDateOf(a)));
 
   // With a single tab picked the list is flat; on "All" it is grouped by the
   // current view so each month or customer gets its own subtotal row.
