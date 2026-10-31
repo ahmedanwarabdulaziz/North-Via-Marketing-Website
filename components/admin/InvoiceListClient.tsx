@@ -156,7 +156,21 @@ export function InvoiceListClient({ invoices: initialInvoices }: { invoices: Adm
     const amount = invoice.totalAmount ? `$${invoice.totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : 'the total balance';
     const invoiceNo = invoice.invoiceNumber || 'your recent invoice';
     
-    const templateMessage = `Hello ${clientName},\nI hope you're having a great day!\nPlease find attached the invoice for *${brandName}* for the amount of ${amount}.\nThank you for your continued business!\n\nBest regards,\nAhmed Anwar\nNorth via Marketing`;
+    // Unpaid balance from this client's earlier service months; the line is
+    // left out entirely when everything before this invoice is paid.
+    const thisMonthKey = monthKeyOf(invoice);
+    const previousDue = invoices
+      .filter(inv => inv.id !== invoice.id && customerKeyOf(inv) === customerKeyOf(invoice) && monthKeyOf(inv) < thisMonthKey)
+      .reduce((sum, inv) => sum + invRemaining(inv), 0);
+    const thisMonthDue = invRemaining(invoice);
+    const serviceMonthName = thisMonthKey !== 'unknown' ? ` for ${monthLabel(thisMonthKey)}` : '';
+    const balanceLines = [
+      ...(previousDue > 0 ? [`Previous balance (not paid): ${money(previousDue)}`] : []),
+      `This month${serviceMonthName ? ` (${monthLabel(thisMonthKey)})` : ''}: ${money(thisMonthDue)}`,
+      `*Total due: ${money(previousDue + thisMonthDue)}*`,
+    ].join('\n');
+
+    const templateMessage = `Hello ${clientName},\nI hope you're having a great day!\nPlease find attached the invoice for *${brandName}*${serviceMonthName} for the amount of ${amount}.\n\n${balanceLines}\n\nThank you for your continued business!\n\nBest regards,\nAhmed Anwar\nNorth via Marketing`;
     const encodedMessage = encodeURIComponent(templateMessage);
     
     if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
