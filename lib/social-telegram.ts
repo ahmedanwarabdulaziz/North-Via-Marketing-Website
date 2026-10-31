@@ -1,5 +1,6 @@
 import { listClientProfiles } from './admin-ops';
 import {
+  draftWaitingComments,
   findCommentByShortRef,
   getStoredComment,
   hideStoredComment,
@@ -18,6 +19,7 @@ import { OutgoingMessage, allowedChatIds, answerCallback, editMessage, escapeHtm
 
 // Facebook & Instagram comments in Telegram. Button data is "sc:<action>:<shortRef>":
 //   a/A approve → confirm   e edit   g regenerate   s skip   c cancel   h/H hide → confirm
+//   "sc:D:all" drafts every waiting comment that has no draft yet
 // Risky comments are sent the hour they're found; the rest come with the 9 AM / 9 PM digest.
 
 const MAX_CARDS = 25;
@@ -46,7 +48,8 @@ export function commentCard(c: StoredComment, clientName: string, note?: string)
   const lines = [
     `${platformLabel(c)} · <b>${h(clientName)}</b>`,
     riskLine(c),
-    `<b>${h(c.authorName || 'Someone')}</b> · ${DATE.format(new Date(c.createdTime))}`,
+    // Facebook only shares commenters' names with apps that passed its review.
+    `<b>${h(c.authorName || (c.platform === 'facebook' ? 'Facebook user' : 'Someone'))}</b> · ${DATE.format(new Date(c.createdTime))}`,
     c.postExcerpt ? `<i>On: “${h(truncate(c.postExcerpt, 120))}”</i>` : '',
     '',
     `💬 “${h(truncate(c.message, 1500))}”`,
@@ -178,6 +181,8 @@ export async function sendCommentDigest(options: { onlyUnsent: boolean; chatIds?
 
   const messages: OutgoingMessage[] = [{ text: header }, ...toSend.map((c) => commentCard(c, names.get(c.clientId) || 'Client'))];
   if (unsent.length > toSend.length) messages.push({ text: `…and ${unsent.length - toSend.length} more. Send /comments later.` });
+  const unchecked = queue.filter((c) => !c.draft && !c.riskLevel).length;
+  if (unchecked) messages.push(draftAllPrompt(unchecked));
 
   for (const chatId of chatIds) {
     for (const m of messages) {
@@ -187,6 +192,22 @@ export async function sendCommentDigest(options: { onlyUnsent: boolean; chatIds?
   }
   if (toSend.length) await markCommentsSent(toSend.map((c) => c.id), 'telegramSentAt');
   return { messagesSent: messages.length * chatIds.length, commentsSent: toSend.length };
+}
+
+function draftAllPrompt(count: number): OutgoingMessage {
+  return {
+    text: `✍️ ${count} comment${count === 1 ? ' has' : 's have'} no draft yet. They're drafted automatically every hour, or now:`,
+    buttons: [[{ text: '✨ Draft all waiting', callback_data: 'sc:D:all' }]],
+  };
+}
+
+/** "Draft all waiting": drafts what fits in one go, then sends the drafted cards. */
+async function draftAllWaiting(chatId: number) {
+  await sendMessage(chatId, { text: '✨ Drafting replies for waiting comments…' });
+  const result = await draftWaitingComments();
+  await sendRiskAlerts(result.risky, [String(chatId)]);
+  await sendCommentDigest({ onlyUnsent: true, chatIds: [String(chatId)] });
+  if (!result.assessed && result.remaining) await sendMessage(chatId, { text: '⚠️ The AI is busy right now. Try again in a few minutes.' });
 }
 
 export async function showWaitingComments(chatId: number | string) {
@@ -216,6 +237,11 @@ export async function handleSocialCallback(query: CallbackQuery) {
   if (!chatId || !messageId || !action || !ref) return answerCallback(query.id);
 
   try {
+    if (action === 'D') {
+      await answerCallback(query.id, 'Drafting…');
+      await editMessage(chatId, messageId, { text: '✨ Drafting started.' });
+      return draftAllWaiting(chatId);
+    }
     const comment = await findCommentByShortRef(ref);
     if (!comment) return answerCallback(query.id, 'Comment not found.');
     const clientName = (await clientNames()).get(comment.clientId) || 'Client';

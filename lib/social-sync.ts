@@ -304,6 +304,13 @@ async function readAccounts(accounts: Account[], now: string, summary: SocialSyn
   return fresh;
 }
 
+/** Drafts the waiting comments that have no AI check yet (the Telegram "Draft all" button). */
+export async function draftWaitingComments(timeBudgetMs = 40_000) {
+  const waiting = (await listDocs<SocialComment>(COMMENTS, { where: { status: 'needs_draft' } })).filter((c) => !c.riskLevel);
+  const result = await assessQueue(waiting, Date.now() + timeBudgetMs, new Set());
+  return { assessed: result.assessed, remaining: waiting.length - result.assessed, risky: result.risky };
+}
+
 /** Assesses comments until the budget runs out; `done` holds the ids handled this run. */
 async function assessQueue(queue: StoredComment[], deadline: number, done: Set<string>) {
   const settingsCache = new Map<string, GbpReplySettings>();
