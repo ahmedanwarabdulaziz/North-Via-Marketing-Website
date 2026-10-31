@@ -7,6 +7,7 @@ import { Plus, Trash, FileDown, Save } from 'lucide-react';
 import { InvoiceTemplate } from '../InvoiceTemplate';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
+import { serviceMonthFromPeriod, serviceMonthLabel } from '@/lib/service-month';
 
 export function InvoiceForm({ initialData, clients, onSuccess }: { initialData?: AdminInvoiceItem; clients?: ClientProfile[]; onSuccess?: () => void }) {
   const router = useRouter();
@@ -27,7 +28,15 @@ export function InvoiceForm({ initialData, clients, onSuccess }: { initialData?:
   const endOfCurrentMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
   const startOfNextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1);
   
-  const [formData, setFormData] = useState<Partial<AdminInvoiceItem>>(
+  const withServiceMonth = (data: Partial<AdminInvoiceItem>): Partial<AdminInvoiceItem> => {
+    const key = data.serviceMonthKey || serviceMonthFromPeriod(data.billingPeriodFrom, data.billingPeriodTo)?.key;
+    return key ? { ...data, serviceMonthKey: key, serviceMonth: serviceMonthLabel(key) } : data;
+  };
+
+  // Once the service month is picked by hand it stops following the dates.
+  const [serviceMonthManual, setServiceMonthManual] = useState(Boolean(initialData?.serviceMonthKey));
+
+  const [formData, setFormData] = useState<Partial<AdminInvoiceItem>>(() => withServiceMonth(
     initialData ? {
       ...initialData,
       billingPeriodFrom: initialData.billingPeriodFrom || (initialData as any).subscriptionFrom || getLocalYMD(startOfCurrentMonth),
@@ -50,7 +59,29 @@ export function InvoiceForm({ initialData, clients, onSuccess }: { initialData?:
       totalAmount: 0,
       amount: 0,
     }
-  );
+  ));
+
+  const periodMonth = serviceMonthFromPeriod(formData.billingPeriodFrom, formData.billingPeriodTo);
+
+  const updatePeriod = (field: 'billingPeriodFrom' | 'billingPeriodTo', value: string) => {
+    setFormData(prev => {
+      const next = { ...prev, [field]: value };
+      if (serviceMonthManual) return next;
+      const key = serviceMonthFromPeriod(next.billingPeriodFrom, next.billingPeriodTo)?.key;
+      return key ? { ...next, serviceMonthKey: key, serviceMonth: serviceMonthLabel(key) } : next;
+    });
+  };
+
+  const setServiceMonth = (key: string) => {
+    setServiceMonthManual(true);
+    setFormData(prev => ({ ...prev, serviceMonthKey: key, serviceMonth: serviceMonthLabel(key) }));
+  };
+
+  const resetServiceMonthToPeriod = () => {
+    if (!periodMonth) return;
+    setServiceMonthManual(false);
+    setFormData(prev => ({ ...prev, serviceMonthKey: periodMonth.key, serviceMonth: serviceMonthLabel(periodMonth.key) }));
+  };
 
   const calculateTotals = (items: InvoiceLineItem[], discount: number) => {
     const subtotal = items.reduce((sum, item) => sum + item.total, 0);
@@ -111,6 +142,10 @@ export function InvoiceForm({ initialData, clients, onSuccess }: { initialData?:
   const saveInvoice = async () => {
     if (!formData.clientId) {
       alert('Please select a client.');
+      return;
+    }
+    if (!formData.serviceMonthKey) {
+      alert('Please choose the service month.');
       return;
     }
     setIsSaving(true);
@@ -229,6 +264,24 @@ export function InvoiceForm({ initialData, clients, onSuccess }: { initialData?:
             </div>
           </div>
 
+          <div className="col-span-2 bg-blue-50/60 p-4 rounded-xl border border-blue-100">
+            <label className="block text-sm font-medium text-zinc-700 mb-1">Service Month <span className="text-red-500">*</span></label>
+            <input
+              type="month"
+              required
+              className="w-full px-3 py-2 border rounded-lg bg-white"
+              value={formData.serviceMonthKey || ''}
+              onChange={e => setServiceMonth(e.target.value)}
+            />
+            {periodMonth && (
+              <p className="text-xs text-zinc-500 mt-1.5">
+                From the subscription dates: <span className="font-medium text-zinc-700">{serviceMonthLabel(periodMonth.key)}</span> ({periodMonth.days} of {periodMonth.totalDays} days)
+                {formData.serviceMonthKey !== periodMonth.key && (
+                  <button type="button" onClick={resetServiceMonthToPeriod} className="ml-2 text-blue-600 font-medium hover:underline">Use this</button>
+                )}
+              </p>
+            )}
+          </div>
           <div>
             <label className="block text-sm font-medium text-zinc-700 mb-1">Issue Date</label>
             <input type="date" className="w-full px-3 py-2 border rounded-lg" value={formData.issueDate || ''} onChange={e => setFormData({ ...formData, issueDate: e.target.value })} />
@@ -239,11 +292,11 @@ export function InvoiceForm({ initialData, clients, onSuccess }: { initialData?:
           </div>
           <div>
             <label className="block text-sm font-medium text-zinc-700 mb-1">Subscription From</label>
-            <input type="date" className="w-full px-3 py-2 border rounded-lg" value={formData.billingPeriodFrom || ''} onChange={e => setFormData({ ...formData, billingPeriodFrom: e.target.value })} />
+            <input type="date" className="w-full px-3 py-2 border rounded-lg" value={formData.billingPeriodFrom || ''} onChange={e => updatePeriod('billingPeriodFrom', e.target.value)} />
           </div>
           <div>
             <label className="block text-sm font-medium text-zinc-700 mb-1">Subscription To</label>
-            <input type="date" className="w-full px-3 py-2 border rounded-lg" value={formData.billingPeriodTo || ''} onChange={e => setFormData({ ...formData, billingPeriodTo: e.target.value })} />
+            <input type="date" className="w-full px-3 py-2 border rounded-lg" value={formData.billingPeriodTo || ''} onChange={e => updatePeriod('billingPeriodTo', e.target.value)} />
           </div>
         </div>
 

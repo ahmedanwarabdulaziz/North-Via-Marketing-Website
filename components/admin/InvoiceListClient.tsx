@@ -5,6 +5,7 @@ import { AdminInvoiceItem } from '@/types/database';
 import { MoreVertical, Mail, MessageCircle, DollarSign, Download, FileText, Plus, X, Copy, Search, CalendarDays, Users } from 'lucide-react';
 import Link from 'next/link';
 import { formatDateLabel } from '@/lib/admin-view';
+import { serviceMonthFromPeriod, serviceMonthLabel } from '@/lib/service-month';
 import { InvoiceTemplate } from '../InvoiceTemplate';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
@@ -201,12 +202,15 @@ export function InvoiceListClient({ invoices: initialInvoices }: { invoices: Adm
     return { invoiced, collected, outstanding, openCount, count: items.length };
   };
 
-  // An invoice belongs to the month its billing period starts in. Dates are
-  // stored as YYYY-MM-DD; read the month from the string so a UTC-midnight
-  // date doesn't slip into the previous month locally.
-  const periodDateOf = (inv: AdminInvoiceItem) =>
-    inv.billingPeriodFrom || (inv.serviceMonthKey ? `${inv.serviceMonthKey}-01` : '') || inv.issueDate || inv.createdAt || '';
-  const monthKeyOf = (inv: AdminInvoiceItem) => periodDateOf(inv).slice(0, 7) || 'unknown';
+  // An invoice belongs to its service month. Older invoices saved before the
+  // field was required fall back to the month holding most of the billing
+  // period, then to the issue date.
+  const monthKeyOf = (inv: AdminInvoiceItem) =>
+    inv.serviceMonthKey ||
+    serviceMonthFromPeriod(inv.billingPeriodFrom, inv.billingPeriodTo)?.key ||
+    (inv.issueDate || inv.createdAt || '').slice(0, 7) ||
+    'unknown';
+  const periodDateOf = (inv: AdminInvoiceItem) => inv.billingPeriodFrom || inv.issueDate || inv.createdAt || '';
   const monthLabel = (key: string, short = false) => {
     if (key === 'unknown') return 'No date';
     const [y, m] = key.split('-').map(Number);
@@ -240,7 +244,7 @@ export function InvoiceListClient({ invoices: initialInvoices }: { invoices: Adm
 
   const tableInvoices = selectedInvoices
     .filter(inv => statusFilter === 'all' || (statusFilter === 'unpaid' ? invRemaining(inv) > 0 : invRemaining(inv) === 0))
-    .sort((a, b) => periodDateOf(b).localeCompare(periodDateOf(a)));
+    .sort((a, b) => monthKeyOf(b).localeCompare(monthKeyOf(a)) || periodDateOf(b).localeCompare(periodDateOf(a)));
 
   // With a single tab picked the list is flat; on "All" it is grouped by the
   // current view so each month or customer gets its own subtotal row.
@@ -405,6 +409,11 @@ export function InvoiceListClient({ invoices: initialInvoices }: { invoices: Adm
                 </td>
                 <td className="px-6 py-4">
                   <div className="flex flex-col gap-1">
+                    {monthKeyOf(invoice) !== 'unknown' && (
+                      <span className="self-start text-xs font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded">
+                        {serviceMonthLabel(monthKeyOf(invoice))}
+                      </span>
+                    )}
                     <span className="text-sm text-zinc-900 font-medium">
                       Issued: {formatDateLabel(invoice.issueDate || invoice.createdAt)}
                     </span>

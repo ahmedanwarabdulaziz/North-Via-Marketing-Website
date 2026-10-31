@@ -45,6 +45,9 @@ export default async function NewInvoicePage({ searchParams }: { searchParams: P
         dueDate: addOneMonth(original.dueDate),
         billingPeriodFrom: addOneMonth(original.billingPeriodFrom),
         billingPeriodTo: addOneMonth(original.billingPeriodTo),
+        // Recomputed by the form from the shifted subscription dates.
+        serviceMonthKey: undefined,
+        serviceMonth: undefined,
       };
     }
   }
