@@ -30,6 +30,11 @@ export function isAllowedChat(chatId: number | string | undefined) {
   return chatId !== undefined && allowedChatIds().includes(String(chatId));
 }
 
+// Cutting text mid-emoji (truncate, .slice) leaves half a surrogate pair, which Telegram
+// rejects with "text must be encoded in UTF-8". Whole pairs match first and are kept; only unpaired halves go.
+const dropBrokenEmoji = (_key: string, value: unknown) =>
+  typeof value === 'string' ? value.replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDFFF]/g, (m) => (m.length === 2 ? m : '')) : value;
+
 export async function telegram<T = unknown>(method: string, body: Record<string, unknown>): Promise<T> {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) throw new Error('TELEGRAM_BOT_TOKEN is not configured.');
@@ -39,7 +44,7 @@ export async function telegram<T = unknown>(method: string, body: Record<string,
   const res = await fetch(`${base}/bot${token}/${method}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body: JSON.stringify(body, dropBrokenEmoji),
   });
   const data = (await res.json().catch(() => ({}))) as { ok?: boolean; result?: T; description?: string };
   if (!data.ok) throw new Error(`Telegram ${method} failed: ${data.description || res.status}`);
