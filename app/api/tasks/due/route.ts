@@ -10,8 +10,13 @@ export const maxDuration = 60;
  * once a day from 9 AM Cairo, the morning digest of today's, overdue and unfinished tasks,
  * and on Sundays from 8 PM Cairo, the week-ahead summary.
  */
+// Tasks moved to the Hermes bot on 8 Nov 2026 (it sends its own reminders and digest), so this
+// endpoint is switched off: n8n can keep calling it, nothing is sent. Set to false to bring it back.
+const MOVED_TO_HERMES = true;
+
 async function run(request: Request) {
   if (!isAutomationRequest(request)) return unauthorized();
+  if (MOVED_TO_HERMES) return Response.json({ skipped: 'Tasks moved to the Hermes bot' });
   const now = new Date();
   const [reminders, digest, weekly] = await Promise.all([
     sendDueReminders(now).catch((error) => {
