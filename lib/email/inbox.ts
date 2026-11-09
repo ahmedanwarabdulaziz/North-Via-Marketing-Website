@@ -77,7 +77,8 @@ export async function saveEmailAccount(provider: EmailAccount['provider'], email
     return existing.id;
   }
   const id = newEmailId();
-  check(await supabase.from('email_accounts').insert({ id, provider, email, label: email.split('@')[0], encrypted_refresh_token: encryptedRefreshToken }));
+  // New inboxes don't ring the phone (Telegram card only); it can be turned on per inbox in the admin page.
+  check(await supabase.from('email_accounts').insert({ id, provider, email, label: email.split('@')[0], encrypted_refresh_token: encryptedRefreshToken, ring_urgent: false }));
   return id;
 }
 
@@ -185,6 +186,10 @@ FOCUS FOR THIS INBOX: ${account.focus || '(none set: use general judgement)'}`,
 
 // ---------- Telegram card ----------
 
+export function isNoReply(address: string | null | undefined) {
+  return /(^|[._+-])(no-?reply|do-?not-?reply|donotreply|mailer-daemon|notifications?)([._+-]|@)/i.test(address || '');
+}
+
 export function emailCard(item: EmailItem, account: Pick<EmailAccount, 'label' | 'email'>, header?: string): OutgoingMessage {
   const lines = [
     header || `${item.urgent ? '🚨' : '📧'} <b>${h(account.label || account.email)}</b> · ${h(item.from_name || item.from_email || '')}`,
@@ -198,10 +203,13 @@ export function emailCard(item: EmailItem, account: Pick<EmailAccount, 'label' |
     item.status === 'sent' || item.status === 'done' || item.status === 'ignored'
       ? [[{ text: '📄 Full email', callback_data: `em:f:${item.id}` }]]
       : [
-          [
-            { text: '✍️ Reply', callback_data: `em:r:${item.id}` },
-            { text: '📄 Full email', callback_data: `em:f:${item.id}` },
-          ],
+          // No Reply for no-reply senders (Google, banks' notifications…): nobody reads those.
+          isNoReply(item.from_email)
+            ? [{ text: '📄 Full email', callback_data: `em:f:${item.id}` }]
+            : [
+                { text: '✍️ Reply', callback_data: `em:r:${item.id}` },
+                { text: '📄 Full email', callback_data: `em:f:${item.id}` },
+              ],
           [
             { text: '✅ Done', callback_data: `em:d:${item.id}` },
             { text: '🔕 Ignore sender', callback_data: `em:i:${item.id}` },

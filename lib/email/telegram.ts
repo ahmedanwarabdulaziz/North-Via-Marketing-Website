@@ -6,6 +6,7 @@ import {
   emailCard,
   getEmailAccount,
   getEmailItem,
+  isNoReply,
   sendEmailReply,
   updateEmailAccount,
   updateEmailItem,
@@ -71,12 +72,13 @@ export async function handleEmailCallback(query: CallbackQuery) {
       const body = item.body || item.snippet || '(empty)';
       await sendMessage(chatId, {
         text: [`📄 <b>${h(truncate(item.subject || '', 150))}</b>`, `<i>${h(item.from_name || '')} &lt;${h(item.from_email || '')}&gt; · ${h(item.received_at?.slice(0, 16).replace('T', ' ') || '')}</i>`, '', h(truncate(body, 3500))].join('\n'),
-        buttons: item.status === 'sent' ? [] : [[{ text: '✍️ Reply', callback_data: `em:r:${item.id}` }]],
+        buttons: item.status === 'sent' || isNoReply(item.from_email) ? [] : [[{ text: '✍️ Reply', callback_data: `em:r:${item.id}` }]],
       });
       return;
     }
     if (action === 'r' || action === 'c') {
       if (item.status === 'sent') return answerCallback(query.id, 'Already replied.');
+      if (isNoReply(item.from_email)) return answerCallback(query.id, 'This is a no-reply address: nobody reads replies to it.');
       await updateEmailItem(item.id, { status: 'replying', chat_id: String(chatId), ...(action === 'r' ? { brief: null, draft: null } : {}) });
       await answerCallback(query.id);
       await sendMessage(chatId, {
