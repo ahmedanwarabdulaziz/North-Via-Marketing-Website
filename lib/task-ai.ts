@@ -99,7 +99,7 @@ Rules:
   repeat_until/repeat_count only if the user says how long ("for 3 months" → repeat_until = date + 3 months, "10 times" → repeat_count 10); repeat_forever only if they say forever/always/no end.
 - A voice note (Egyptian Arabic, English or mixed) counts as the message: read the task from what is said, and put the words in "heard".
 - When CURRENT FIELDS are given, the message answers a question or asks for a change: return the full updated object, keeping every current value the message doesn't change.
-  Set "separate": true only if the message is clearly a brand-new unrelated task rather than an answer or change. Otherwise false.`;
+  Set "separate": true if the message is clearly a brand-new unrelated task, or a QUESTION / request that has nothing to do with this draft (e.g. "show me the last email from…", "عايز اخر ايميل جالي", "what's on today?"), rather than an answer or change. Otherwise false.`;
 }
 
 function str(value: unknown) {

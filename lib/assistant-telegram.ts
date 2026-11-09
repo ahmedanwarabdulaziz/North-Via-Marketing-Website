@@ -210,6 +210,7 @@ async function answer(chatId: number, session: ChatSession, question: string) {
   const buttons: InlineButton[][] = [];
   for (const item of reply.items.slice(0, 4)) buttons.push([{ text: `📚 ${truncate(item.title, 45)}`, callback_data: `kb:o:${item.id}` }]);
   for (const task of reply.tasks.slice(0, Math.max(0, 5 - buttons.length))) buttons.push([{ text: `📌 ${truncate(task.title, 45)}`, callback_data: `tk:o:${task.id}` }]);
+  for (const email of reply.emails.slice(0, 3)) buttons.push([{ text: `📄 ${truncate(email.subject, 45)}`, callback_data: `em:f:${email.id}` }]);
   buttons.push([
     { text: '🔁 Switch model', callback_data: `ch:s:${session.id}` },
     { text: '✖️ End chat', callback_data: `ch:e:${session.id}` },

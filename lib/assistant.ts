@@ -5,6 +5,7 @@ import { aiUsageDay, groqFetch, isRateLimitError, listAiUsage, trackGemini, type
 import { listCategories, searchKnowledge, type KnowledgeItem } from './knowledge';
 import { cairoParts, describeRepeat, formatWhen, groupTasks, listOpenTasks, WEEKDAYS, weekdayOf, type Task } from './tasks';
 import { getMemory, memoryContext, type AssistantMemory, type MemoryFact } from './assistant-memory';
+import { supabase } from './supabase';
 
 // The bot's chat assistant: answers questions from the owner's library, open tasks and client
 // list, with a model the owner picks among those that still have free quota today.
@@ -75,6 +76,54 @@ interface ChatContext {
   items: KnowledgeItem[];
   tasks: Task[];
   memory: AssistantMemory;
+  emails: ChatEmail[];
+}
+
+interface ChatEmail {
+  id: string;
+  subject: string | null;
+  from_name: string | null;
+  from_email: string | null;
+  received_at: string | null;
+  summary: string | null;
+  snippet: string | null;
+  status: string;
+  email_accounts: { label: string | null; email: string } | null;
+}
+
+const EMAIL_COLUMNS = 'id, subject, from_name, from_email, received_at, summary, snippet, status, email_accounts(label, email)';
+
+/** Recent important emails from every inbox, plus any (even unimportant) matching words in the question. */
+async function chatEmails(question: string): Promise<ChatEmail[]> {
+  const recent = await supabase.from('email_items').select(EMAIL_COLUMNS).neq('status', 'skipped').order('received_at', { ascending: false }).limit(12);
+  const words = [...new Set(question.replace(/[^\w؀-ۿ@.\s]/g, ' ').split(/\s+/).filter((w) => w.length >= 3))]
+    .filter((w) => !/^(email|emails|mail|ايميل|إيميل|الايميل|الإيميل|ايميلات|جالي|اخر|آخر|عايز|عاوز|the|from|last|show|what|ابعت|شوف)$/i.test(w))
+    .slice(0, 4);
+  const matching = words.length
+    ? await supabase
+        .from('email_items')
+        .select(EMAIL_COLUMNS)
+        .or(words.flatMap((w) => [`from_name.ilike.*${w}*`, `from_email.ilike.*${w}*`, `subject.ilike.*${w}*`]).join(','))
+        .order('received_at', { ascending: false })
+        .limit(8)
+    : { data: [] };
+  const all = [...((matching.data || []) as unknown as ChatEmail[]), ...((recent.data || []) as unknown as ChatEmail[])];
+  return all.filter((e, i) => all.findIndex((x) => x.id === e.id) === i).slice(0, 16);
+}
+
+function emailLine(e: ChatEmail) {
+  const when = e.received_at ? cairoParts(new Date(e.received_at)) : null;
+  return [
+    `[E:${e.id}]`,
+    when ? `${when.date} ${when.time}` : '',
+    `inbox: ${e.email_accounts?.label || e.email_accounts?.email || '?'}`,
+    `from: ${e.from_name || ''} <${e.from_email || ''}>`,
+    `subject: ${e.subject || ''}`,
+    (e.summary || e.snippet || '').replace(/\s+/g, ' ').slice(0, 220),
+    e.status === 'sent' ? '(Ahmed replied)' : e.status === 'skipped' ? '(not important)' : '',
+  ]
+    .filter(Boolean)
+    .join(' | ');
 }
 
 function taskLine(t: Task, clientName: (id: string | null) => string | null) {
@@ -95,12 +144,13 @@ function taskLine(t: Task, clientName: (id: string | null) => string | null) {
 /** What the model gets each turn: matching library items, open tasks, clients. Kept small for Groq's 8K tokens a minute. */
 async function buildContext(question: string, history: ChatMessage[]): Promise<ChatContext> {
   const recentUser = history.filter((m) => m.role === 'user').slice(-2).map((m) => m.content);
-  const [items, tasks, profiles, categories, memory] = await Promise.all([
+  const [items, tasks, profiles, categories, memory, emails] = await Promise.all([
     searchKnowledge([...recentUser, question].join(' ').slice(-500), 6).catch(() => [] as KnowledgeItem[]),
     listOpenTasks().catch(() => [] as Task[]),
     listClientProfiles(),
     listCategories().catch(() => []),
     getMemory(),
+    chatEmails([...recentUser, question].join(' ')).catch(() => [] as ChatEmail[]),
   ]);
   const clients = profiles.filter((c) => c.id && c.brandName);
   const clientName = (id: string | null) => (id ? clients.find((c) => c.id === id)?.brandName || null : null);
@@ -137,8 +187,11 @@ async function buildContext(question: string, history: ChatMessage[]): Promise<C
             .join(' | ')
         )
       : ['none found']),
+    '',
+    'EMAILS (connected inboxes; newest first; matches for the question included):',
+    ...(emails.length ? emails.map(emailLine) : ['none']),
   ].join('\n');
-  return { text, items, tasks, memory };
+  return { text, items, tasks, memory, emails };
 }
 
 const SYSTEM_PROMPT = `You are the personal assistant of Ahmed Anwar, founder of North Via Marketing, inside his private Telegram bot.
@@ -150,7 +203,7 @@ Memory:
 
 How to answer:
 - Reply in the language the owner writes in (Egyptian Arabic, English or mixed). Be direct and practical; short unless they ask for detail (aim under 150 words).
-- Use the CONTEXT. When you use a library item, mention it and put its tag like [K:abc12345]; for a task, its tag like [T:abc12345]. Never invent items, tasks, dates or numbers that aren't in the context.
+- Use the CONTEXT. When you use a library item, mention it and put its tag like [K:abc12345]; for a task, its tag like [T:abc12345]; for an email, its tag like [E:abc12345] (the bot adds a button to open it). For "the last email from X", pick the newest matching email in EMAILS and give sender, inbox, date and a short summary; if none matches, say it isn't among the emails the bot has read. Never invent items, tasks, dates or numbers that aren't in the context.
 - When they describe a task or project, connect it to what fits from the library and from their other tasks for that client, and say why it fits.
 - If nothing in the library fits, say so plainly, and you may give your own ideas (say they're yours).
 - Formatting: plain text for Telegram; you may use **bold** and "- " bullets. No tables, no headings.
@@ -388,6 +441,7 @@ export interface AssistantReply {
   actions: AssistantAction[];
   items: KnowledgeItem[]; // library items the answer used
   tasks: Task[]; // tasks the answer mentioned
+  emails: { id: string; subject: string }[]; // emails the answer mentioned
   usedModel: ChatModel;
   fellBackFrom: ChatModel | null;
 }
@@ -411,7 +465,7 @@ export async function askAssistant(chosen: ChatModel, question: string, history:
       const ids = (prefix: string) => [...new Set([...raw.matchAll(new RegExp(`\\[${prefix}:([A-Za-z0-9_-]{8})\\]`, 'g'))].map((x) => x[1]))];
       const text = raw
         .replace(/^\s*(ACTION|TASK):.*$/gim, '')
-        .replace(/\s*\[(K|T):[A-Za-z0-9_-]{8}\]/g, '')
+        .replace(/\s*\[(K|T|E):[A-Za-z0-9_-]{8}\]/g, '')
         .replace(/\s*\[(DONE by the bot|FAILED|PROPOSED[^\]]*)\]/gi, '')
         .replace(/\(?PLANNED CHANGES[^)\n]*\)?/gi, '')
         .trim();
@@ -420,6 +474,7 @@ export async function askAssistant(chosen: ChatModel, question: string, history:
         actions,
         items: ids('K').map((id) => context.items.find((k) => k.id === id)).filter(Boolean) as KnowledgeItem[],
         tasks: ids('T').map((id) => context.tasks.find((t) => t.id === id)).filter(Boolean) as Task[],
+        emails: ids('E').map((id) => context.emails.find((e) => e.id === id)).filter(Boolean).map((e) => ({ id: e!.id, subject: e!.subject || '(no subject)' })),
         usedModel: m,
         fellBackFrom: m.key === chosen.key ? null : chosen,
       };

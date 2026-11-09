@@ -420,7 +420,8 @@ export async function handleTaskMessage(message: IncomingMessage): Promise<boole
     // Otherwise an answer (typed or spoken) to the open question, if there is one.
     if (draft) {
       const result = await read({ current: draft.fields, asking: draft.asking });
-      if (!result.separate) {
+      // A question ("show me the last email…") isn't an answer to the open task question.
+      if (!result.separate && result.intent !== 'chat') {
         const fields = { ...result.fields, editTaskId: draft.fields.editTaskId };
         await proceed(chatId, fields, clients, {
           draftId: draft.id,
