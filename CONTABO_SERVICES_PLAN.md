@@ -39,7 +39,16 @@ Status: **reversed 2026-11-09: one bot (Anwarz).** Hermes has no agent-authored 
 - Ringing: `lib/ntfy.ts` (env `NTFY_TOKEN`, send-only ntfy user `anwarz`; token in `/opt/anwarz/ntfy/vercel-token.txt`). Rings for timed task reminders, website down, SSL expired or ≤3 days, new 1–2★ reviews, and a broken Google reviews login (once a day). Not for manual "Check now".
 - `/api/tasks/due` runs every **5 minutes** (n8n) with 5-minute slots (`runSlot`), and now also runs the website checks.
 - Chat memory: `lib/assistant-memory.ts` (app_settings `assistant_memory`: profile + facts). "remember"/"forget" are confirm-card actions; `/memory` lists facts with 🗑 buttons.
-- Hermes and LiteLLM to be stopped (data kept in `/opt/anwarz/hermes/data`).
+- Hermes and LiteLLM stopped 2026-11-09 (data kept in `/opt/anwarz/hermes/data`; a final archive of the useful parts is in `backups/hermes-final-20261109.tar.gz`). n8n's tasks workflow runs every 5 minutes (old version backed up in `backups/n8n-wf-tasks.*.json`).
+- **Prayer alarms** (`lib/prayer.ts`): Aladhan API, Egyptian General Authority method, Sheikh Zayed by default (Assiut switchable in `/prayer`); Telegram + ring at the time, never early, skipped if more than 20 minutes late. The 5 fixed-time prayer tasks were cancelled.
+
+## Backups (2026-11-09)
+`/opt/anwarz/backup.sh` (cron 01:30 server time) writes to `/opt/anwarz/backups`, keeping 14 days:
+1. `stack-*.tar.gz`: `/opt/anwarz` without backups and Hermes (about 2 MB).
+2. `supabase/db-*.dump`: `pg_dump -Fc` of the `public` schema (all Anwarz data, about 1 MB) via `postgres:17-alpine`, connection in `/opt/anwarz/supabase-backup.env`. **Restore tested 2026-11-09**: all 33 tables came back (pgvector image + `anon/authenticated/service_role` roles).
+3. `supabase-storage/`: mirror of the Storage buckets `knowledge` and `gbp-posts` (`storage_mirror.py`).
+4. Google Drive copy (`NVM-Backups`, 30 days) with `rclone/rclone`, active once `/opt/anwarz/rclone/rclone.conf` has a remote named `gdrive`.
+Each step logs `ok`/`FAILED` in `backups/backup.log`.
 
 Earlier notes (2026-11-08):
 - Done: `docker-compose.yml` backed up to `/opt/anwarz/backups/`; `litellm` and `hermes` services added; LiteLLM running and tested.
