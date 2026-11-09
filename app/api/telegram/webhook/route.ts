@@ -8,6 +8,7 @@ import { handleChatCallback } from '@/lib/assistant-telegram';
 import { handleGbpPostCallback, handleGbpPostMessage } from '@/lib/gbp-post-telegram';
 import { isAllowedChat, sendMessage } from '@/lib/telegram';
 import { handleEmailCallback, handleEmailMessage } from '@/lib/email/telegram';
+import { handleMemoryMessage } from '@/lib/memory-telegram';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -61,6 +62,7 @@ export async function POST(request: Request) {
           (await handleSocialMessage(update.message)) ||
           (await handleReviewMessage(update.message)) ||
           (await handleMenuCommand(update.message)) ||
+          (await handleMemoryMessage(update.message)) ||
           (await handleKnowledgeMessage(update.message)) ||
           (await handleTaskMessage(update.message));
         if (!handled) await sendMenu(chatId);
