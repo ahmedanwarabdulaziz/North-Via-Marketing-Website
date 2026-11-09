@@ -9,6 +9,7 @@ import { handleGbpPostCallback, handleGbpPostMessage } from '@/lib/gbp-post-tele
 import { isAllowedChat, sendMessage } from '@/lib/telegram';
 import { handleEmailCallback, handleEmailMessage } from '@/lib/email/telegram';
 import { handleMemoryMessage, handleSaveChoice } from '@/lib/memory-telegram';
+import { handleFactChoice } from '@/lib/memory-guard';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -46,6 +47,7 @@ export async function POST(request: Request) {
         else if (data.startsWith('gp:')) await handleGbpPostCallback(update.callback_query);
         else if (data.startsWith('em:')) await handleEmailCallback(update.callback_query);
         else if (data.startsWith('sv:')) await handleSaveChoice(update.callback_query);
+        else if (data.startsWith('mf:')) await handleFactChoice(update.callback_query);
         else await handleCallback(update.callback_query);
       }
     } else if (update.message?.chat) {

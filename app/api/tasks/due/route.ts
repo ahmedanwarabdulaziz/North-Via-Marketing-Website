@@ -4,6 +4,7 @@ import { runWebsiteChecks } from '@/lib/website-monitor';
 import { sendPrayerAlarms } from '@/lib/prayer';
 import { runCriticalChecks } from '@/lib/critical-alerts';
 import { checkInboxes } from '@/lib/email/inbox';
+import { summarizeFinishedChats } from '@/lib/chat-history';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -18,7 +19,7 @@ export const maxDuration = 60;
 async function run(request: Request) {
   if (!isAutomationRequest(request)) return unauthorized();
   const now = new Date();
-  const [reminders, digest, weekly, websites, prayers, critical, email] = await Promise.all([
+  const [reminders, digest, weekly, websites, prayers, critical, email, chats] = await Promise.all([
     sendDueReminders(now).catch((error) => {
       console.error('Task reminders failed:', error);
       return { error: error instanceof Error ? error.message : 'Task reminders failed' };
@@ -48,9 +49,14 @@ async function run(request: Request) {
       console.error('Email check failed:', error);
       return { error: error instanceof Error ? error.message : 'Email check failed' };
     }),
+    // Chats quiet for 30 minutes get a short summary with client tags, for finding them later.
+    summarizeFinishedChats(now).catch((error) => {
+      console.error('Chat summaries failed:', error);
+      return { error: error instanceof Error ? error.message : 'Chat summaries failed' };
+    }),
   ]);
   const failed = 'error' in reminders && 'error' in digest;
-  return Response.json({ reminders, digest, weekly, websites, prayers, critical, email }, { status: failed ? 500 : 200 });
+  return Response.json({ reminders, digest, weekly, websites, prayers, critical, email, chats }, { status: failed ? 500 : 200 });
 }
 
 export const POST = run;

@@ -3,7 +3,7 @@ import { DIGEST_TIMEZONES } from './digest-schedule-options';
 import { checkReviewsNow, reviewQueueOverview, showWaitingReviews } from './review-telegram';
 import { backlogOverview, draftBacklog, releaseBacklog, scanForOldReviews, type BacklogScope } from './review-engine';
 import { InlineButton, OutgoingMessage, answerCallback, editMessage, escapeHtml as h, sendMessage, truncate } from './telegram';
-import { getMemory, removeFact } from './assistant-memory';
+import { handleMemoryScreen, memoryHomeScreen } from './memory-screens';
 import { handlePrayerAction, prayerScreen } from './prayer';
 import { setOpenRouterOn } from './openrouter';
 import { runWebsiteChecks, websiteOverview, websitesScreenText } from './website-monitor';
@@ -371,18 +371,8 @@ const COMMAND_SCREENS: Record<string, () => Promise<OutgoingMessage>> = {
   '/ai': () => aiUsageScreen(),
 };
 
-/** What the chat assistant knows about Ahmed: the profile and every remembered fact, each with 🗑. */
 async function memoryScreen(note?: string): Promise<OutgoingMessage> {
-  const { profile, facts } = await getMemory();
-  const lines = ['🧠 <b>Memory</b>', '', '<b>Profile</b>', profile ? h(truncate(profile, 900)) : '<i>No profile yet.</i>', '', `<b>Remembered facts (${facts.length})</b>`];
-  const recent = [...facts].reverse().slice(0, 20);
-  if (!recent.length) lines.push('<i>Nothing yet. In a chat, say “remember …” / “احفظ …”.</i>');
-  recent.forEach((f, i) => lines.push(`${i + 1}. ${h(truncate(f.text, 160))}`));
-  if (facts.length > recent.length) lines.push(`<i>+${facts.length - recent.length} older</i>`);
-  if (note) lines.push('', note);
-  const buttons: InlineButton[][] = recent.map((f, i) => [{ text: `🗑 ${i + 1}. ${truncate(f.text, 36)}`, callback_data: `m:mem:del:${f.id}` }]);
-  buttons.push([{ text: '⬅️ Menu', callback_data: 'm:home' }]);
-  return { text: lines.join('\n'), buttons };
+  return memoryHomeScreen(note);
 }
 
 /** A section command from the Menu button: sends that section's screen. False if it isn't one. */
@@ -419,11 +409,8 @@ export async function handleMenuCallback(query: { id: string; data?: string; mes
     }
 
     if (screen === 'mem') {
-      // m:mem (refresh) or m:mem:del:<fact id>
-      const factId = (query.data || '').split(':')[3];
-      const removed = action === 'del' && factId ? await removeFact(factId) : null;
-      await editMessage(chatId, messageId, await memoryScreen(removed ? `🗑 <i>Forgot: ${h(truncate(removed.text, 80))}</i>` : undefined));
-      return answerCallback(query.id, removed ? 'Forgotten' : undefined);
+      // /memory: home, client files, a client's file, past chats, delete (lib/memory-screens.ts)
+      return handleMemoryScreen(query, chatId, messageId);
     }
 
     if (screen === 'tk') {

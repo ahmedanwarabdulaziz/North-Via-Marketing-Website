@@ -4,7 +4,7 @@ import { ringPhone } from './ntfy';
 import { taskActionUrl, type TaskLinkAction } from './action-links';
 import { morningBriefSections, type BriefSections } from './morning-brief';
 import { whatsAppShareLink } from './whatsapp-share';
-import { addFact, type MemoryFact } from './assistant-memory';
+import { proposeFact } from './memory-guard';
 import { emailContextForCard } from './email/inbox';
 import { saveTextToLibrary } from './knowledge-telegram';
 import { activeChatSession, endConversation, handleChatMessage, startConversation } from './assistant-telegram';
@@ -231,13 +231,6 @@ function questionButtons(draftId: string, field: MissingField, f: TaskFields, cl
       { text: '1 year', callback_data: a('re', '12') },
     ],
   ];
-}
-
-function memorySavedCard(fact: MemoryFact): OutgoingMessage {
-  return {
-    text: `🧠 <b>Saved to memory, not as a task</b>\n${h(fact.text)}\n\n<i>Used in chats and when sorting email in every inbox. /memory shows everything saved.</i>`,
-    buttons: [[{ text: '↩️ Undo', callback_data: `m:mem:del:${fact.id}` }, { text: '🧠 All memory', callback_data: 'm:mem' }]],
-  };
 }
 
 function questionMessage(draftId: string, field: MissingField, f: TaskFields, clients: TaskClient[], note?: string): OutgoingMessage {
@@ -515,10 +508,10 @@ export async function handleTaskCallback(query: CallbackQuery) {
       }
       if (action === 'k') {
         // Not a task after all: what he said goes to memory (chats and email sorting use it).
-        const fact = await addFact(draft.raw_input || draft.fields.title || '');
         await deleteDraft(draft.id);
-        await editMessage(chatId, messageId, memorySavedCard(fact));
-        return answerCallback(query.id, 'Saved to memory');
+        await answerCallback(query.id, 'Checking memory…');
+        await proposeFact(chatId, draft.raw_input || draft.fields.title || '', { editMessageId: messageId });
+        return;
       }
       if (action === 'x') {
         await deleteDraft(draft.id);
@@ -565,10 +558,10 @@ export async function handleTaskCallback(query: CallbackQuery) {
     }
     if (action === 'K') {
       // A just-saved "task" that was really an instruction: remove it and keep it in memory.
-      const fact = await addFact(task.raw_input || task.title);
       await setTaskStatus(task.id, 'cancelled');
-      await editMessage(chatId, messageId, memorySavedCard(fact));
-      return answerCallback(query.id, 'Saved to memory');
+      await answerCallback(query.id, 'Checking memory…');
+      await proposeFact(chatId, task.raw_input || task.title, { editMessageId: messageId });
+      return;
     }
     if (action === 'd') {
       const { task: updated, movedTo } = await completeTask(task.id);

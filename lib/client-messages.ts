@@ -4,6 +4,7 @@ import { GBP_REVIEWS } from './review-engine';
 import { whatsAppNumber } from './whatsapp-share';
 import type { AdminInvoiceItem, GbpStoredReview, Website } from '@/types/database';
 import { getTask } from './tasks';
+import { clientFileText } from './memory-files';
 
 // Messages to clients, opened in Ahmed's own WhatsApp from a Telegram button (official wa.me
 // link: he presses Send himself, so there's no ban risk). Written by the AI when the button is
@@ -20,6 +21,7 @@ interface ClientInfo {
 }
 
 interface Draft {
+  clientId?: string | null;
   phone: string | null;
   arabic: boolean;
   brief: string; // what the message must say, for the AI
@@ -55,6 +57,7 @@ async function invoiceDraft(id: string): Promise<Draft | null> {
   const number = inv.invoiceNumber ? `#${inv.invoiceNumber}` : '';
   const name = firstName(c);
   return {
+    clientId: inv.clientId,
     phone,
     arabic,
     brief: `A polite, friendly payment reminder to ${name || 'the client'} (${c?.brandName || inv.clientBrand || inv.clientName}) for invoice ${number}, ${amount} still open, due ${inv.dueDate?.slice(0, 10)}${inv.serviceMonth ? `, for ${inv.serviceMonth}` : ''}. Ask them to confirm when it's paid or say if they need anything. Warm, short, no pressure.`,
@@ -77,6 +80,7 @@ async function reviewsDraft(clientId: string): Promise<Draft | null> {
   const name = firstName(c);
   const link = c.googleLink ? `\n${c.googleLink}` : '';
   return {
+    clientId,
     phone,
     arabic,
     brief: `A short weekly Google reviews update to ${name || 'the client'} (${c.brandName}): last 7 days they got ${count} new review${count === 1 ? '' : 's'}${avg ? ` (average ${avg}★)` : ''}. ${count ? 'Congratulate them' : 'Encourage them, no blame'}, and ask their team to invite happy customers to leave a Google review this week (e.g. at checkout or with a QR code). ${c.googleLink ? `Include this review link on its own line: ${c.googleLink}` : ''} Positive and practical.`,
@@ -95,6 +99,7 @@ async function websiteDraft(id: string): Promise<Draft | null> {
   const name = firstName(c);
   const down = site.status === 'down';
   return {
+    clientId: site.clientId,
     phone,
     arabic,
     brief: down
@@ -118,6 +123,7 @@ async function taskDraft(id: string): Promise<Draft | null> {
   const arabic = phone?.startsWith('20') ?? false;
   const name = firstName(c);
   return {
+    clientId: task.client_id,
     phone,
     arabic,
     brief: `A short follow-up message from Ahmed to ${name || 'the client'} (${c?.brandName}) about this work item: "${task.title}"${task.notes ? ` (notes: ${task.notes})` : ''}. Write it as Ahmed talking to his client (a progress update or a question, whichever fits the task). Don't mention internal task systems.`,
@@ -129,12 +135,16 @@ async function taskDraft(id: string): Promise<Draft | null> {
 export async function clientWhatsAppMessage(kind: ClientMessageKind, id: string): Promise<{ text: string; phone: string | null } | null> {
   const draft = kind === 'i' ? await invoiceDraft(id) : kind === 'v' ? await reviewsDraft(id) : kind === 'w' ? await websiteDraft(id) : await taskDraft(id);
   if (!draft) return null;
+  // That client's file (tone, contacts, do's and don'ts) shapes the message.
+  const file = draft.clientId ? await clientFileText(draft.clientId, 'this client').catch(() => '') : '';
   try {
     const raw = await aiJson({
       system: `You write WhatsApp messages from Ahmed Anwar (North Via Marketing) to his clients. Style: professional, warm, direct, short (under 70 words), no hype. ${
         draft.arabic ? 'Write in friendly Egyptian Arabic (English brand names and URLs stay as they are).' : 'Write in clear, friendly English.'
       } Start with a greeting using the first name if given, one or two emojis at most, and end with the line "${SIGNATURE}". Return ONLY JSON: {"message": "..."}`,
-      user: draft.brief,
+      user: file ? `${draft.brief}
+
+${file}` : draft.brief,
       feature: 'comments',
       timeBudgetMs: 7_000,
     });

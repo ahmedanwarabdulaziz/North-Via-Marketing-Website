@@ -2,15 +2,19 @@
 
 import { revalidatePath } from 'next/cache';
 import { requireAdmin } from '@/lib/admin-auth';
-import { deleteEmailAccount, updateEmailAccount } from '@/lib/email/inbox';
+import { deleteEmailAccount, setInboxBusiness, updateEmailAccount } from '@/lib/email/inbox';
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Unexpected error';
 }
 
-export async function saveInboxSettings(id: string, input: { label: string; focus: string; enabled: boolean; ringUrgent: boolean; ignoredSenders: string }) {
+export async function saveInboxSettings(
+  id: string,
+  input: { label: string; focus: string; enabled: boolean; ringUrgent: boolean; ignoredSenders: string; businessId: string }
+) {
   await requireAdmin();
   try {
+    await setInboxBusiness(id, input.businessId || null);
     await updateEmailAccount(id, {
       label: input.label.trim().slice(0, 60) || null,
       focus: input.focus.trim().slice(0, 1500) || null,

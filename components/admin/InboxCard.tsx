@@ -16,9 +16,10 @@ interface InboxView {
   ignoredSenders: string;
   lastCheckedAt: string | null;
   lastError: string | null;
+  businessId: string;
 }
 
-export function InboxCard({ account }: { account: InboxView }) {
+export function InboxCard({ account, businesses }: { account: InboxView; businesses: { id: string; name: string }[] }) {
   const router = useRouter();
   const [form, setForm] = useState(account);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
@@ -76,6 +77,22 @@ export function InboxCard({ account }: { account: InboxView }) {
             placeholder="e.g. NVM, Sanad, Personal"
             className="mt-1 w-full rounded-xl border border-zinc-300 px-3 py-2 text-sm"
           />
+        </label>
+        <label className="block">
+          <span className="text-sm font-medium text-zinc-700">Business</span>
+          <select
+            value={form.businessId}
+            onChange={(e) => setForm({ ...form, businessId: e.target.value })}
+            className="mt-1 w-full rounded-xl border border-zinc-300 px-3 py-2 text-sm bg-white"
+          >
+            <option value="">None / personal (match by the sender’s domain)</option>
+            {businesses.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+              </option>
+            ))}
+          </select>
+          <span className="text-xs text-zinc-500">Emails in this inbox use this business’s instruction file (Admin → Memory).</span>
         </label>
         <label className="block">
           <span className="text-sm font-medium text-zinc-700">What matters in this inbox</span>

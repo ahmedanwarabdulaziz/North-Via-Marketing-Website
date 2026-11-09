@@ -7,6 +7,9 @@ import { cairoParts, describeRepeat, formatWhen, groupTasks, listOpenTasks, WEEK
 import { getMemory, memoryContext, type AssistantMemory, type MemoryFact } from './assistant-memory';
 import { supabase } from './supabase';
 import { openRouterChat, openRouterOn } from './openrouter';
+import { clientFileText, clientsMentioned, type ClientRef } from './memory-files';
+import { getMasterProfile, needsMasterProfile } from './master-profile';
+import { relevantPastChats } from './chat-history';
 
 // The bot's chat assistant: answers questions from the owner's library, open tasks and client
 // list, with a model the owner picks among those that still have free quota today.
@@ -162,6 +165,16 @@ async function buildContext(question: string, history: ChatMessage[]): Promise<C
   const clients = profiles.filter((c) => c.id && c.brandName);
   const clientName = (id: string | null) => (id ? clients.find((c) => c.id === id)?.brandName || null : null);
 
+  // Only what this question needs: the files of the clients it's about, the full master profile
+  // when it's about writing about Ahmed, and past chats on the same client or words.
+  const topicText = [...recentUser, question].join(' ');
+  const about = clientsMentioned(topicText, clients as ClientRef[]).slice(0, 3);
+  const [clientFiles, master, pastChats] = await Promise.all([
+    Promise.all(about.map((c) => clientFileText(c.id!, c.brandName))).catch(() => [] as string[]),
+    needsMasterProfile(topicText) ? getMasterProfile().catch(() => null) : Promise.resolve(null),
+    relevantPastChats(topicText, about.map((c) => c.id!)).catch(() => []),
+  ]);
+
   // Overdue and today first, then the rest by date; at most 40.
   const g = groupTasks(tasks);
   const ordered = [...g.overdue, ...g.today, ...tasks.filter((t) => !g.overdue.includes(t) && !g.today.includes(t))].slice(0, 40);
@@ -197,6 +210,11 @@ async function buildContext(question: string, history: ChatMessage[]): Promise<C
     '',
     'EMAILS (connected inboxes; newest first; matches for the question included):',
     ...(emails.length ? emails.map(emailLine) : ['none']),
+    ...clientFiles.filter(Boolean).flatMap((f) => ['', f]),
+    ...(pastChats.length
+      ? ['', 'PAST CONVERSATIONS THAT MATCH (summaries):', ...pastChats.map((s) => `- ${s.at.slice(0, 10)} · ${s.topic}: ${s.summary}`)]
+      : []),
+    ...(master ? ['', `AHMED'S FULL MASTER PROFILE (use it for anything written about him; follow its positioning and tone rules):`, master.text] : []),
   ].join('\n');
   return { text, items, tasks, memory, emails };
 }
@@ -206,7 +224,9 @@ You can see his profile and the facts he asked you to remember (ABOUT THE OWNER,
 
 Memory:
 - Use ABOUT THE OWNER and REMEMBERED FACTS naturally; they are true unless he corrects them. Never invent facts about him.
-- When he asks you to remember something, the bot saves it right away ("saved right away" in PLANNED CHANGES): confirm in one short line, e.g. "حفظتها 🧠". When the bot only suggests saving ("needs his ✅ tap"), say he can tap ✅ to keep it.
+- When he asks you to remember something, the bot checks it against what's saved and files it (a client's file, or the general rules) — a card below shows where, or asks if it clashes with something saved. Say so in one short line, e.g. "تمام، شوف الكارت تحت 🧠". Never claim it's saved yourself.
+- CLIENT FILE sections are rules and facts for that client only; use them for anything about that client. PAST CONVERSATIONS are summaries of earlier chats; use them when he refers back ("last time", "اتكلمنا"). When facts disagree, the newer one wins.
+- Changes to his MASTER PROFILE (new role, venture, degree, achievement, correction) are an "update_profile" change he confirms with ✅.
 
 How to answer:
 - Reply in the language the owner writes in (Egyptian Arabic, English or mixed). Be direct and practical; short unless they ask for detail (aim under 150 words).
@@ -244,7 +264,8 @@ export type AssistantAction =
   | { type: 'complete_task'; taskId: string; title: string }
   /** explicit = he clearly asked to remember it: saved right away (with Undo), no confirm tap. */
   | { type: 'remember'; text: string; explicit?: boolean }
-  | { type: 'forget'; factId: string; text: string };
+  | { type: 'forget'; factId: string; text: string }
+  | { type: 'update_profile'; change: string };
 
 interface PlannerClient {
   id: string;
@@ -277,6 +298,8 @@ Action types:
   (when he says remember / احفظ / خلي بالك / سجل عندك / افتكر إن, or shares a lasting fact about himself, his companies, clients or how he likes things done. NOT for things with a date to act on — those are tasks. One fact per action. Skip if it's already in MEMORY.
    "asked": true only when he explicitly asked you to remember/save it; false when you're suggesting it yourself.)
 {"type":"forget","memory_id":"<id from MEMORY>"}
+{"type":"update_profile","change":"<what to add or change in Ahmed's MASTER PROFILE, in his words: a new role, venture, degree, certificate, achievement, or a correction>"}
+  (only facts about Ahmed himself and his career/ventures; facts about a client are NOT profile changes)
   (when he asks to forget/remove a remembered fact; to correct one, forget the old one and remember the new one)
 
 Rules:
@@ -352,6 +375,9 @@ export function toActions(raw: Record<string, unknown>, clients: PlannerClient[]
     } else if (a.type === 'remember') {
       const text = cleanText(a.text, 300);
       if (text && !facts.some((f) => f.text.toLowerCase() === text.toLowerCase())) actions.push({ type: 'remember', text, explicit: a.asked === true });
+    } else if (a.type === 'update_profile') {
+      const change = cleanText(a.change, 600);
+      if (change) actions.push({ type: 'update_profile', change });
     } else if (a.type === 'forget') {
       const fact = facts.find((f) => f.id === a.memory_id);
       if (fact) actions.push({ type: 'forget', factId: fact.id, text: fact.text });
@@ -372,6 +398,7 @@ export function actionSummary(a: AssistantAction) {
   if (a.type === 'add_website') return `Check ${host(a.url)} hourly for ${a.clientName}`;
   if (a.type === 'remember') return a.explicit ? `Remember (saved right away, no tap needed): ${a.text.slice(0, 150)}` : `Remember (needs his ✅ tap): ${a.text.slice(0, 150)}`;
   if (a.type === 'forget') return `Forget: ${a.text.slice(0, 150)}`;
+  if (a.type === 'update_profile') return `Update master profile: ${a.change.slice(0, 150)}`;
   return `Mark task done: ${a.title}`;
 }
 

@@ -1,8 +1,11 @@
 import crypto from 'crypto';
 import { aiJson } from '../ai-json';
-import { getMemory } from '../assistant-memory';
+import { factsInBudget, getMemory } from '../assistant-memory';
+import { listClientProfiles } from '../admin-ops';
+import { clientFileText, clientsForAddresses, type ClientRef } from '../memory-files';
 import { ringPhone } from '../ntfy';
 import { supabase } from '../supabase';
+import { getSetting, setSetting } from '../data/store';
 import { allowedChatIds, escapeHtml as h, sendMessage, truncate, type InlineButton, type OutgoingMessage } from '../telegram';
 import { gmailClient, listNewGmail, readGmail, sendGmailReply, type MailMessage } from './gmail';
 import { listNewOutlook, outlookSession, sendOutlookReply } from './outlook';
@@ -90,6 +93,23 @@ export async function deleteEmailAccount(id: string) {
   check(await supabase.from('email_accounts').delete().eq('id', id));
 }
 
+
+// ---------- Inbox → business links (Admin → Email) ----------
+
+const INBOX_LINKS = 'inbox_business_links';
+
+/** inbox id → client id, set per inbox in Admin → Email. */
+export async function inboxBusinessLinks(): Promise<Record<string, string>> {
+  return ((await getSetting<Record<string, string>>(INBOX_LINKS).catch(() => null)) || {}) as Record<string, string>;
+}
+
+export async function setInboxBusiness(accountId: string, clientId: string | null) {
+  const links = await inboxBusinessLinks();
+  if (clientId) links[accountId] = clientId;
+  else delete links[accountId];
+  await setSetting(INBOX_LINKS, links);
+}
+
 // ---------- Items ----------
 
 export async function getEmailItem(id: string) {
@@ -137,10 +157,27 @@ export function conversationText(history: EmailItem[]) {
     .join('\n');
 }
 
-async function memoryText() {
-  const m = await getMemory().catch(() => null);
+/**
+ * What the AI should know for one email: Ahmed's general rules (email rules first), and the file
+ * of the client this email belongs to — matched by the inbox's domain (info@pacificegy.com →
+ * Pacific) or the sender's. Other clients' files are never sent.
+ */
+async function memoryText(addresses: (string | null | undefined)[] = [], accountId?: string) {
+  const [m, clients, links] = await Promise.all([getMemory().catch(() => null), listClientProfiles().catch(() => []), inboxBusinessLinks()]);
   if (!m) return '';
-  return [`ABOUT AHMED: ${m.profile}`, 'AHMED’S STANDING INSTRUCTIONS AND FACTS (follow them):', ...m.facts.slice(-40).map((f) => `- ${f.text}`)].join('\n');
+  const facts = [...factsInBudget(m.facts, ['email']), ...factsInBudget(m.facts, ['client', 'general'])];
+  const known = clients.filter((c) => c.id && c.brandName) as ClientRef[];
+  // An inbox linked to a business in Admin → Email always uses that business; otherwise match by domain.
+  const linked = accountId && links[accountId] ? known.filter((c) => c.id === links[accountId]) : [];
+  const matched = (linked.length ? linked : clientsForAddresses(addresses, known)).slice(0, 2);
+  const files = (await Promise.all(matched.map((c) => clientFileText(c.id, c.brandName).catch(() => '')))).filter(Boolean);
+  return [
+    `ABOUT AHMED: ${m.profile}`,
+    'AHMED’S GENERAL INSTRUCTIONS AND FACTS (follow them; newest first — if two disagree, the NEWER one wins):',
+    ...facts.map((f) => `- (${f.at.slice(0, 10)}) ${f.text}`),
+    ...(matched.length ? ['', `THIS EMAIL BELONGS TO CLIENT: ${matched.map((c) => c.brandName).join(', ')}`] : []),
+    ...files.flatMap((f) => ['', f]),
+  ].join('\n');
 }
 
 /**
@@ -179,7 +216,7 @@ async function triage(account: EmailAccount, mail: MailMessage, history: EmailIt
     system: `You sort Ahmed Anwar's email. Decide if this email needs Ahmed's attention.
 IMPORTANT: from a real person or business about his work, clients, money (invoices, payments, bank), contracts, meetings, legal or government matters, a real account problem that needs action (account suspended or restricted, payment failed, policy violation, domain or hosting expiring), or anything his instructions or this inbox's focus say to watch for. A reply in a conversation he already had is usually important.
 NOT IMPORTANT: newsletters, marketing, promotions, tips and recommendations, weekly/monthly stats, automated notifications that need no action, routine security notices (sign-in alerts, "new device", verification or 2FA codes, "password changed", recovery email checks), receipts for small routine things, spam.
-AHMED'S INSTRUCTIONS AND THIS INBOX'S FOCUS ALWAYS WIN over these defaults (e.g. if he says to ignore something, it's not important; if he says to watch for something, it is).
+ORDER OF PRECEDENCE when rules disagree: 1) this inbox's FOCUS, 2) his instructions about a specific inbox, sender or client, 3) his general instructions (newer beats older), 4) these defaults. E.g. if he says to ignore something, it's not important; if he says to watch for something, it is.
 URGENT (rings his phone): needs action today, a deadline, an angry client or complaint, a payment problem, an account suspended, or his instructions say to alert him.
 Write "summary" in 1-2 short sentences in the email's language (Arabic or English), and "reason" in a few words (e.g. "client asking for a quote").
 Return ONLY JSON: {"important": true|false, "urgent": true|false, "summary": "...", "reason": "..."}
@@ -247,7 +284,6 @@ export async function checkInboxes(now = new Date()) {
   const deadline = Date.now() + RUN_BUDGET_MS;
   const accounts = (await listEmailAccounts().catch(() => [] as EmailAccount[])).filter((a) => a.enabled);
   if (!accounts.length) return { accounts: 0, new: 0, important: 0 };
-  const memory = await memoryText();
   let fresh = 0;
   let important = 0;
 
@@ -312,7 +348,7 @@ export async function checkInboxes(now = new Date()) {
         let verdict: Triage = { important: false, urgent: false, summary: '', reason: '' };
         if (!ignored) {
           const history = await conversationWith({ id: item.id, account_id: account.id, from_email: mail.fromEmail, thread_id: mail.threadId });
-          verdict = await triage(account, mail, history, memory).catch((error) => {
+          verdict = await triage(account, mail, history, await memoryText([account.email, mail.fromEmail], account.id)).catch((error) => {
             // If the AI is down, err on the side of showing it.
             console.error('Email triage failed:', error instanceof Error ? error.message.slice(0, 150) : error);
             return { important: true, urgent: false, summary: mail.snippet.slice(0, 300), reason: 'AI busy: not sorted' };
@@ -351,7 +387,7 @@ export async function checkInboxes(now = new Date()) {
 
 /** Turns Ahmed's voice note / text into a professional reply, knowing the conversation so far. */
 export async function draftEmailReply(item: EmailItem, account: EmailAccount, brief: string) {
-  const [history, memory] = await Promise.all([conversationWith(item), memoryText()]);
+  const [history, memory] = await Promise.all([conversationWith(item), memoryText([account.email, item.from_email], account.id)]);
   const raw = await aiJson({
     system: `You write email replies for Ahmed Anwar, sent from ${account.email} (${account.label || ''}).
 Ahmed tells you roughly what to say (often spoken, in Egyptian Arabic or English). Write the full reply email:

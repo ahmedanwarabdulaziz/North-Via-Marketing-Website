@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { addFact } from './assistant-memory';
+import { proposeFact } from './memory-guard';
 import { getSetting, setSetting } from './data/store';
 import { findUrls } from './knowledge';
 import { saveTextToLibrary } from './knowledge-telegram';
@@ -65,12 +65,10 @@ export async function handleSaveChoice(query: { id: string; data?: string; messa
     return answerCallback(query.id, 'Cancelled');
   }
   if (choice === 'm') {
-    const fact = await addFact(item.text.replace(ASK_PREFIX, '').trim());
-    await editMessage(chatId, messageId, {
-      text: `🧠 <b>Saved to memory</b>\n${h(fact.text)}\n\n<i>Used in chats and when sorting email in every inbox. /memory shows everything saved.</i>`,
-      buttons: [[{ text: '↩️ Undo', callback_data: `m:mem:del:${fact.id}` }, { text: '🧠 All memory', callback_data: 'm:mem' }]],
-    });
-    return answerCallback(query.id, 'Saved to memory');
+    await answerCallback(query.id, 'Checking memory…');
+    // Checked against what's saved first: a duplicate or conflict asks Replace / Keep both.
+    await proposeFact(chatId, item.text.replace(ASK_PREFIX, '').trim(), { editMessageId: messageId });
+    return;
   }
   await editMessage(chatId, messageId, { text: '📚 <i>Saving to the library…</i>' });
   await answerCallback(query.id);

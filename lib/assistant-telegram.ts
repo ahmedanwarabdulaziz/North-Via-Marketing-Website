@@ -1,5 +1,7 @@
 import crypto from 'crypto';
-import { addFact, removeFact, type MemoryFact } from './assistant-memory';
+import { removeFact } from './assistant-memory';
+import { proposeFact } from './memory-guard';
+import { applyProfileUpdate } from './master-profile';
 import { listClientProfiles } from './admin-ops';
 import { CHAT_MODELS, CLIENT_FIELDS, actionSummary, askAssistant, availableChatModels, claimsDone, type AssistantAction, type ChatMessage, type ChatModel, type ClientField } from './assistant';
 import { addDoc, updateDoc } from './data/store';
@@ -178,12 +180,9 @@ async function answer(chatId: number, session: ChatSession, question: string) {
     return;
   }
 
-  // "Remember this" that he clearly asked for is saved right away (with Undo), like a note;
-  // everything else still waits for a ✅ Confirm tap.
-  const saved: MemoryFact[] = [];
-  for (const a of reply.actions) {
-    if (a.type === 'remember' && a.explicit) saved.push(await addFact(a.text).catch(() => null as unknown as MemoryFact));
-  }
+  // "Remember this" that he clearly asked for goes straight to the memory check (saved with Undo,
+  // or Replace / Keep both if it clashes); everything else still waits for a ✅ Confirm tap.
+  const toRemember = reply.actions.filter((a): a is Extract<AssistantAction, { type: 'remember' }> => a.type === 'remember' && Boolean(a.explicit));
   const toConfirm = reply.actions.filter((a) => !(a.type === 'remember' && a.explicit));
 
   const now = new Date().toISOString();
@@ -195,7 +194,7 @@ async function answer(chatId: number, session: ChatSession, question: string) {
       // The history says plainly that proposals aren't done yet, so the model can't later assume they were.
       content: [
         reply.text,
-        ...saved.filter(Boolean).map((f) => `[DONE by the bot] remembered: ${f.text}`),
+        ...toRemember.map((a) => `[DONE by the bot] memory card shown for: ${a.text}`),
         ...toConfirm.map((a) => `[PROPOSED, not done yet: ${actionSummary(a)}]`),
       ]
         .filter(Boolean)
@@ -226,12 +225,7 @@ async function answer(chatId: number, session: ChatSession, question: string) {
   const body = reply.text ? toTelegramHtml(reply.text) : reply.actions.length ? 'Here’s what I prepared:' : '…';
   await sendMessage(chatId, { text: `${truncate(body, 3400)}${warning}\n\n${footer}`, buttons });
 
-  for (const f of saved.filter(Boolean)) {
-    await sendMessage(chatId, {
-      text: `🧠 <b>Saved to memory</b>\n${h(f.text)}`,
-      buttons: [[{ text: '↩️ Undo', callback_data: `m:mem:del:${f.id}` }, { text: '🧠 All memory', callback_data: 'm:mem' }]],
-    });
-  }
+  for (const a of toRemember) await proposeFact(chatId, a.text).catch((e) => console.error('Memory save failed:', e));
 
   // One confirmation card per change: exactly what will be saved, Confirm / Cancel.
   const proposed = messages[messages.length - 1].actions || [];
@@ -269,6 +263,7 @@ function actionCard(a: AssistantAction) {
   if (a.type === 'add_website') return [`🌐 <b>Confirm: check a website every hour</b>`, '', `• Client: <b>${h(a.clientName)}</b>`, `• Address: <b>${h(a.url)}</b>`].join('\n');
   if (a.type === 'remember') return ['🧠 <b>Confirm: remember this</b>', '', h(a.text), '', '<i>It will be part of every chat from now on. /memory shows everything saved.</i>'].join('\n');
   if (a.type === 'forget') return ['🗑 <b>Confirm: forget this</b>', '', `<s>${h(a.text)}</s>`].join('\n');
+  if (a.type === 'update_profile') return ['📄 <b>Confirm: update your master profile</b>', '', h(a.change), '', '<i>A dated line is added to its Update Log. You can see and edit the whole profile in Admin → Memory.</i>'].join('\n');
   return [`✅ <b>Confirm: mark task done</b>`, '', h(a.title)].join('\n');
 }
 
@@ -293,8 +288,18 @@ async function runAction(chatId: number, a: AssistantAction): Promise<{ ok: bool
     return { ok: true, message: `task "${truncate(a.text, 80)}" sent to the task bot`, card: `📝 <b>Sent to the task bot</b>\n${h(a.text)}\n<i>Its card is below.</i>` };
   }
   if (a.type === 'remember') {
-    const fact = await addFact(a.text);
-    return { ok: true, message: `remembered: ${fact.text}`, card: `🧠 <b>Saved to memory</b>\n${h(fact.text)}` };
+    // The memory check sends its own card (saved with Undo, or Replace / Keep both on a clash).
+    await proposeFact(chatId, a.text);
+    return { ok: true, message: `memory card shown for: ${a.text}`, card: '🧠 <i>Checked against your memory: see the card below.</i>' };
+  }
+  if (a.type === 'update_profile') {
+    try {
+      const done = await applyProfileUpdate(a.change);
+      return { ok: true, message: `master profile updated: ${done}`, card: `📄 <b>Master profile updated</b>\n${h(done)}` };
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      return { ok: false, message: reason, card: `⚠️ <b>Profile not changed:</b> ${h(reason)}` };
+    }
   }
   if (a.type === 'forget') {
     const fact = await removeFact(a.factId);

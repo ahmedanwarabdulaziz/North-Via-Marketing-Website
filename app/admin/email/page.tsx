@@ -1,5 +1,6 @@
 import { Mail, Plus, CheckCircle2, AlertTriangle } from 'lucide-react';
-import { listEmailAccounts, type EmailAccount } from '@/lib/email/inbox';
+import { inboxBusinessLinks, listEmailAccounts, type EmailAccount } from '@/lib/email/inbox';
+import { listClientProfiles } from '@/lib/admin-ops';
 import { InboxCard } from '@/components/admin/InboxCard';
 
 export const dynamic = 'force-dynamic';
@@ -13,6 +14,8 @@ export default async function EmailPage({ searchParams }: { searchParams: Promis
   } catch (error) {
     loadError = error instanceof Error ? error.message : 'Could not load inboxes';
   }
+  const [links, profiles] = await Promise.all([inboxBusinessLinks(), listClientProfiles().catch(() => [])]);
+  const businesses = profiles.filter((c) => c.id && c.brandName).map((c) => ({ id: c.id!, name: c.brandName }));
 
   return (
     <div className="p-6 md:p-8 max-w-5xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -80,7 +83,9 @@ export default async function EmailPage({ searchParams }: { searchParams: Promis
               ignoredSenders: a.ignored_senders.join('\n'),
               lastCheckedAt: a.last_checked_at,
               lastError: a.last_error,
+              businessId: links[a.id] || '',
             }}
+            businesses={businesses}
           />
         ))}
       </div>
