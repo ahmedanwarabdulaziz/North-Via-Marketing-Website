@@ -155,8 +155,9 @@ interface Triage {
 async function triage(account: EmailAccount, mail: MailMessage, history: EmailItem[], memory: string): Promise<Triage> {
   const raw = await aiJson({
     system: `You sort Ahmed Anwar's email. Decide if this email needs Ahmed's attention.
-IMPORTANT: from a real person or business about his work, clients, money (invoices, payments, bank), contracts, meetings, legal or government matters, account/security problems (Google, Meta, domain, hosting), or anything his instructions or this inbox's focus say to watch for. A reply in a conversation he already had is usually important.
-NOT IMPORTANT: newsletters, marketing, promotions, automated notifications that need no action, receipts for small routine things, spam.
+IMPORTANT: from a real person or business about his work, clients, money (invoices, payments, bank), contracts, meetings, legal or government matters, a real account problem that needs action (account suspended or restricted, payment failed, policy violation, domain or hosting expiring), or anything his instructions or this inbox's focus say to watch for. A reply in a conversation he already had is usually important.
+NOT IMPORTANT: newsletters, marketing, promotions, tips and recommendations, weekly/monthly stats, automated notifications that need no action, routine security notices (sign-in alerts, "new device", verification or 2FA codes, "password changed", recovery email checks), receipts for small routine things, spam.
+AHMED'S INSTRUCTIONS AND THIS INBOX'S FOCUS ALWAYS WIN over these defaults (e.g. if he says to ignore something, it's not important; if he says to watch for something, it is).
 URGENT (rings his phone): needs action today, a deadline, an angry client or complaint, a payment problem, an account suspended, or his instructions say to alert him.
 Write "summary" in 1-2 short sentences in the email's language (Arabic or English), and "reason" in a few words (e.g. "client asking for a quote").
 Return ONLY JSON: {"important": true|false, "urgent": true|false, "summary": "...", "reason": "..."}
