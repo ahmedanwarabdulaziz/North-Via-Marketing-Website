@@ -92,12 +92,14 @@ export async function openRouterChat(opts: {
 }
 
 /** JSON helper: parses the answer, tolerating a ```json fence. */
-export async function openRouterJson(opts: { system: string; user: string; feature: AiFeature; image?: { data: string; mimeType: string }; timeoutMs?: number }) {
-  const userContent: OpenRouterMessage['content'] = opts.image
-    ? [
-        { type: 'text', text: opts.user },
-        { type: 'image_url', image_url: { url: `data:${opts.image.mimeType};base64,${opts.image.data}` } },
-      ]
+export async function openRouterJson(opts: { system: string; user: string; feature: AiFeature; image?: { data: string; mimeType: string }; imageUrls?: string[]; timeoutMs?: number }) {
+  // Images as base64 (uploads) or as links (e.g. Instagram covers), up to 4.
+  const images = [
+    ...(opts.image ? [`data:${opts.image.mimeType};base64,${opts.image.data}`] : []),
+    ...(opts.imageUrls || []),
+  ].slice(0, 4);
+  const userContent: OpenRouterMessage['content'] = images.length
+    ? [{ type: 'text', text: opts.user }, ...images.map((url) => ({ type: 'image_url' as const, image_url: { url } }))]
     : opts.user;
   const text = await openRouterChat({
     messages: [
