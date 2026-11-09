@@ -12,7 +12,7 @@ export interface TaskClient {
 }
 
 export interface TaskUnderstanding {
-  intent: 'task' | 'knowledge' | 'chat';
+  intent: 'task' | 'knowledge' | 'chat' | 'instruction';
   separate: boolean; // answer mode: the message is a new item, not an answer
   fields: TaskFields;
   clientMentioned: string | null; // a client named in the message that isn't in the list
@@ -59,7 +59,7 @@ ${clients.map((c) => `${c.id} | ${c.name}${c.owner ? ` | ${c.owner}` : ''}`).joi
 
 Return ONLY a JSON object:
 {
-  "intent": "task" | "knowledge" | "chat",
+  "intent": "task" | "knowledge" | "chat" | "instruction",
   "separate": boolean,
   "title": string,            // short action, e.g. "Call Mona about the menu photos"
   "notes": string | null,     // useful extra details from the message, else null
@@ -83,7 +83,8 @@ Return ONLY a JSON object:
 
 Rules:
 - intent "knowledge": the message is only a link, article, idea or info to save for later with nothing to do.
-  "chat": a greeting, or a QUESTION / request for help or advice ("what did I save about reels?", "what's on for Patriva this week?", "عندي ايه عن المنافسين؟", "give me ideas for…", "which of my saved stuff fits this task?"). A request to do or remember something is still "task".
+  "chat": a greeting, or a QUESTION / request for help or advice ("what did I save about reels?", "what's on for Patriva this week?", "عندي ايه عن المنافسين؟", "give me ideas for…", "which of my saved stuff fits this task?"). A request to do something is still "task".
+  "instruction": a STANDING rule, preference or fact for the future, with nothing specific to do at a time ("from now on…", "always…", "any email from X…", "for JL, reply the same day to…", "خلي بالك إن…", "من هنا ورايح…", "أي إيميل من…", "العميل ده بيفضل…"). Not a task.
   Otherwise "task".
 - NEVER guess. Use null when the message doesn't say or clearly imply it. "Tomorrow" without a time → date set, time null, all_day false.
   "Tomorrow morning" → 10:00, "afternoon" → 15:00, "evening" → 19:00, "tonight" → 21:00, "end of day" → 17:00.
@@ -168,7 +169,7 @@ export function toUnderstanding(raw: Record<string, unknown>, clients: TaskClien
       }
     }
   }
-  const intent = raw.intent === 'knowledge' || raw.intent === 'chat' ? raw.intent : 'task';
+  const intent = raw.intent === 'knowledge' || raw.intent === 'chat' || raw.intent === 'instruction' ? raw.intent : 'task';
   return { intent, separate: raw.separate === true, fields, clientMentioned: knownClient ? null : str(raw.client_mentioned), heard: str(raw.heard), raw };
 }
 

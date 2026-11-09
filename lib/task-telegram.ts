@@ -5,6 +5,7 @@ import { taskActionUrl, type TaskLinkAction } from './action-links';
 import { morningBriefSections, type BriefSections } from './morning-brief';
 import { whatsAppShareLink } from './whatsapp-share';
 import { proposeFact } from './memory-guard';
+import { askWhereToSave } from './memory-telegram';
 import { emailContextForCard } from './email/inbox';
 import { saveTextToLibrary } from './knowledge-telegram';
 import { activeChatSession, endConversation, handleChatMessage, startConversation } from './assistant-telegram';
@@ -299,6 +300,11 @@ async function startNewItem(chatId: number, result: TaskUnderstanding, clients: 
   if (result.intent === 'knowledge') {
     // Info to keep, not something to do: it goes to the library (a link or a note).
     await saveTextToLibrary(chatId, ctx.rawInput);
+    return;
+  }
+  if (result.intent === 'instruction') {
+    // A standing rule or preference: ask where it goes (🧠 memory / ✅ task / 📚 library) instead of guessing.
+    await askWhereToSave(chatId, ctx.rawInput);
     return;
   }
   await proceed(chatId, result.fields, clients, {
