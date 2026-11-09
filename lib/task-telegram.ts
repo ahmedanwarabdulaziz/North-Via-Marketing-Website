@@ -3,6 +3,7 @@ import { getSetting, setSetting } from './data/store';
 import { ringPhone } from './ntfy';
 import { taskActionUrl, type TaskLinkAction } from './action-links';
 import { morningBriefSections, type BriefSections } from './morning-brief';
+import { whatsAppShareLink } from './whatsapp-share';
 import { saveTextToLibrary } from './knowledge-telegram';
 import { activeChatSession, endConversation, handleChatMessage, startConversation } from './assistant-telegram';
 import { QUESTION_TEXT, transcribeAudio, understandTaskMessage, type TaskAudio, type TaskClient, type TaskUnderstanding } from './task-ai';
@@ -174,6 +175,8 @@ function taskCard(task: Task, clients: TaskClient[], header: string, opts: { jus
             { text: '✏️ Edit', callback_data: `tk:e:${task.id}` },
             { text: '🗑 Remove', callback_data: `tk:u:${task.id}` },
           ],
+          // A client's task: a ready follow-up message in that client's WhatsApp chat.
+          ...(task.client_id ? [[{ text: `📲 Message ${truncate(clientName(clients, task.client_id) || 'client', 24)} on WhatsApp`, url: whatsAppShareLink('t', task.id) }]] : []),
         ],
   };
 }

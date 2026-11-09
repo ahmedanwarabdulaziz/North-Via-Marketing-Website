@@ -3,8 +3,10 @@ import { getClientReport } from '@/lib/client-report';
 import { reportWhatsAppText } from '@/lib/report-i18n';
 import { getDoc } from '@/lib/data/store';
 import { verifyShareLink, whatsAppComposeUrl, whatsAppNumber } from '@/lib/whatsapp-share';
+import { clientWhatsAppMessage } from '@/lib/client-messages';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 30;
 
 /** Opened from a Telegram "Forward to WhatsApp" button; redirects to WhatsApp with the text filled in. */
 export async function GET(request: Request) {
@@ -22,6 +24,13 @@ export async function GET(request: Request) {
     const client = await getDoc<{ mobileNumber?: string }>('clients', report.clientId);
     const text = reportWhatsAppText(report.data, report.language, `https://www.northviamarketing.com/r/${id}`);
     return Response.redirect(whatsAppComposeUrl(text, whatsAppNumber(client?.mobileNumber)), 302);
+  }
+
+  if (kind === 'i' || kind === 'v' || kind === 'w' || kind === 't') {
+    // Messages to a client: written now, opened in that client's WhatsApp chat.
+    const message = await clientWhatsAppMessage(kind, id!);
+    if (!message) return new Response('This is no longer available.', { status: 404 });
+    return Response.redirect(whatsAppComposeUrl(message.text, message.phone), 302);
   }
 
   const text = await whatsAppTextFor(kind, id!);

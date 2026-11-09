@@ -2,11 +2,14 @@ import crypto from 'crypto';
 
 // "Forward to WhatsApp" buttons in Telegram. A Telegram button can't carry a long
 // prefilled text, so it opens a short signed link on our site, which builds the
-// text from the current review data and redirects to WhatsApp's share screen.
-// The signature stops anyone from reading reviews or drafts by guessing ids.
+// text from the current data and redirects to WhatsApp's share screen.
+// The signature stops anyone from reading reviews, invoices or drafts by guessing ids.
 
 const SITE = 'https://www.northviamarketing.com';
-export type ShareKind = 'r' | 'b' | 'p'; // r = one review (shortRef), b = a 5★ list (batch id), p = a client report
+// r = one review (shortRef), b = a 5★ list (batch id), p = a client report,
+// i = overdue invoice reminder, v = weekly reviews message (client id), w = website issue/fixed, t = task follow-up
+export type ShareKind = 'r' | 'b' | 'p' | 'i' | 'v' | 'w' | 't';
+const KINDS: ShareKind[] = ['r', 'b', 'p', 'i', 'v', 'w', 't'];
 
 function signature(kind: ShareKind, id: string) {
   return crypto
@@ -21,8 +24,8 @@ export function whatsAppShareLink(kind: ShareKind, id: string) {
 }
 
 export function verifyShareLink(kind: string | null, id: string | null, sig: string | null): kind is ShareKind {
-  if ((kind !== 'r' && kind !== 'b' && kind !== 'p') || !id || !sig) return false;
-  const expected = Buffer.from(signature(kind, id));
+  if (!KINDS.includes(kind as ShareKind) || !id || !sig) return false;
+  const expected = Buffer.from(signature(kind as ShareKind, id));
   const given = Buffer.from(sig);
   return expected.length === given.length && crypto.timingSafeEqual(expected, given);
 }

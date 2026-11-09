@@ -13,6 +13,7 @@ import { reportWhatsAppText } from './report-i18n';
 import { whatsAppShareLink } from './whatsapp-share';
 import { listClientProfiles } from './admin-ops';
 import { listDocs } from './data/store';
+import { GBP_CONNECTIONS } from './google-business';
 import { adsScreenText } from './ads-telegram';
 import { metaAdsScreenText, type MetaAdsPeriod } from './meta-ads-telegram';
 import { analyticsScreenText } from './analytics-telegram';
@@ -177,6 +178,7 @@ async function reviewsScreen(note?: string): Promise<OutgoingMessage> {
       backlog?.total
         ? [{ text: `📦 Choose old reviews to answer (${backlog.total})`, callback_data: 'm:gr:bl' }]
         : [{ text: '🗂 Find old unanswered reviews', callback_data: 'm:gr:scan' }],
+      [{ text: '📣 Weekly review messages to clients', callback_data: 'm:gr:wk' }],
       [
         schedule.enabled
           ? { text: '⏸ Pause daily digest', callback_data: 'm:gr:pause' }
@@ -185,6 +187,26 @@ async function reviewsScreen(note?: string): Promise<OutgoingMessage> {
       ],
       [{ text: '⬅️ Back to menu', callback_data: 'm:home' }],
     ],
+  };
+}
+
+/** One button per client with Google reviews: last week's count and a nudge for more, in their WhatsApp. */
+async function weeklyReviewMessagesScreen(): Promise<OutgoingMessage> {
+  const [connections, clients] = await Promise.all([listDocs<{ clientId: string }>(GBP_CONNECTIONS), listClientProfiles()]);
+  const ids = [...new Set(connections.map((c) => c.clientId).filter(Boolean))];
+  const rows = ids
+    .map((id) => clients.find((c) => c.id === id))
+    .filter((c): c is NonNullable<typeof c> => Boolean(c?.id))
+    .map((c) => [{ text: `📲 ${truncate(c.brandName, 30)}`, url: whatsAppShareLink('v', c.id!) }]);
+  return {
+    text: [
+      '📣 <b>Weekly review messages</b>',
+      '',
+      rows.length
+        ? 'Tap a client: WhatsApp opens in their chat with a message about last week’s Google reviews and a nudge to get more this week. Check it, then press Send.'
+        : 'No client has Google reviews connected yet.',
+    ].join('\n'),
+    buttons: [...rows, [{ text: '⬅️ Reviews', callback_data: 'm:gr' }]],
   };
 }
 
@@ -408,6 +430,10 @@ export async function handleMenuCallback(query: { id: string; data?: string; mes
     }
 
     if (screen === 'gr') {
+      if (action === 'wk') {
+        await editMessage(chatId, messageId, await weeklyReviewMessagesScreen());
+        return answerCallback(query.id);
+      }
       if (action === 'scan' || action === 'scanmore') {
         await answerCallback(query.id, 'Reading every review from Google…');
         await editMessage(chatId, messageId, { text: '🗂 <b>Reading every review from Google…</b>\n<i>This takes up to a minute.</i>' });

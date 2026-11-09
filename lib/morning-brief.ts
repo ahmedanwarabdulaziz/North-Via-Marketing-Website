@@ -6,6 +6,7 @@ import { PRAYERS, PRAYER_CITIES, todaysPrayerTimes } from './prayer';
 import { reviewQueueOverview } from './review-telegram';
 import { escapeHtml as h, type InlineButton } from './telegram';
 import { websiteDigestLine } from './website-monitor';
+import { whatsAppShareLink } from './whatsapp-share';
 import type { AdminInvoiceItem } from '@/types/database';
 
 // The 9 AM morning brief: everything for the day in one message, above the task list
@@ -38,17 +39,23 @@ async function reviewsLine() {
   return `⭐ <b>${total}</b> review repl${total === 1 ? 'y' : 'ies'} waiting: ${clients.slice(0, 4).map((c) => h(c.name)).join(', ')}${clients.length > 4 ? '…' : ''}`;
 }
 
-/** Sent or part-paid invoices past their due date. */
-async function invoiceLines(today: string) {
+/** Sent or part-paid invoices past their due date, each with a WhatsApp reminder button. */
+async function invoiceLines(today: string): Promise<{ lines: string[]; buttons: InlineButton[][] }> {
   const open = (await listAdminInvoices()).filter(
     (i: AdminInvoiceItem) => ['sent', 'overdue', 'partially_paid'].includes(i.status) && i.dueDate && i.dueDate.slice(0, 10) < today
   );
-  if (!open.length) return [];
+  if (!open.length) return { lines: [], buttons: [] };
   const owed = (i: AdminInvoiceItem) => (i.totalAmount || i.amount || 0) - (i.payments || []).reduce((s, p) => s + (p.amount || 0), 0);
-  return [
-    `💰 <b>${open.length} overdue invoice${open.length === 1 ? '' : 's'}</b>`,
-    ...open.slice(0, 5).map((i) => `• ${h(i.clientBrand || i.clientName)}${i.invoiceNumber ? ` #${h(i.invoiceNumber)}` : ''}: ${money(owed(i), i.currency)}, due ${i.dueDate!.slice(0, 10)}`),
-  ];
+  return {
+    lines: [
+      `💰 <b>${open.length} overdue invoice${open.length === 1 ? '' : 's'}</b>`,
+      ...open.slice(0, 5).map((i) => `• ${h(i.clientBrand || i.clientName)}${i.invoiceNumber ? ` #${h(i.invoiceNumber)}` : ''}: ${money(owed(i), i.currency)}, due ${i.dueDate!.slice(0, 10)}`),
+    ],
+    buttons: open
+      .filter((i) => i.id)
+      .slice(0, 3)
+      .map((i) => [{ text: `📲 Remind ${(i.clientBrand || i.clientName).slice(0, 24)} on WhatsApp`, url: whatsAppShareLink('i', i.id!) }]),
+  };
 }
 
 export interface BriefSections {
@@ -63,7 +70,7 @@ export async function morningBriefSections(today: string): Promise<BriefSections
     withTimeout(websiteDigestLine(), ''),
     withTimeout(adsDigestLines(), [] as string[]),
     withTimeout(metaAdsDigestLines(), [] as string[]),
-    withTimeout(invoiceLines(today), [] as string[]),
+    withTimeout(invoiceLines(today), { lines: [] as string[], buttons: [] as InlineButton[][] }),
   ]);
 
   // Ads problems need someone to step in: ring once (the brief is sent once a day).
@@ -73,8 +80,9 @@ export async function morningBriefSections(today: string): Promise<BriefSections
   }
 
   const lines = [prayer, reviews, websites].filter(Boolean);
-  for (const block of [ads, metaAds, invoices]) if (block.length) lines.push('', ...block);
+  for (const block of [ads, metaAds, invoices.lines]) if (block.length) lines.push('', ...block);
   const buttons: InlineButton[][] = [
+    ...invoices.buttons,
     [
       { text: '⭐ Reviews', callback_data: 'm:gr' },
       { text: '🌐 Websites', callback_data: 'm:ws' },

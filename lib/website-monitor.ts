@@ -3,6 +3,7 @@ import { addDoc, deleteDocs, deleteOlderThan, getDoc, listDocs, newId, updateDoc
 import { listClientProfiles } from './admin-ops';
 import { allowedChatIds, escapeHtml as h, sendMessage, type OutgoingMessage } from './telegram';
 import { ringPhone, type Ring } from './ntfy';
+import { whatsAppShareLink } from './whatsapp-share';
 import type { Website, WebsiteCheck } from '@/types/database';
 
 // Website monitoring. Runs every 5 minutes from /api/tasks/due (and "Check now"); Telegram is
@@ -272,10 +273,14 @@ export async function runWebsiteChecks(options: { ids?: string[]; chatIds?: stri
 function alertMessage(text: string, site: Site): OutgoingMessage {
   return {
     text,
-    buttons: [[
-      { text: '🔁 Check again', callback_data: `m:ws:check` },
-      { text: '🌐 Open site', url: site.url },
-    ]],
+    buttons: [
+      [
+        { text: '🔁 Check again', callback_data: `m:ws:check` },
+        { text: '🌐 Open site', url: site.url },
+      ],
+      // Tells the client (down: "we're on it"; back up: "it's fixed"), written when tapped.
+      [{ text: '📲 Tell the client on WhatsApp', url: whatsAppShareLink('w', site.id) }],
+    ],
   };
 }
 
