@@ -159,9 +159,9 @@ export async function endConversation(chatId: number) {
 }
 
 async function answer(chatId: number, session: ChatSession, question: string) {
-  const chosen = modelOf(session);
+  const chosen = modelOf(session) || (await autoModel());
   if (!chosen) {
-    await sendMessage(chatId, await modelPicker(session.id, '💬 Pick a model first:'));
+    await sendMessage(chatId, { text: '⚠️ No model has free quota left right now. Try again later.' });
     return;
   }
   await telegram('sendChatAction', { chat_id: chatId, action: 'typing' }).catch(() => undefined);
@@ -370,9 +370,16 @@ async function runAction(chatId: number, a: AssistantAction): Promise<{ ok: bool
 /** A message inside an open conversation. */
 export async function handleChatMessage(chatId: number, session: ChatSession, text: string) {
   if (!session.model) {
-    // Still choosing a model: keep the newest question for when one is picked.
-    await updateSession(session.id, { pending_question: [session.pending_question, text].filter(Boolean).join('\n') });
-    await sendMessage(chatId, { text: '👆 Pick a model above first, then I’ll answer.' });
+    // A chat without a model (opened before models were picked automatically, or after
+    // "Switch model"): pick the best one now and answer, including any waiting question.
+    const model = await autoModel();
+    if (!model) {
+      await sendMessage(chatId, { text: '⚠️ No model has free quota left right now. Try again later.' });
+      return;
+    }
+    const question = [session.pending_question, text].filter(Boolean).join('\n');
+    const updated = await updateSession(session.id, { model: model.model, provider: model.provider, pending_question: null, status: 'active' });
+    await answer(chatId, updated, question);
     return;
   }
   await answer(chatId, session, text);
