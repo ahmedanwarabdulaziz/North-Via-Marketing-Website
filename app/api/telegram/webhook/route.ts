@@ -7,6 +7,7 @@ import { handleKnowledgeCallback, handleKnowledgeMessage } from '@/lib/knowledge
 import { handleChatCallback } from '@/lib/assistant-telegram';
 import { handleGbpPostCallback, handleGbpPostMessage } from '@/lib/gbp-post-telegram';
 import { isAllowedChat, sendMessage } from '@/lib/telegram';
+import { handleEmailCallback, handleEmailMessage } from '@/lib/email/telegram';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -42,6 +43,7 @@ export async function POST(request: Request) {
         else if (data.startsWith('kb:')) await handleKnowledgeCallback(update.callback_query);
         else if (data.startsWith('ch:')) await handleChatCallback(update.callback_query);
         else if (data.startsWith('gp:')) await handleGbpPostCallback(update.callback_query);
+        else if (data.startsWith('em:')) await handleEmailCallback(update.callback_query);
         else await handleCallback(update.callback_query);
       }
     } else if (update.message?.chat) {
@@ -52,7 +54,9 @@ export async function POST(request: Request) {
         // by the AI as a task); menu words (x, menu, /start…) and unknown commands open the menu.
         // Comments go first: their edit marker "cref:" also contains the reviews' "ref:".
         // A Google post being set up takes the photo, voice note or text before the library and tasks.
+        // An email waiting for "what should I reply?" takes the next voice note or text first.
         const handled =
+          (await handleEmailMessage(update.message)) ||
           (await handleGbpPostMessage(update.message)) ||
           (await handleSocialMessage(update.message)) ||
           (await handleReviewMessage(update.message)) ||

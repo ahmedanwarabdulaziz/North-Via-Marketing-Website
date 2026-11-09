@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { logoutAdmin } from '@/app/actions/auth';
-import { Users, LayoutDashboard, Settings, LogOut, BarChart3, FileText, Star, CheckSquare, BookOpen } from 'lucide-react';
+import { Users, LayoutDashboard, Settings, LogOut, BarChart3, FileText, Star, CheckSquare, BookOpen, Mail } from 'lucide-react';
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname() ?? '';
@@ -30,6 +30,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             { href: '/admin/reviews', label: 'Google Reviews', icon: Star },
             { href: '/admin/library', label: 'Library', icon: BookOpen },
             { href: '/admin/invoices', label: 'Invoices', icon: FileText },
+            { href: '/admin/email', label: 'Email', icon: Mail },
             { href: '/admin/settings', label: 'Settings', icon: Settings },
           ].map(({ href, label, icon: Icon }) => {
             const active = isActive(href);

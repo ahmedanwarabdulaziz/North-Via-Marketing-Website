@@ -6,6 +6,8 @@ import { GoogleConnection } from '@/types/database';
 import { AGENCY_CONNECT_ID, completeGbpConnection, verifyConnectToken } from '@/lib/google-business';
 import { isAdminAuthenticated } from '@/lib/admin-auth';
 import { googleRedirectUri } from '@/lib/google-oauth';
+import { completeGmailConnection } from '@/lib/email/gmail';
+import { saveEmailAccount } from '@/lib/email/inbox';
 
 // Business Profile authorizations carry a signed `state`; Google Ads ones carry
 // "ads:<clientId>" and Google Analytics ones "ga:<clientId>".
@@ -39,6 +41,21 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const code = searchParams.get('code');
     const state = searchParams.get('state');
+
+    // Gmail inboxes from Admin → Email ("mail:gmail").
+    if (state === 'mail:gmail') {
+      if (!(await isAdminAuthenticated())) return NextResponse.redirect(new URL('/admin/login', request.url));
+      if (!code) return NextResponse.redirect(new URL('/admin/email?error=cancelled', request.url));
+      try {
+        const { email, encryptedRefreshToken } = await completeGmailConnection(code, googleRedirectUri(request.url));
+        await saveEmailAccount('gmail', email, encryptedRefreshToken);
+        return NextResponse.redirect(new URL(`/admin/email?connected=${encodeURIComponent(email)}`, request.url));
+      } catch (error) {
+        console.error('Gmail callback error:', error);
+        const reason = error instanceof Error ? error.message : 'failed';
+        return NextResponse.redirect(new URL(`/admin/email?error=${encodeURIComponent(reason.slice(0, 200))}`, request.url));
+      }
+    }
 
     const kind = state?.startsWith('ga:') ? 'ga' : state?.startsWith('ads:') ? 'ads' : state ? 'gbp' : 'ads';
     if (kind === 'gbp') {
