@@ -13,7 +13,7 @@ import { reportWhatsAppText } from './report-i18n';
 import { whatsAppShareLink } from './whatsapp-share';
 import { listClientProfiles } from './admin-ops';
 import { listDocs } from './data/store';
-import { GBP_CONNECTIONS } from './google-business';
+import { GBP_LOCATIONS } from './google-business';
 import { adsScreenText } from './ads-telegram';
 import { metaAdsScreenText, type MetaAdsPeriod } from './meta-ads-telegram';
 import { analyticsScreenText } from './analytics-telegram';
@@ -192,8 +192,9 @@ async function reviewsScreen(note?: string): Promise<OutgoingMessage> {
 
 /** One button per client with Google reviews: last week's count and a nudge for more, in their WhatsApp. */
 async function weeklyReviewMessagesScreen(): Promise<OutgoingMessage> {
-  const [connections, clients] = await Promise.all([listDocs<{ clientId: string }>(GBP_CONNECTIONS), listClientProfiles()]);
-  const ids = [...new Set(connections.map((c) => c.clientId).filter(Boolean))];
+  // Clients with a Google Business location linked (reviews come in through those).
+  const [locations, clients] = await Promise.all([listDocs<{ clientId?: string }>(GBP_LOCATIONS), listClientProfiles()]);
+  const ids = [...new Set(locations.map((l) => l.clientId).filter((id): id is string => Boolean(id)))];
   const rows = ids
     .map((id) => clients.find((c) => c.id === id))
     .filter((c): c is NonNullable<typeof c> => Boolean(c?.id))
