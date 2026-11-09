@@ -274,7 +274,7 @@ async function checkInstagram(c: Competitor, state: CompetitorState, clientName:
 // ---------- Website ----------
 
 function normalize(text: string) {
-  return text.replace(/\s+/g, ' ').trim().slice(0, 12_000);
+  return text.replace(/\s+/g, ' ').trim().slice(0, 20_000);
 }
 
 function similarity(a: string, b: string) {
@@ -304,7 +304,7 @@ const itemKey = (name: string) => name.toLowerCase().replace(/[^\w؀-ۿ]+/g, ' '
 async function checkWebsite(c: Competitor, state: CompetitorState, clientName: string): Promise<Finding[]> {
   if (!c.website) return [];
   try {
-    const page = await readPage(c.website);
+    const page = await readPage(c.website, 20_000); // menus are long
     const text = normalize([page?.title, page?.description, page?.text].filter(Boolean).join(' · '));
     if (!text) throw new Error('Could not read the page (it may need JavaScript or block bots).');
     const before = state.web?.text || '';
@@ -322,7 +322,7 @@ Return ONLY JSON: {"items": [{"name": "...", "price": "..."}], "other": "...", "
 ${before.slice(0, 4000)}
 
 ` : ''}NOW:
-${text.slice(0, 7000)}`,
+${text.slice(0, 16_000)}`,
       feature: 'knowledge',
       timeBudgetMs: 25_000,
     });

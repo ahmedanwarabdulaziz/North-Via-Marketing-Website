@@ -178,7 +178,7 @@ function meta(html: string, name: string) {
 }
 
 /** Title, description and readable text of a page; null when it can't be read (login walls, errors). */
-export async function readPage(url: string): Promise<PageInfo | null> {
+export async function readPage(url: string, maxChars = 8000): Promise<PageInfo | null> {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -213,7 +213,7 @@ export async function readPage(url: string): Promise<PageInfo | null> {
     const body = (html.match(/<(article|main)[\s\S]*?<\/\1>/i)?.[0] || html.match(/<body[\s\S]*<\/body>/i)?.[0] || html)
       .replace(/<(script|style|noscript|svg|nav|footer|header|form|iframe)[\s\S]*?<\/\1>/gi, ' ')
       .replace(/<[^>]+>/g, ' ');
-    const text = decodeEntities(body).replace(/\s+/g, ' ').trim().slice(0, 8000) || null;
+    const text = decodeEntities(body).replace(/\s+/g, ' ').trim().slice(0, maxChars) || null;
     return { title, description, text, siteName: meta(html, 'og:site_name') };
   } catch {
     return null;
