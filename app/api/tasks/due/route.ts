@@ -2,6 +2,7 @@ import { isAutomationRequest, unauthorized } from '@/lib/automation-auth';
 import { sendDueReminders, sendMorningDigest, sendWeeklySummary } from '@/lib/task-telegram';
 import { runWebsiteChecks } from '@/lib/website-monitor';
 import { sendPrayerAlarms } from '@/lib/prayer';
+import { runCriticalChecks } from '@/lib/critical-alerts';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -16,7 +17,7 @@ export const maxDuration = 60;
 async function run(request: Request) {
   if (!isAutomationRequest(request)) return unauthorized();
   const now = new Date();
-  const [reminders, digest, weekly, websites, prayers] = await Promise.all([
+  const [reminders, digest, weekly, websites, prayers, critical] = await Promise.all([
     sendDueReminders(now).catch((error) => {
       console.error('Task reminders failed:', error);
       return { error: error instanceof Error ? error.message : 'Task reminders failed' };
@@ -38,9 +39,13 @@ async function run(request: Request) {
       console.error('Prayer alarms failed:', error);
       return { error: error instanceof Error ? error.message : 'Prayer alarms failed' };
     }),
+    runCriticalChecks(now).catch((error) => {
+      console.error('Critical checks failed:', error);
+      return { error: error instanceof Error ? error.message : 'Critical checks failed' };
+    }),
   ]);
   const failed = 'error' in reminders && 'error' in digest;
-  return Response.json({ reminders, digest, weekly, websites, prayers }, { status: failed ? 500 : 200 });
+  return Response.json({ reminders, digest, weekly, websites, prayers, critical }, { status: failed ? 500 : 200 });
 }
 
 export const POST = run;

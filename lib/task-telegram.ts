@@ -1,6 +1,8 @@
 import { listClientProfiles } from './admin-ops';
 import { getSetting, setSetting } from './data/store';
 import { ringPhone } from './ntfy';
+import { taskActionUrl, type TaskLinkAction } from './action-links';
+import { morningBriefSections, type BriefSections } from './morning-brief';
 import { saveTextToLibrary } from './knowledge-telegram';
 import { activeChatSession, endConversation, handleChatMessage, startConversation } from './assistant-telegram';
 import { QUESTION_TEXT, transcribeAudio, understandTaskMessage, type TaskAudio, type TaskClient, type TaskUnderstanding } from './task-ai';
@@ -545,8 +547,7 @@ export async function handleTaskCallback(query: CallbackQuery) {
       const until = snoozeUntil(task, key);
       if (!until) return answerCallback(query.id, 'That option no longer works.');
       const snoozed = await snoozeTask(task.id, until);
-      // Reminders go out with the hourly run, so say when it will actually arrive.
-      const label = clockLabel(new Date(Math.floor(until.getTime() / 3_600_000) * 3_600_000));
+      const label = clockLabel(until);
       await editMessage(chatId, messageId, {
         text: [`💤 <b>Snoozed until ${label}</b>`, '', ...taskLines(snoozed, clients)].join('\n'),
         buttons: [
@@ -698,10 +699,10 @@ function clockLabel(at: Date) {
 }
 
 function snoozeUntil(task: Task, choice: string) {
-  // Reminders are checked once an hour, on the hour: snoozing means "with a later run".
+  // Reminders are checked every 5 minutes: snoozing means "with a later run".
   // ('15' and '60' are from cards sent before the hourly change.)
   const hours = { '1h': 1, '3h': 3, '15': 1, '60': 1 }[choice];
-  if (hours) return new Date(runHour().getTime() + hours * 3_600_000);
+  if (hours) return new Date(runSlot().getTime() + hours * 3_600_000);
   if (choice !== 'tm') return null;
   // Tomorrow at the task's own reminder time of day, not an earlier snooze's (all-day tasks: 9 AM).
   const usual = task.due_at && !task.all_day ? Date.parse(task.due_at) - task.remind_before_min * 60_000 : null;
@@ -737,6 +738,37 @@ function reminderCard(task: Task, clients: TaskClient[], now: Date): OutgoingMes
 }
 
 /**
+ * A button pressed on the phone alarm (signed link, see lib/action-links.ts): does it and posts
+ * the updated task card in Telegram, so the chat shows what happened.
+ */
+export async function applyTaskActionFromAlarm(taskId: string, action: TaskLinkAction) {
+  const task = await getTask(taskId);
+  if (!task) return { ok: false, message: 'Task not found' };
+  const clients = await taskClients();
+  const chats = task.chat_id ? [task.chat_id] : allowedChatIds();
+  let card: OutgoingMessage;
+  let message: string;
+  if (task.status !== 'open') {
+    card = taskCard(task, clients, task.status === 'done' ? '✅ <b>Already done</b>' : '');
+    message = 'Already handled';
+  } else if (action === 'done') {
+    const { task: updated, movedTo } = await completeTask(task.id);
+    card = taskCard(updated, clients, movedTo ? `✅ <b>Done from the alarm.</b> Next one: ${formatWhen(updated)}` : '✅ <b>Done from the alarm</b>');
+    message = 'Done';
+  } else {
+    const until = snoozeUntil(task, action === 'snooze1h' ? '1h' : 'tm')!;
+    const snoozed = await snoozeTask(task.id, until);
+    card = {
+      text: [`💤 <b>Snoozed from the alarm until ${clockLabel(until)}</b>`, '', ...taskLines(snoozed, clients)].join('\n'),
+      buttons: [[{ text: '☑️ Mark as done', callback_data: `tk:d:${task.id}` }, { text: '✏️ Edit', callback_data: `tk:e:${task.id}` }]],
+    };
+    message = `Snoozed until ${clockLabel(until)}`;
+  }
+  for (const chatId of chats) await sendMessage(chatId, card);
+  return { ok: true, message };
+}
+
+/**
  * Sends every reminder whose time has come. Each one is marked sent before it goes out,
  * so overlapping runs can't send it twice; a failed send is put back for the next run.
  */
@@ -758,6 +790,12 @@ export async function sendDueReminders(now = new Date()) {
           title: '⏰ تذكير',
           message: [task.title, client ? `👤 ${client}` : null, `📅 ${formatWhen(task)}`].filter(Boolean).join('\n'),
           tags: ['alarm_clock'],
+          // Buttons on the alarm itself, so it can be handled from the lock screen.
+          actions: [
+            { label: '☑️ Done', url: taskActionUrl(task.id, 'done') },
+            { label: '💤 1 hour', url: taskActionUrl(task.id, 'snooze1h') },
+            { label: '📅 Tomorrow', url: taskActionUrl(task.id, 'tomorrow') },
+          ],
         });
       }
       await logTaskEvent(task.id, 'reminded', { remind_at: task.remind_at });
@@ -784,11 +822,19 @@ const MISSING_LABEL: Record<MissingField, string> = {
   repeat_end: 'when the repeat ends',
 };
 
-function digestMessage(today: string, groups: ReturnType<typeof groupTasks>, drafts: TaskDraft[], clients: TaskClient[]): OutgoingMessage {
+function digestMessage(
+  today: string,
+  groups: ReturnType<typeof groupTasks>,
+  drafts: TaskDraft[],
+  clients: TaskClient[],
+  brief: BriefSections = { lines: [], buttons: [] }
+): OutgoingMessage {
   const todays = groups.today.slice(0, 15);
   const overdue = groups.overdue.slice(0, 10);
   const work = groups.today.filter((t) => t.category === 'work').length;
   const lines = [`☀️ <b>Good morning — ${formatDate(today)}</b>`];
+  // The rest of the day first (prayers, reviews, websites, ads, invoices), then the tasks.
+  if (brief.lines.length) lines.push('', ...brief.lines, '', '━━━━━━━━━━', '✅ <b>Tasks</b>');
   const summary = [
     groups.today.length ? `Today: ${groups.today.length} task${groups.today.length === 1 ? '' : 's'} (${work} work, ${groups.today.length - work} personal)` : 'Nothing scheduled for today.',
     groups.overdue.length ? `${groups.overdue.length} overdue` : null,
@@ -820,7 +866,13 @@ function digestMessage(today: string, groups: ReturnType<typeof groupTasks>, dra
   }
   if (groups.overdue.length) buttons.push(moveAllRow());
   buttons.push([{ text: '✅ All my tasks', callback_data: 'tk:l:home' }]);
-  return { text: lines.join('\n'), buttons };
+  buttons.push(...brief.buttons);
+  // Telegram's limit is 4096 characters: if it's too long, keep only the brief's one-line summaries.
+  const text = lines.join('\n');
+  if (text.length > 4000 && brief.lines.length > 3) {
+    return digestMessage(today, groups, drafts, clients, { lines: [...brief.lines.slice(0, 3), '<i>(ads and invoices left out: message too long)</i>'], buttons: brief.buttons });
+  }
+  return { text, buttons };
 }
 
 /**
@@ -838,9 +890,9 @@ export async function sendMorningDigest(now = new Date()) {
   await setSetting(DIGEST_SETTING, { day: today, sentAt: now.toISOString() });
 
   try {
-    const [tasks, clients] = await Promise.all([listOpenTasks(), taskClients()]);
+    const [tasks, clients, brief] = await Promise.all([listOpenTasks(), taskClients(), morningBriefSections(today)]);
     const groups = groupTasks(tasks, now);
-    for (const chatId of chats) await sendMessage(chatId, digestMessage(today, groups, await listDrafts(chatId), clients));
+    for (const chatId of chats) await sendMessage(chatId, digestMessage(today, groups, await listDrafts(chatId), clients, brief));
   } catch (error) {
     // Let the next run try again.
     await setSetting(DIGEST_SETTING, last || {});

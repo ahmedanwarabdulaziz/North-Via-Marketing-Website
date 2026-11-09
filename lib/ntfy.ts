@@ -17,6 +17,8 @@ export interface Ring {
   tags?: string[];
   /** Opens this link when the notification is tapped, e.g. the bot chat. */
   click?: string;
+  /** Up to 3 buttons on the notification; each calls a URL in the background (ntfy "http" action). */
+  actions?: { label: string; url: string }[];
 }
 
 export function ntfyConfigured() {
@@ -37,6 +39,9 @@ export async function ringPhone(ring: Ring): Promise<boolean> {
         priority: ring.priority ?? 5,
         tags: ring.tags ?? ['rotating_light'],
         ...(ring.click ? { click: ring.click } : {}),
+        ...(ring.actions?.length
+          ? { actions: ring.actions.slice(0, 3).map((a) => ({ action: 'http', label: a.label, url: a.url, method: 'POST', clear: true })) }
+          : {}),
       }),
       signal: AbortSignal.timeout(8_000),
     });
