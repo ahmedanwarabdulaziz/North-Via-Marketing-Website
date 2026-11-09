@@ -159,6 +159,7 @@ function taskCard(task: Task, clients: TaskClient[], header: string, opts: { jus
     // Just saved: only Edit/Undo, since a Done button there got tapped as "OK" and closed the task.
     buttons: opts.justSaved
       ? [
+          whenRow(task),
           [
             { text: '✏️ Edit', callback_data: `tk:e:${task.id}` },
             { text: '↩️ Undo', callback_data: `tk:u:${task.id}` },
@@ -174,6 +175,7 @@ function taskCard(task: Task, clients: TaskClient[], header: string, opts: { jus
                 ],
               ]
             : []),
+          whenRow(task),
           [
             { text: '☑️ Mark as done', callback_data: `tk:d:${task.id}` },
             { text: '✏️ Edit', callback_data: `tk:e:${task.id}` },
@@ -182,6 +184,42 @@ function taskCard(task: Task, clients: TaskClient[], header: string, opts: { jus
           // A client's task: a ready follow-up message in that client's WhatsApp chat.
           ...(task.client_id ? [[{ text: `📲 Message ${truncate(clientName(clients, task.client_id) || 'client', 24)} on WhatsApp`, url: whatsAppShareLink('t', task.id) }]] : []),
         ],
+  };
+}
+
+// ---------- Fixing the date or time with buttons ----------
+// A misheard "Tuesday" or "5" is fixed in one tap on the card: tk:D (pick a day), tk:T (pick a
+// time), tk:P:<id>:dt:<YYYYMMDD|none> or tk:P:<id>:tm:<HHMM|all> (apply), tk:B (back to the card).
+
+function whenRow(task: Task): InlineButton[] {
+  return [
+    { text: '📅 Date', callback_data: `tk:D:${task.id}` },
+    { text: '⏰ Time', callback_data: `tk:T:${task.id}` },
+  ];
+}
+
+function dayPicker(task: Task, clients: TaskClient[]): OutgoingMessage {
+  const today = cairoToday();
+  const days = Array.from({ length: 14 }, (_, i) => addDays(today, i));
+  const label = (d: string, i: number) => (i === 0 ? 'Today' : i === 1 ? 'Tomorrow' : `${WEEKDAYS[weekdayOf(d)]} ${Number(d.slice(8))}`);
+  const buttons = days.map((d, i) => ({ text: label(d, i), callback_data: `tk:P:${task.id}:dt:${d.replace(/-/g, '')}` }));
+  const rows: InlineButton[][] = [buttons.slice(0, 2)];
+  for (let i = 2; i < buttons.length; i += 3) rows.push(buttons.slice(i, i + 3));
+  if (!task.repeat_rule) rows.push([{ text: '📝 No date', callback_data: `tk:P:${task.id}:dt:none` }]);
+  rows.push([{ text: '⬅️ Back', callback_data: `tk:B:${task.id}` }]);
+  return { text: [...taskLines(task, clients), '', '📅 <b>Which day?</b>'].join('\n'), buttons: rows };
+}
+
+function timePicker(task: Task, clients: TaskClient[]): OutgoingMessage {
+  const times = ['08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00', '21:00', '22:00', '23:00'];
+  const buttons = times.map((t) => ({ text: formatTime(t).replace(':00', ''), callback_data: `tk:P:${task.id}:tm:${t.replace(':', '')}` }));
+  const rows: InlineButton[][] = [];
+  for (let i = 0; i < buttons.length; i += 4) rows.push(buttons.slice(i, i + 4));
+  rows.push([{ text: '🗓 All day', callback_data: `tk:P:${task.id}:tm:all` }]);
+  rows.push([{ text: '⬅️ Back', callback_data: `tk:B:${task.id}` }]);
+  return {
+    text: [...taskLines(task, clients), '', `⏰ <b>What time${task.due_at ? '' : ' today'}?</b>`, '<i>For another time like 4:30, tap ✏️ Edit and say it.</i>'].join('\n'),
+    buttons: rows,
   };
 }
 
@@ -556,6 +594,27 @@ export async function handleTaskCallback(query: CallbackQuery) {
       const moved = await moveTaskToDay(task.id, day);
       await editMessage(chatId, messageId, taskCard(moved, clients, `${day === 'today' ? '📅' : '🌅'} <b>Moved to ${formatWhen(moved)}</b>`));
       return answerCallback(query.id, `Moved to ${day}`);
+    }
+
+    if (action === 'D' || action === 'T') {
+      await editMessage(chatId, messageId, action === 'D' ? dayPicker(task, clients) : timePicker(task, clients));
+      return answerCallback(query.id);
+    }
+    if (action === 'B') {
+      await editMessage(chatId, messageId, taskCard(task, clients, '📌 <b>Task</b>', { justSaved: task.status === 'open' }));
+      return answerCallback(query.id);
+    }
+    if (action === 'P') {
+      // tk:P:<id>:dt|tm:<value> — new day or time; the rest of the task stays as it was.
+      let fields: TaskFields | null = fieldsFromTask(task);
+      if (key === 'tm' && !fields.date) fields = { ...fields, date: cairoToday(), noDate: false };
+      fields = applyAnswer(fields, key, value);
+      if (!fields) return answerCallback(query.id, 'That option no longer works.');
+      if (key === 'dt' && fields.date && !fields.time && !fields.allDay) fields = { ...fields, allDay: true };
+      const updated = await updateTaskFields(task.id, fields);
+      const header = updated.due_at ? `📅 <b>Now: ${formatWhen(updated)}</b>` : '📝 <b>Now: no date</b>';
+      await editMessage(chatId, messageId, taskCard(updated, clients, header, { justSaved: true }));
+      return answerCallback(query.id, 'Changed');
     }
 
     if (action === 'o') {
