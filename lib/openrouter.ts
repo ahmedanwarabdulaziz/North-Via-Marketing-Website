@@ -63,6 +63,9 @@ export async function openRouterChat(opts: {
         messages: opts.messages,
         temperature: opts.temperature ?? 0.3,
         max_tokens: opts.maxTokens ?? 2048,
+        // Reasoning off: everyday replies come back in ~2 s instead of ~20 s at the same quality,
+        // and the thinking can't eat the max_tokens and leave the answer empty.
+        reasoning: { enabled: false },
         ...(opts.json ? { response_format: { type: 'json_object' } } : {}),
       }),
       signal: AbortSignal.timeout(opts.timeoutMs ?? 30_000),
