@@ -47,7 +47,7 @@ Status: **reversed 2026-11-09: one bot (Anwarz).** Hermes has no agent-authored 
 1. `stack-*.tar.gz`: `/opt/anwarz` without backups and Hermes (about 2 MB).
 2. `supabase/db-*.dump`: `pg_dump -Fc` of the `public` schema (all Anwarz data, about 1 MB) via `postgres:17-alpine`, connection in `/opt/anwarz/supabase-backup.env`. **Restore tested 2026-11-09**: all 33 tables came back (pgvector image + `anon/authenticated/service_role` roles).
 3. `supabase-storage/`: mirror of the Storage buckets `knowledge` and `gbp-posts` (`storage_mirror.py`).
-4. Google Drive copy (`NVM-Backups`, 30 days) with `rclone/rclone`, active once `/opt/anwarz/rclone/rclone.conf` has a remote named `gdrive`.
+No off-server copy: Ahmed chose to keep the backups on the VPS only (2026-11-09). If the VPS disk itself is lost, the backups go with it.
 Each step logs `ok`/`FAILED` in `backups/backup.log`.
 
 Earlier notes (2026-11-08):
