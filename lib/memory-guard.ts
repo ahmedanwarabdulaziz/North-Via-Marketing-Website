@@ -93,15 +93,23 @@ export async function proposeFact(chatId: number | string, rawText: string, opts
     : await placeFact(text, clients);
   const facts = await listFacts(placed.file);
   const related = await findRelated(placed.text, facts);
-  if (!related.length) {
-    await show(await savedCard(await addFactTo(placed.file, placed.text, placed.label), placed.file));
-    return;
-  }
   const id = crypto.randomBytes(5).toString('base64url');
   const pending = (await getSetting<Pending>(PENDING)) || {};
   for (const [k, v] of Object.entries(pending)) if (Date.now() - v.at > KEEP_MS) delete pending[k];
   pending[id] = { text: placed.text, label: placed.label, file: placed.file, related, at: Date.now() };
   await setSetting(PENDING, pending);
+  if (!related.length) {
+    // Nothing clashes: show exactly what will be saved and where, and save only on ✅.
+    const inClient = Boolean(clientIdOf(placed.file));
+    await show({
+      text: [`🧠 <b>Save this to ${h(await fileName(placed.file))}?</b>`, '', h(placed.text)].join('\n'),
+      buttons: [
+        [{ text: '✅ Save', callback_data: `mf:k:${id}` }, ...(inClient ? [{ text: '⚙️ General instead', callback_data: `mf:g:${id}` }] : [])],
+        [{ text: '✖️ Cancel', callback_data: `mf:x:${id}` }],
+      ],
+    });
+    return;
+  }
   const lines = related.map((r) => {
     const f = facts.find((x) => x.id === r.id)!;
     return `• <i>${RELATION_TEXT[r.relation]}:</i> ${h(truncate(f.text, 200))} <i>(${f.at.slice(0, 10)})</i>`;
@@ -135,12 +143,19 @@ export async function handleFactChoice(query: { id: string; data?: string; messa
     await editMessage(chatId, messageId, { text: '✖️ <i>Not saved. Memory unchanged.</i>' });
     return answerCallback(query.id, 'Cancelled');
   }
+  if (choice === 'g') {
+    // He wants it in the general rules, not the client's file.
+    const fact = await addFactTo('general', item.text, 'general');
+    await editMessage(chatId, messageId, await savedCard(fact, 'general'));
+    return answerCallback(query.id, 'Saved');
+  }
   const replace = choice === 'r' ? item.related.map((r) => r.id) : [];
   const fact = await addFactTo(item.file, item.text, item.label, replace);
-  await editMessage(
-    chatId,
-    messageId,
-    await savedCard(fact, item.file, replace.length ? `Replaced ${replace.length} older fact${replace.length === 1 ? '' : 's'}.` : 'Kept the older one too; if they disagree, this newer one wins.')
-  );
+  const note = replace.length
+    ? `Replaced ${replace.length} older fact${replace.length === 1 ? '' : 's'}.`
+    : item.related.length
+      ? 'Kept the older one too; if they disagree, this newer one wins.'
+      : undefined;
+  await editMessage(chatId, messageId, await savedCard(fact, item.file, note));
   return answerCallback(query.id, replace.length ? 'Replaced' : 'Saved');
 }
