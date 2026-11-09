@@ -5,6 +5,7 @@ import { taskActionUrl, type TaskLinkAction } from './action-links';
 import { morningBriefSections, type BriefSections } from './morning-brief';
 import { whatsAppShareLink } from './whatsapp-share';
 import { addFact, type MemoryFact } from './assistant-memory';
+import { emailContextForCard } from './email/inbox';
 import { saveTextToLibrary } from './knowledge-telegram';
 import { activeChatSession, endConversation, handleChatMessage, startConversation } from './assistant-telegram';
 import { QUESTION_TEXT, transcribeAudio, understandTaskMessage, type TaskAudio, type TaskClient, type TaskUnderstanding } from './task-ai';
@@ -81,7 +82,7 @@ interface IncomingMessage {
   text?: string;
   caption?: string;
   chat: { id: number };
-  reply_to_message?: { text?: string };
+  reply_to_message?: { text?: string; message_id?: number };
   voice?: TelegramAudio;
   audio?: TelegramAudio;
   photo?: unknown;
@@ -409,11 +410,19 @@ export async function handleTaskMessage(message: IncomingMessage): Promise<boole
       return true;
     }
 
+    // A reply to one of the bot's messages is about that message: for an email card, the email
+    // itself (sender, text, history) goes with the question, and it's answered in the chat.
+    const replied = message.reply_to_message;
+    const aboutEmail = replied?.message_id ? await emailContextForCard(chatId, replied.message_id).catch(() => null) : null;
+    const quoted = aboutEmail || (replied?.text ? `[He is replying to this earlier bot message — answer about it]\n${truncate(replied.text, 1200)}` : null);
+
     // An open conversation takes the message, unless a task question was asked after it.
     const [chat, draft] = await Promise.all([activeChatSession(chatId), activeDraft(String(chatId))]);
-    if (chat && (!draft || Date.parse(chat.updated_at) >= Date.parse(draft.updated_at))) {
+    if (aboutEmail || (chat && (!draft || Date.parse(chat.updated_at) >= Date.parse(draft.updated_at)))) {
       const words = audio ? await transcribeAudio(audio) : text;
-      await handleChatMessage(chatId, chat, [words, audio ? text : ''].filter(Boolean).join('\n'));
+      const question = [words, audio ? text : '', quoted ? `\n${quoted}` : ''].filter(Boolean).join('\n');
+      if (chat) await handleChatMessage(chatId, chat, question);
+      else await startConversation(chatId, question);
       return true;
     }
 

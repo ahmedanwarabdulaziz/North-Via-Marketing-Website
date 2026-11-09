@@ -143,6 +143,28 @@ async function memoryText() {
   return [`ABOUT AHMED: ${m.profile}`, 'AHMED’S STANDING INSTRUCTIONS AND FACTS (follow them):', ...m.facts.slice(-40).map((f) => `- ${f.text}`)].join('\n');
 }
 
+/**
+ * When Ahmed replies (in Telegram) to an email card, the email itself as context for the chat:
+ * sender, inbox, text and the earlier emails with the same person. Null for other messages.
+ */
+export async function emailContextForCard(chatId: number | string, cardMessageId: number) {
+  const item = check(
+    await supabase.from('email_items').select().eq('chat_id', String(chatId)).eq('card_message_id', cardMessageId).maybeSingle()
+  ) as EmailItem | null;
+  if (!item) return null;
+  const [account, history] = await Promise.all([getEmailAccount(item.account_id), conversationWith(item, 8)]);
+  return [
+    `[He is asking about THIS email [E:${item.id}] — answer about it, not about earlier topics]`,
+    `Inbox: ${account?.label || account?.email || ''} (${account?.email || ''})`,
+    `From: ${item.from_name || ''} <${item.from_email || ''}>`,
+    `Received: ${item.received_at?.slice(0, 16).replace('T', ' ')}`,
+    `Subject: ${item.subject || ''}`,
+    `Text: ${truncate((item.body || item.snippet || '').replace(/\s+/g, ' '), 1500)}`,
+    `Earlier emails with this sender in this inbox (${history.length}):`,
+    conversationText(history),
+  ].join('\n');
+}
+
 // ---------- Triage ----------
 
 interface Triage {
