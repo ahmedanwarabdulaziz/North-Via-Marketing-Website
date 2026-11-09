@@ -4,6 +4,7 @@ import { ringPhone } from './ntfy';
 import { taskActionUrl, type TaskLinkAction } from './action-links';
 import { morningBriefSections, type BriefSections } from './morning-brief';
 import { whatsAppShareLink } from './whatsapp-share';
+import { addFact, type MemoryFact } from './assistant-memory';
 import { saveTextToLibrary } from './knowledge-telegram';
 import { activeChatSession, endConversation, handleChatMessage, startConversation } from './assistant-telegram';
 import { QUESTION_TEXT, transcribeAudio, understandTaskMessage, type TaskAudio, type TaskClient, type TaskUnderstanding } from './task-ai';
@@ -160,6 +161,7 @@ function taskCard(task: Task, clients: TaskClient[], header: string, opts: { jus
             { text: '✏️ Edit', callback_data: `tk:e:${task.id}` },
             { text: '↩️ Undo', callback_data: `tk:u:${task.id}` },
           ],
+          [{ text: '🧠 Not a task: save to memory', callback_data: `tk:K:${task.id}` }],
         ]
       : [
           ...(isOverdue(task)
@@ -230,8 +232,17 @@ function questionButtons(draftId: string, field: MissingField, f: TaskFields, cl
   ];
 }
 
+function memorySavedCard(fact: MemoryFact): OutgoingMessage {
+  return {
+    text: `🧠 <b>Saved to memory, not as a task</b>\n${h(fact.text)}\n\n<i>Used in chats and when sorting email in every inbox. /memory shows everything saved.</i>`,
+    buttons: [[{ text: '↩️ Undo', callback_data: `m:mem:del:${fact.id}` }, { text: '🧠 All memory', callback_data: 'm:mem' }]],
+  };
+}
+
 function questionMessage(draftId: string, field: MissingField, f: TaskFields, clients: TaskClient[], note?: string): OutgoingMessage {
   const buttons = questionButtons(draftId, field, f, clients);
+  // Not every message is a task: an instruction or fact can go to memory instead.
+  buttons.push([{ text: '🧠 Not a task: save to memory', callback_data: `tk:k:${draftId}` }]);
   buttons.push([{ text: '✖️ Cancel', callback_data: `tk:x:${draftId}` }]);
   return {
     text: [
@@ -480,7 +491,7 @@ export async function handleTaskCallback(query: CallbackQuery) {
 
     const clients = await taskClients();
 
-    if (action === 'a' || action === 'x' || action === 'q') {
+    if (action === 'a' || action === 'x' || action === 'q' || action === 'k') {
       const draft = await getDraft(id);
       if (!draft) {
         if (action === 'q') return answerCallback(query.id, 'Already finished or dropped.');
@@ -491,6 +502,13 @@ export async function handleTaskCallback(query: CallbackQuery) {
         // "Finish" from the morning digest: ask the open question again in a new message.
         await proceed(chatId, draft.fields, clients, { draftId: draft.id, rawInput: draft.raw_input, source: draft.source });
         return answerCallback(query.id);
+      }
+      if (action === 'k') {
+        // Not a task after all: what he said goes to memory (chats and email sorting use it).
+        const fact = await addFact(draft.raw_input || draft.fields.title || '');
+        await deleteDraft(draft.id);
+        await editMessage(chatId, messageId, memorySavedCard(fact));
+        return answerCallback(query.id, 'Saved to memory');
       }
       if (action === 'x') {
         await deleteDraft(draft.id);
@@ -534,6 +552,13 @@ export async function handleTaskCallback(query: CallbackQuery) {
     if (action === 'o') {
       await sendMessage(chatId, taskCard(task, clients, '📌 <b>Task</b>'));
       return answerCallback(query.id);
+    }
+    if (action === 'K') {
+      // A just-saved "task" that was really an instruction: remove it and keep it in memory.
+      const fact = await addFact(task.raw_input || task.title);
+      await setTaskStatus(task.id, 'cancelled');
+      await editMessage(chatId, messageId, memorySavedCard(fact));
+      return answerCallback(query.id, 'Saved to memory');
     }
     if (action === 'd') {
       const { task: updated, movedTo } = await completeTask(task.id);
