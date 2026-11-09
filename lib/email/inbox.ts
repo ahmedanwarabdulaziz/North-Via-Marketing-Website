@@ -5,6 +5,7 @@ import { ringPhone } from '../ntfy';
 import { supabase } from '../supabase';
 import { allowedChatIds, escapeHtml as h, sendMessage, truncate, type InlineButton, type OutgoingMessage } from '../telegram';
 import { gmailClient, listNewGmail, readGmail, sendGmailReply, type MailMessage } from './gmail';
+import { listNewOutlook, outlookSession, sendOutlookReply } from './outlook';
 
 // Connected inboxes: every 5 minutes (from /api/tasks/due) new mail is read, the AI keeps the
 // important ones and a Telegram card is sent. The AI sees each inbox's focus rules, Ahmed's
@@ -213,7 +214,7 @@ export function emailCard(item: EmailItem, account: Pick<EmailAccount, 'label' |
 
 export async function checkInboxes(now = new Date()) {
   const deadline = Date.now() + RUN_BUDGET_MS;
-  const accounts = (await listEmailAccounts().catch(() => [] as EmailAccount[])).filter((a) => a.enabled && a.provider === 'gmail');
+  const accounts = (await listEmailAccounts().catch(() => [] as EmailAccount[])).filter((a) => a.enabled);
   if (!accounts.length) return { accounts: 0, new: 0, important: 0 };
   const memory = await memoryText();
   let fresh = 0;
@@ -223,20 +224,33 @@ export async function checkInboxes(now = new Date()) {
     if (Date.now() > deadline) break;
     const startedAt = now.toISOString();
     try {
-      const gmail = gmailClient(account.encrypted_refresh_token);
-      const since = account.last_checked_at ? Date.parse(account.last_checked_at) : Date.now() - FIRST_LOOKBACK_H * 3_600_000;
-      // Gmail's "after:" is in seconds; a 10-minute overlap, with the unique index, avoids gaps.
-      const ids = await listNewGmail(gmail, Math.floor((since - 10 * 60_000) / 1000), MAX_PER_ACCOUNT);
-      const known = new Set(
-        ids.length ? ((check(await supabase.from('email_items').select('message_id').eq('account_id', account.id).in('message_id', ids)) as { message_id: string }[]).map((r) => r.message_id)) : []
-      );
+      // A 10-minute overlap with the last check, with the unique index, avoids gaps.
+      const since = (account.last_checked_at ? Date.parse(account.last_checked_at) : Date.now() - FIRST_LOOKBACK_H * 3_600_000) - 10 * 60_000;
+      const isKnown = async (ids: string[]) =>
+        new Set(ids.length ? ((check(await supabase.from('email_items').select('message_id').eq('account_id', account.id).in('message_id', ids)) as { message_id: string }[]).map((r) => r.message_id)) : []);
+
+      // Each provider gives a list of new messages, read lazily (Gmail) or all at once (Outlook).
+      let readers: Array<() => Promise<MailMessage>> = [];
+      if (account.provider === 'gmail') {
+        const gmail = gmailClient(account.encrypted_refresh_token);
+        const ids = await listNewGmail(gmail, Math.floor(since / 1000), MAX_PER_ACCOUNT);
+        const known = await isKnown(ids);
+        readers = ids.filter((i) => !known.has(i)).reverse().map((id) => () => readGmail(gmail, id));
+      } else {
+        const session = await outlookSession(account.encrypted_refresh_token);
+        if (session.encryptedRefreshToken) await supabase.from('email_accounts').update({ encrypted_refresh_token: session.encryptedRefreshToken }).eq('id', account.id);
+        const mails = await listNewOutlook(session.accessToken, since, MAX_PER_ACCOUNT);
+        const known = await isKnown(mails.map((m) => m.messageId));
+        readers = mails.filter((m) => !known.has(m.messageId)).map((m) => async () => m);
+      }
+
       let finished = true;
-      for (const id of ids.filter((i) => !known.has(i)).reverse()) {
+      for (const read of readers) {
         if (Date.now() > deadline) {
           finished = false; // the rest are picked up next run
           break;
         }
-        const mail = await readGmail(gmail, id);
+        const mail = await read();
         if (mail.fromEmail === account.email || mail.labels.includes('SENT')) continue;
         fresh++;
         const ignored = account.ignored_senders.includes(mail.fromEmail);
@@ -338,6 +352,12 @@ ${memory}`,
 
 export async function sendEmailReply(item: EmailItem, account: EmailAccount) {
   if (!item.draft) throw new Error('No reply drafted.');
+  if (account.provider === 'outlook') {
+    const session = await outlookSession(account.encrypted_refresh_token);
+    if (session.encryptedRefreshToken) await supabase.from('email_accounts').update({ encrypted_refresh_token: session.encryptedRefreshToken }).eq('id', account.id);
+    await sendOutlookReply(session.accessToken, item.message_id, item.draft);
+    return item.message_id;
+  }
   const gmail = gmailClient(account.encrypted_refresh_token);
   return sendGmailReply(gmail, {
     from: account.email,

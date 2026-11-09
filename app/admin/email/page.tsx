@@ -27,12 +27,20 @@ export default async function EmailPage({ searchParams }: { searchParams: Promis
             text: the AI writes it professionally and nothing is sent until you tap ✅ Send.
           </p>
         </div>
-        <a
-          href="/api/admin/email/connect"
-          className="inline-flex items-center gap-2 rounded-xl bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-zinc-800 shrink-0"
-        >
-          <Plus className="w-4 h-4" /> Connect Gmail
-        </a>
+        <div className="flex flex-wrap gap-2 shrink-0">
+          <a
+            href="/api/admin/email/connect"
+            className="inline-flex items-center gap-2 rounded-xl bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-zinc-800"
+          >
+            <Plus className="w-4 h-4" /> Connect Gmail
+          </a>
+          <a
+            href="/api/admin/email/connect-outlook"
+            className="inline-flex items-center gap-2 rounded-xl bg-sky-700 px-4 py-2.5 text-sm font-medium text-white hover:bg-sky-800"
+          >
+            <Plus className="w-4 h-4" /> Connect Outlook
+          </a>
+        </div>
       </div>
 
       {params.connected && (
