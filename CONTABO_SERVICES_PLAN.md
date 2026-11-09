@@ -34,7 +34,14 @@ What already exists, and how it overlaps:
 - Later: pull uptime numbers from Kuma's API into the monthly client report.
 
 ## Phase 1.5: Hermes personal assistant on Telegram (1–2 days)
-Status: **in progress** (added 2026-11-08)
+Status: **reversed 2026-11-09: one bot (Anwarz).** Hermes has no agent-authored action buttons ("not a generic Hermes feature yet") and its voice/task handling was far weaker than Anwarz's, so Ahmed chose a single bot. What moved into Anwarz:
+- Tasks, library and chat are back in Anwarz (handoff commit `7d5fdec` undone). Tasks created in Hermes (5 daily prayers, "كلم محمد زكي", the Pacific/Essam task) were copied into Supabase (`extra.movedFrom = hermes`); the 2 DHL tasks done in Hermes were marked done.
+- Ringing: `lib/ntfy.ts` (env `NTFY_TOKEN`, send-only ntfy user `anwarz`; token in `/opt/anwarz/ntfy/vercel-token.txt`). Rings for timed task reminders, website down, SSL expired or ≤3 days, new 1–2★ reviews, and a broken Google reviews login (once a day). Not for manual "Check now".
+- `/api/tasks/due` runs every **5 minutes** (n8n) with 5-minute slots (`runSlot`), and now also runs the website checks.
+- Chat memory: `lib/assistant-memory.ts` (app_settings `assistant_memory`: profile + facts). "remember"/"forget" are confirm-card actions; `/memory` lists facts with 🗑 buttons.
+- Hermes and LiteLLM to be stopped (data kept in `/opt/anwarz/hermes/data`).
+
+Earlier notes (2026-11-08):
 - Done: `docker-compose.yml` backed up to `/opt/anwarz/backups/`; `litellm` and `hermes` services added; LiteLLM running and tested.
 - LiteLLM uses the **same Gemini and Groq keys as the website** (`/opt/anwarz/litellm/.env`), so they share the free daily quota. Chain (changed 2026-11-08 evening): `gemini-flash-lite-latest` (3.5 Flash-Lite) → `gemini-2.5-flash` (free tier is only **20 requests/day**) → Groq `gpt-oss-120b` → Groq `gpt-oss-20b`; 30 s timeout, no retries. Groq free = 1000 requests/day but 8000 tokens/min, often too small for Hermes prompts. `llama-3.3-70b-versatile` is retired on Groq. Recommended: a separate Gemini key (another Google Cloud project) for Hermes, so it can't use up the website's quota.
 - Hermes running since 2026-11-08 as Telegram bot **@Hermesanwar_bot**, allowed user `2144155349` only, polling mode, no open ports. Uses about 230 MB RAM.

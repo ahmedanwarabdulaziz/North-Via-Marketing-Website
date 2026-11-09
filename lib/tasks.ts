@@ -349,21 +349,28 @@ export async function listOpenTasks() {
 // ---------- Reminders ----------
 
 const HOUR_MS = 3_600_000;
+/** n8n on the VPS calls /api/tasks/due every 5 minutes. */
+export const RUN_EVERY_MS = 5 * 60_000;
 
-/**
- * The hour a run belongs to. Runs are hourly on the hour, so a run that fires a few
- * seconds early or late still counts as that hour (Cairo is a whole number of hours from UTC).
- */
+/** The whole hour nearest to now (used for "snooze 1 hour" style times). */
 export function runHour(now = new Date()) {
   return new Date(Math.round(now.getTime() / HOUR_MS) * HOUR_MS);
 }
 
 /**
- * Reminders not sent yet, oldest first: everything due before the next hourly run,
- * so a 5:35 reminder goes out with the 5:00 run. Ones missed for over a week are left alone.
+ * The 5-minute slot a run belongs to. A run that fires a few seconds early or late
+ * still counts as that slot, so digests and reminders aren't missed or doubled.
+ */
+export function runSlot(now = new Date()) {
+  return new Date(Math.round(now.getTime() / RUN_EVERY_MS) * RUN_EVERY_MS);
+}
+
+/**
+ * Reminders not sent yet, oldest first: everything due before the next run (5 minutes),
+ * so a 5:33 reminder goes out with the 5:30 run. Ones missed for over a week are left alone.
  */
 export async function listDueReminders(now = new Date()) {
-  const nextRun = new Date(runHour(now).getTime() + HOUR_MS);
+  const nextRun = new Date(runSlot(now).getTime() + RUN_EVERY_MS);
   const tasks = check(
     await supabase
       .from('tasks')

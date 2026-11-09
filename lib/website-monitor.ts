@@ -2,9 +2,10 @@ import tls from 'tls';
 import { addDoc, deleteDocs, deleteOlderThan, getDoc, listDocs, newId, updateDoc } from './data/store';
 import { listClientProfiles } from './admin-ops';
 import { allowedChatIds, escapeHtml as h, sendMessage, type OutgoingMessage } from './telegram';
+import { ringPhone, type Ring } from './ntfy';
 import type { Website, WebsiteCheck } from '@/types/database';
 
-// Website monitoring. Runs on n8n's hourly wake-up (and "Check now"); Telegram is
+// Website monitoring. Runs every 5 minutes from /api/tasks/due (and "Check now"); Telegram is
 // only told about changes: a site going down, coming back, or an SSL certificate
 // nearing expiry. A failed check is retried once in the same run before it counts.
 
@@ -168,6 +169,8 @@ export async function runWebsiteChecks(options: { ids?: string[]; chatIds?: stri
   const names = new Map((await listClientProfiles()).map((c) => [c.id, c.brandName]));
   const certCache = new Map<string, Promise<string | null>>();
   const alerts: OutgoingMessage[] = [];
+  // Problems that need someone to step in also ring the phone (ntfy).
+  const rings: Ring[] = [];
 
   const results = await mapLimit(all, CONCURRENCY, async (site) => {
     // The certificate is read while the page is being checked.
@@ -207,6 +210,7 @@ export async function runWebsiteChecks(options: { ids?: string[]; chatIds?: stri
       update.downSince = now;
       reportedDown = true;
       alerts.push(alertMessage(`🔴 <b>Website down</b>\n${where}\n\nReason: ${h(result.error || 'Unknown')}`, site));
+      rings.push({ title: `🔴 Website down: ${client}`, message: `${site.url}\n${result.error || 'Unknown'}`, tags: ['rotating_light'], click: site.url });
     } else if (result.ok && site.status === 'down') {
       alerts.push(alertMessage(`🟢 <b>Website back up</b>\n${where}\n\nIt was down for about ${site.downSince ? duration(site.downSince) : 'a while'}.`, site));
     }
@@ -223,6 +227,16 @@ export async function runWebsiteChecks(options: { ids?: string[]; chatIds?: stri
             : `🔒 <b>SSL certificate expires in ${days} day${days === 1 ? '' : 's'}</b>\n${where}\n\nRenew it before visitors start seeing a security warning.`,
           site
         ));
+        // Expired, or about to: ring. Earlier warnings (weeks ahead) stay in Telegram only.
+        if (!(reportedDown && days < 0) && days <= 3) {
+          rings.push({
+            title: days < 0 ? `⛔ SSL expired: ${client}` : `🔒 SSL expires in ${days} day${days === 1 ? '' : 's'}: ${client}`,
+            message: site.url,
+            priority: days < 0 ? 5 : 4,
+            tags: ['lock'],
+            click: site.url,
+          });
+        }
       } else if (threshold === undefined && site.sslAlertedDays !== undefined) {
         update.sslAlertedDays = null; // renewed: re-arm the warnings
       }
@@ -247,6 +261,8 @@ export async function runWebsiteChecks(options: { ids?: string[]; chatIds?: stri
 
   const chatIds = options.chatIds ?? allowedChatIds();
   for (const chatId of chatIds) for (const alert of alerts) await sendMessage(chatId, alert);
+  // Scheduled checks only: a "Check now" from Telegram means Ahmed is already looking.
+  if (!options.chatIds) for (const ring of rings) await ringPhone(ring);
   if (!options.ids) await deleteOlderThan(CHECKS, 'checkedAt', new Date(Date.now() - HISTORY_DAYS * 86_400_000).toISOString());
 
   const up = results.filter(Boolean).length;

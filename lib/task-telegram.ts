@@ -1,5 +1,6 @@
 import { listClientProfiles } from './admin-ops';
 import { getSetting, setSetting } from './data/store';
+import { ringPhone } from './ntfy';
 import { saveTextToLibrary } from './knowledge-telegram';
 import { activeChatSession, endConversation, handleChatMessage, startConversation } from './assistant-telegram';
 import { QUESTION_TEXT, transcribeAudio, understandTaskMessage, type TaskAudio, type TaskClient, type TaskUnderstanding } from './task-ai';
@@ -36,6 +37,7 @@ import {
   newId,
   releaseReminder,
   runHour,
+  runSlot,
   saveDraft,
   setTaskStatus,
   snoozeTask,
@@ -749,6 +751,15 @@ export async function sendDueReminders(now = new Date()) {
     if (!chats.length || !(await claimReminder(task))) continue;
     try {
       for (const chatId of chats) await sendMessage(chatId, reminderCard(task, clients, now));
+      // Tasks with a set time also ring the phone (ntfy); all-day ones only get the Telegram card.
+      if (!task.all_day) {
+        const client = clientName(clients, task.client_id);
+        await ringPhone({
+          title: '⏰ تذكير',
+          message: [task.title, client ? `👤 ${client}` : null, `📅 ${formatWhen(task)}`].filter(Boolean).join('\n'),
+          tags: ['alarm_clock'],
+        });
+      }
       await logTaskEvent(task.id, 'reminded', { remind_at: task.remind_at });
       result.sent++;
     } catch (error) {
@@ -817,8 +828,8 @@ function digestMessage(today: string, groups: ReturnType<typeof groupTasks>, dra
  * unfinished drafts. The day is stored before sending so overlapping runs don't both send it.
  */
 export async function sendMorningDigest(now = new Date()) {
-  // The run's hour, so a 9:00 run that fires a few seconds early still counts as 9 AM.
-  const { date: today, time } = cairoParts(runHour(now));
+  // The run's 5-minute slot, so a 9:00 run that fires a few seconds early still counts as 9 AM.
+  const { date: today, time } = cairoParts(runSlot(now));
   if (time < DIGEST_FROM) return { sent: false, reason: 'before 9 AM Cairo' };
   const last = await getSetting<{ day?: string }>(DIGEST_SETTING);
   if (last?.day === today) return { sent: false, reason: 'already sent today' };
@@ -928,9 +939,9 @@ export async function weeklySummaryMessage(now = new Date()): Promise<OutgoingMe
   };
 }
 
-/** Sundays, on the first hourly run at or after 8 PM Cairo; the week is stored first so overlapping runs don't both send it. */
+/** Sundays, on the first run at or after 8 PM Cairo; the week is stored first so overlapping runs don't both send it. */
 export async function sendWeeklySummary(now = new Date()) {
-  const { date: today, time } = cairoParts(runHour(now));
+  const { date: today, time } = cairoParts(runSlot(now));
   if (weekdayOf(today) !== WEEKLY_DAY) return { sent: false, reason: 'not Sunday' };
   if (time < WEEKLY_FROM) return { sent: false, reason: 'before 8 PM Cairo' };
   const last = await getSetting<{ day?: string }>(WEEKLY_SETTING);

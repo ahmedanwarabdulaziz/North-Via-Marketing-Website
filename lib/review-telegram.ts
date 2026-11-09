@@ -1,5 +1,6 @@
 import crypto from 'crypto';
-import { getDoc, setDoc, setDocs } from './data/store';
+import { getDoc, getSetting, setDoc, setDocs, setSetting } from './data/store';
+import { ringPhone } from './ntfy';
 import { listClientProfiles } from './admin-ops';
 import {
   GBP_REVIEWS,
@@ -297,6 +298,10 @@ export async function sendReviewDigest(options: {
     }
   }
 
+  // Scheduled runs only (a "Check now" means Ahmed is already looking): ring the phone for
+  // problems that need him — a new 1–2★ review, or a Google login that stopped working.
+  if (!options.chatIds) await ringForReviewProblems(toSend, names, options.summary?.errors || []).catch((e) => console.error('Review ring failed:', e));
+
   if (sentIds.length) {
     const now = new Date().toISOString();
     // Merge-writes rows that exist (every sent id came from the review queue).
@@ -307,6 +312,33 @@ export async function sendReviewDigest(options: {
 }
 
 /** Daily job: check Google for new reviews, draft replies, then send what's new. */
+const RING_LOGIN_SETTING = 'ring_gbp_login_error';
+
+async function ringForReviewProblems(sent: Review[], names: Map<string, string>, errors: { location: string; error: string }[]) {
+  const bad = sent.filter((r) => !r.telegramSentAt && r.rating > 0 && r.rating <= 2);
+  if (bad.length) {
+    await ringPhone({
+      title: `⭐ ${bad.length} bad review${bad.length === 1 ? '' : 's'} to answer`,
+      message: bad.slice(0, 5).map((r) => `${'★'.repeat(r.rating)} ${names.get(r.clientId) || 'Client'} · ${r.reviewerName || 'Anonymous'}`).join('\n'),
+      tags: ['warning'],
+    });
+  }
+  // A broken Google login stops every review from arriving; ring at most once a day for it.
+  const login = errors.filter((e) => /reconnect|expired|revoked|invalid_grant/i.test(e.error));
+  if (!login.length) return;
+  const today = new Date().toISOString().slice(0, 10);
+  const last = await getSetting<{ day?: string }>(RING_LOGIN_SETTING);
+  if (last?.day === today) return;
+  await setSetting(RING_LOGIN_SETTING, { day: today });
+  await ringPhone({
+    title: '🔌 Google reviews stopped: reconnect needed',
+    message: login.slice(0, 3).map((e) => `${e.location}: ${truncate(e.error, 120)}`).join('\n'),
+    priority: 4,
+    tags: ['electric_plug'],
+    click: PANEL_URL,
+  });
+}
+
 export async function runDailyDigest() {
   const summary = await syncAllReviews();
   const delivery = await sendReviewDigest({ onlyUnsent: true, summary });

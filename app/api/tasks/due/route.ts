@@ -1,24 +1,20 @@
 import { isAutomationRequest, unauthorized } from '@/lib/automation-auth';
 import { sendDueReminders, sendMorningDigest, sendWeeklySummary } from '@/lib/task-telegram';
+import { runWebsiteChecks } from '@/lib/website-monitor';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
 /**
- * Called every hour, on the hour, by n8n on the VPS. Sends every reminder due before
- * the next run (a 5:35 task is reminded at 5:00; missed ones catch up on the next run),
- * once a day from 9 AM Cairo, the morning digest of today's, overdue and unfinished tasks,
- * and on Sundays from 8 PM Cairo, the week-ahead summary.
+ * Called every 5 minutes by n8n on the VPS. Sends every reminder due before the next run
+ * (a 5:33 task is reminded at 5:30; missed ones catch up on the next run) and rings the phone
+ * for timed ones, once a day from 9 AM Cairo the morning digest, on Sundays from 8 PM Cairo
+ * the week-ahead summary, and checks the client websites so a site going down rings within minutes.
  */
-// Tasks moved to the Hermes bot on 8 Nov 2026 (it sends its own reminders and digest), so this
-// endpoint is switched off: n8n can keep calling it, nothing is sent. Set to false to bring it back.
-const MOVED_TO_HERMES = true;
-
 async function run(request: Request) {
   if (!isAutomationRequest(request)) return unauthorized();
-  if (MOVED_TO_HERMES) return Response.json({ skipped: 'Tasks moved to the Hermes bot' });
   const now = new Date();
-  const [reminders, digest, weekly] = await Promise.all([
+  const [reminders, digest, weekly, websites] = await Promise.all([
     sendDueReminders(now).catch((error) => {
       console.error('Task reminders failed:', error);
       return { error: error instanceof Error ? error.message : 'Task reminders failed' };
@@ -31,9 +27,14 @@ async function run(request: Request) {
       console.error('Weekly summary failed:', error);
       return { error: error instanceof Error ? error.message : 'Weekly summary failed' };
     }),
+    // Alerts (and rings) only on a change, so running this often doesn't repeat them.
+    runWebsiteChecks().catch((error) => {
+      console.error('Website checks failed:', error);
+      return { error: error instanceof Error ? error.message : 'Website checks failed' };
+    }),
   ]);
   const failed = 'error' in reminders && 'error' in digest;
-  return Response.json({ reminders, digest, weekly }, { status: failed ? 500 : 200 });
+  return Response.json({ reminders, digest, weekly, websites }, { status: failed ? 500 : 200 });
 }
 
 export const POST = run;

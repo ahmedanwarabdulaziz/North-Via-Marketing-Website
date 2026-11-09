@@ -2,7 +2,8 @@ import { getDigestSchedule, nextDigestRun, saveDigestSchedule } from './digest-s
 import { DIGEST_TIMEZONES } from './digest-schedule-options';
 import { checkReviewsNow, reviewQueueOverview, showWaitingReviews } from './review-telegram';
 import { backlogOverview, draftBacklog, releaseBacklog, scanForOldReviews, type BacklogScope } from './review-engine';
-import { InlineButton, OutgoingMessage, answerCallback, editMessage, escapeHtml as h, sendMessage } from './telegram';
+import { InlineButton, OutgoingMessage, answerCallback, editMessage, escapeHtml as h, sendMessage, truncate } from './telegram';
+import { getMemory, removeFact } from './assistant-memory';
 import { runWebsiteChecks, websiteOverview, websitesScreenText } from './website-monitor';
 import { listCommentQueue } from './social-sync';
 import { checkSocialNow, showWaitingComments, socialStatsLines } from './social-telegram';
@@ -14,9 +15,11 @@ import { listDocs } from './data/store';
 import { adsScreenText } from './ads-telegram';
 import { metaAdsScreenText, type MetaAdsPeriod } from './meta-ads-telegram';
 import { analyticsScreenText } from './analytics-telegram';
+import { taskCounts, taskListScreen, tasksHomeScreen } from './task-telegram';
 import { aiUsageScreen, checkGroqNow } from './ai-usage-telegram';
+import { libraryCount, libraryHomeScreen } from './knowledge-telegram';
+import { startConversation } from './assistant-telegram';
 import { postLocationsScreen } from './gbp-post-telegram';
-import { HERMES_NOTE, sendMovedToHermes } from './hermes-handoff';
 
 // Main bot menu. Button data is "m:<screen>" or "m:<screen>:<action>".
 // To add a new area (e.g. Tasks, Invoices), add a section here and a screen below.
@@ -28,6 +31,14 @@ interface MenuSection {
 }
 
 const SECTIONS: MenuSection[] = [
+  {
+    id: 'tk',
+    label: async () => {
+      const { today, overdue } = await taskCounts();
+      const parts = [today ? `${today} today` : '', overdue ? `${overdue} overdue` : ''].filter(Boolean);
+      return `✅ Tasks${parts.length ? ` (${parts.join(', ')})` : ''}`;
+    },
+  },
   {
     id: 'gr',
     label: async () => {
@@ -71,6 +82,17 @@ const SECTIONS: MenuSection[] = [
     },
   },
   {
+    id: 'kb',
+    label: async () => {
+      const total = await libraryCount();
+      return `📚 Library${total ? ` (${total})` : ''}`;
+    },
+  },
+  {
+    id: 'ch',
+    label: async () => '💬 Chat with AI',
+  },
+  {
     id: 'ai',
     label: async () => '🤖 AI usage',
   },
@@ -83,6 +105,10 @@ const SECTIONS: MenuSection[] = [
  */
 export const BOT_COMMANDS = [
   { command: 'menu', description: '🧭 Main menu (or just type x)' },
+  { command: 'tasks', description: '✅ Tasks' },
+  { command: 'today', description: '📅 Today’s tasks' },
+  { command: 'tomorrow', description: '🌅 Tomorrow’s tasks' },
+  { command: 'week', description: '🗓 Your week ahead by client' },
   { command: 'reviews', description: '⭐ Google Reviews' },
   { command: 'post', description: '📝 New Google post (photo + voice → AI writes it)' },
   { command: 'social', description: '📱 Facebook & Instagram' },
@@ -91,6 +117,11 @@ export const BOT_COMMANDS = [
   { command: 'analytics', description: '🧭 Website analytics' },
   { command: 'reports', description: '📊 Client reports' },
   { command: 'websites', description: '🌐 Websites' },
+  { command: 'library', description: '📚 Library (screenshots, links, notes)' },
+  { command: 'find', description: '🔎 Search the library, e.g. /find reel ideas' },
+  { command: 'chat', description: '💬 Chat with AI about your tasks, clients and library' },
+  { command: 'end', description: '👋 End the chat' },
+  { command: 'memory', description: '🧠 What the bot remembers about you' },
   { command: 'ai', description: '🤖 AI usage (Groq and Gemini)' },
 ];
 
@@ -98,7 +129,7 @@ async function homeScreen(): Promise<OutgoingMessage> {
   const buttons: InlineButton[][] = [];
   for (const section of SECTIONS) buttons.push([{ text: await section.label(), callback_data: `m:${section.id}` }]);
   return {
-    text: ['🧭 <b>North Via</b>', 'What would you like to do?', '', `<i>${h(HERMES_NOTE)}</i>`].join('\n'),
+    text: ['🧭 <b>North Via</b>', 'What would you like to do?'].join('\n'),
     buttons,
   };
 }
@@ -297,6 +328,9 @@ export async function sendMenu(chatId: number | string) {
 }
 
 const COMMAND_SCREENS: Record<string, () => Promise<OutgoingMessage>> = {
+  '/tasks': tasksHomeScreen,
+  '/today': () => taskListScreen('today'),
+  '/tomorrow': () => taskListScreen('tomorrow'),
   '/reviews': () => reviewsScreen(),
   '/post': postLocationsScreen,
   '/social': () => socialScreen(),
@@ -305,8 +339,24 @@ const COMMAND_SCREENS: Record<string, () => Promise<OutgoingMessage>> = {
   '/analytics': () => periodScreen('an', 7),
   '/reports': reportsScreen,
   '/websites': () => websitesScreen(),
+  '/library': libraryHomeScreen,
+  '/memory': () => memoryScreen(),
   '/ai': () => aiUsageScreen(),
 };
+
+/** What the chat assistant knows about Ahmed: the profile and every remembered fact, each with 🗑. */
+async function memoryScreen(note?: string): Promise<OutgoingMessage> {
+  const { profile, facts } = await getMemory();
+  const lines = ['🧠 <b>Memory</b>', '', '<b>Profile</b>', profile ? h(truncate(profile, 900)) : '<i>No profile yet.</i>', '', `<b>Remembered facts (${facts.length})</b>`];
+  const recent = [...facts].reverse().slice(0, 20);
+  if (!recent.length) lines.push('<i>Nothing yet. In a chat, say “remember …” / “احفظ …”.</i>');
+  recent.forEach((f, i) => lines.push(`${i + 1}. ${h(truncate(f.text, 160))}`));
+  if (facts.length > recent.length) lines.push(`<i>+${facts.length - recent.length} older</i>`);
+  if (note) lines.push('', note);
+  const buttons: InlineButton[][] = recent.map((f, i) => [{ text: `🗑 ${i + 1}. ${truncate(f.text, 36)}`, callback_data: `m:mem:del:${f.id}` }]);
+  buttons.push([{ text: '⬅️ Menu', callback_data: 'm:home' }]);
+  return { text: lines.join('\n'), buttons };
+}
 
 /** A section command from the Menu button: sends that section's screen. False if it isn't one. */
 export async function handleMenuCommand(message: { text?: string; chat: { id: number } }): Promise<boolean> {
@@ -334,11 +384,17 @@ export async function handleMenuCallback(query: { id: string; data?: string; mes
       return answerCallback(query.id);
     }
 
-    // Tasks, library and chat moved to Hermes; old buttons in the chat point there.
-    if (screen === 'tk' || screen === 'kb' || screen === 'ch') {
-      await answerCallback(query.id);
-      await sendMovedToHermes(chatId);
-      return;
+    if (screen === 'mem') {
+      // m:mem (refresh) or m:mem:del:<fact id>
+      const factId = (query.data || '').split(':')[3];
+      const removed = action === 'del' && factId ? await removeFact(factId) : null;
+      await editMessage(chatId, messageId, await memoryScreen(removed ? `🗑 <i>Forgot: ${h(truncate(removed.text, 80))}</i>` : undefined));
+      return answerCallback(query.id, removed ? 'Forgotten' : undefined);
+    }
+
+    if (screen === 'tk') {
+      await editMessage(chatId, messageId, await tasksHomeScreen());
+      return answerCallback(query.id);
     }
 
     if (screen === 'gr') {
@@ -460,6 +516,17 @@ export async function handleMenuCallback(query: { id: string; data?: string; mes
 
     if (screen === 'gp') {
       await editMessage(chatId, messageId, await postLocationsScreen());
+      return answerCallback(query.id);
+    }
+
+    if (screen === 'ch') {
+      await answerCallback(query.id);
+      await startConversation(chatId, null);
+      return;
+    }
+
+    if (screen === 'kb') {
+      await editMessage(chatId, messageId, await libraryHomeScreen());
       return answerCallback(query.id);
     }
 

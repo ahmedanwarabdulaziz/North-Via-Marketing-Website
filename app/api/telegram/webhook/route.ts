@@ -2,9 +2,11 @@ import crypto from 'crypto';
 import { handleCallback, handleReviewMessage } from '@/lib/review-telegram';
 import { handleMenuCallback, handleMenuCommand, sendMenu } from '@/lib/telegram-menu';
 import { handleSocialCallback, handleSocialMessage } from '@/lib/social-telegram';
+import { handleTaskCallback, handleTaskMessage } from '@/lib/task-telegram';
+import { handleKnowledgeCallback, handleKnowledgeMessage } from '@/lib/knowledge-telegram';
+import { handleChatCallback } from '@/lib/assistant-telegram';
 import { handleGbpPostCallback, handleGbpPostMessage } from '@/lib/gbp-post-telegram';
-import { answerCallback, isAllowedChat, sendMessage } from '@/lib/telegram';
-import { handleMovedCommand, sendMovedToHermes } from '@/lib/hermes-handoff';
+import { isAllowedChat, sendMessage } from '@/lib/telegram';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -36,27 +38,27 @@ export async function POST(request: Request) {
         const data = String(update.callback_query.data || '');
         if (data.startsWith('m:')) await handleMenuCallback(update.callback_query);
         else if (data.startsWith('sc:')) await handleSocialCallback(update.callback_query);
-        else if (data.startsWith('tk:') || data.startsWith('kb:') || data.startsWith('ch:')) {
-          // Buttons on old task, library and chat messages: these moved to Hermes.
-          await answerCallback(update.callback_query.id);
-          await sendMovedToHermes(chatId);
-        } else if (data.startsWith('gp:')) await handleGbpPostCallback(update.callback_query);
+        else if (data.startsWith('tk:')) await handleTaskCallback(update.callback_query);
+        else if (data.startsWith('kb:')) await handleKnowledgeCallback(update.callback_query);
+        else if (data.startsWith('ch:')) await handleChatCallback(update.callback_query);
+        else if (data.startsWith('gp:')) await handleGbpPostCallback(update.callback_query);
         else await handleCallback(update.callback_query);
       }
     } else if (update.message?.chat) {
       const chatId = update.message.chat.id;
       if (isAllowedChat(chatId)) {
         // Comment and review commands and edit replies first, then the Menu-button section
-        // commands (/reviews, /ads…), then old task/library/chat commands (they point to Hermes);
-        // anything else opens the menu. Tasks, library and chat moved to the Hermes bot.
+        // commands (/tasks, /ads…), then tasks (any other message is read
+        // by the AI as a task); menu words (x, menu, /start…) and unknown commands open the menu.
         // Comments go first: their edit marker "cref:" also contains the reviews' "ref:".
-        // A Google post being set up takes the photo, voice note or text first.
+        // A Google post being set up takes the photo, voice note or text before the library and tasks.
         const handled =
           (await handleGbpPostMessage(update.message)) ||
           (await handleSocialMessage(update.message)) ||
           (await handleReviewMessage(update.message)) ||
           (await handleMenuCommand(update.message)) ||
-          (await handleMovedCommand(update.message));
+          (await handleKnowledgeMessage(update.message)) ||
+          (await handleTaskMessage(update.message));
         if (!handled) await sendMenu(chatId);
       } else if (update.message.chat.type === 'private') {
         // Lets the owner discover their chat id during setup; reveals nothing else.

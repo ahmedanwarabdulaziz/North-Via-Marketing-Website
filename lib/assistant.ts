@@ -4,6 +4,7 @@ import { aiJson } from './ai-json';
 import { aiUsageDay, groqFetch, isRateLimitError, listAiUsage, trackGemini, type AiUsageRow } from './ai-usage';
 import { listCategories, searchKnowledge, type KnowledgeItem } from './knowledge';
 import { cairoParts, describeRepeat, formatWhen, groupTasks, listOpenTasks, WEEKDAYS, weekdayOf, type Task } from './tasks';
+import { getMemory, memoryContext, type AssistantMemory, type MemoryFact } from './assistant-memory';
 
 // The bot's chat assistant: answers questions from the owner's library, open tasks and client
 // list, with a model the owner picks among those that still have free quota today.
@@ -73,6 +74,7 @@ interface ChatContext {
   text: string;
   items: KnowledgeItem[];
   tasks: Task[];
+  memory: AssistantMemory;
 }
 
 function taskLine(t: Task, clientName: (id: string | null) => string | null) {
@@ -93,11 +95,12 @@ function taskLine(t: Task, clientName: (id: string | null) => string | null) {
 /** What the model gets each turn: matching library items, open tasks, clients. Kept small for Groq's 8K tokens a minute. */
 async function buildContext(question: string, history: ChatMessage[]): Promise<ChatContext> {
   const recentUser = history.filter((m) => m.role === 'user').slice(-2).map((m) => m.content);
-  const [items, tasks, profiles, categories] = await Promise.all([
+  const [items, tasks, profiles, categories, memory] = await Promise.all([
     searchKnowledge([...recentUser, question].join(' ').slice(-500), 6).catch(() => [] as KnowledgeItem[]),
     listOpenTasks().catch(() => [] as Task[]),
     listClientProfiles(),
     listCategories().catch(() => []),
+    getMemory(),
   ]);
   const clients = profiles.filter((c) => c.id && c.brandName);
   const clientName = (id: string | null) => (id ? clients.find((c) => c.id === id)?.brandName || null : null);
@@ -109,6 +112,8 @@ async function buildContext(question: string, history: ChatMessage[]): Promise<C
   const now = cairoParts(new Date());
   const text = [
     `NOW (Cairo): ${WEEKDAYS[weekdayOf(now.date)]} ${now.date} ${now.time}`,
+    '',
+    memoryContext(memory),
     '',
     `CLIENTS: ${clients.map((c) => `${c.brandName}${c.ownerName ? ` (owner ${c.ownerName})` : ''}${c.websiteUrl ? ` ${c.websiteUrl}` : ''}`).join('; ') || 'none'}`,
     '',
@@ -133,11 +138,15 @@ async function buildContext(question: string, history: ChatMessage[]): Promise<C
         )
       : ['none found']),
   ].join('\n');
-  return { text, items, tasks };
+  return { text, items, tasks, memory };
 }
 
-const SYSTEM_PROMPT = `You are the personal assistant of a marketing agency owner in Cairo (North Via Marketing), inside their private Telegram bot.
-You can see their open tasks, their client list and the items in their knowledge library that match the conversation (screenshots, links, notes).
+const SYSTEM_PROMPT = `You are the personal assistant of Ahmed Anwar, founder of North Via Marketing, inside his private Telegram bot.
+You can see his profile and the facts he asked you to remember (ABOUT THE OWNER, REMEMBERED FACTS), his open tasks, his client list and the items in his knowledge library that match the conversation (screenshots, links, notes).
+
+Memory:
+- Use ABOUT THE OWNER and REMEMBERED FACTS naturally; they are true unless he corrects them. Never invent facts about him.
+- When he shares something lasting about himself, his companies, clients or preferences, the bot may prepare a "remember" change (see PLANNED CHANGES); say in one short line that he can tap ✅ to save it.
 
 How to answer:
 - Reply in the language the owner writes in (Egyptian Arabic, English or mixed). Be direct and practical; short unless they ask for detail (aim under 150 words).
@@ -172,7 +181,9 @@ export type AssistantAction =
   | { type: 'add_client'; fields: Partial<Record<ClientField, string>>; checkWebsite: boolean }
   | { type: 'update_client'; clientId: string; clientName: string; changes: Partial<Record<ClientField, string>>; before: Partial<Record<ClientField, string>> }
   | { type: 'add_website'; clientId: string | null; clientName: string; url: string; label: string | null }
-  | { type: 'complete_task'; taskId: string; title: string };
+  | { type: 'complete_task'; taskId: string; title: string }
+  | { type: 'remember'; text: string }
+  | { type: 'forget'; factId: string; text: string };
 
 interface PlannerClient {
   id: string;
@@ -187,7 +198,7 @@ interface PlannerClient {
   googleLink?: string;
 }
 
-function plannerPrompt(clients: PlannerClient[], tasks: Task[]) {
+function plannerPrompt(clients: PlannerClient[], tasks: Task[], facts: MemoryFact[]) {
   return `You prepare changes a marketing agency owner asks their Telegram bot for. You only PREPARE them; the owner confirms each one with a button.
 Read the LATEST message (earlier lines are context: a "yes / do it / go ahead" confirms what was discussed just before).
 Return ONLY JSON: {"actions": [ ... ]} with at most 3 actions, or {"actions": []} when the latest message asks for no change (a question, chit-chat, or details are missing).
@@ -201,6 +212,10 @@ Action types:
 {"type":"add_website","client_id":"<id from the list, or null when the client is being added in this same reply>","client_name":"…","url":"https://…","label":null}
   (an extra page or site to check hourly for an existing client; not needed for a new client's main website)
 {"type":"complete_task","task_id":"<id from the task list>"}
+{"type":"remember","text":"<one short lasting fact, in the owner's language, e.g. 'Bloom prefers WhatsApp over email' or 'الDBA defence is in March 2027'>"}
+  (when he says remember / احفظ / خلي بالك / سجل عندك, or shares a lasting fact about himself, his companies, clients or how he likes things done. NOT for things with a date to act on — those are tasks. One fact per action. Skip if it's already in MEMORY.)
+{"type":"forget","memory_id":"<id from MEMORY>"}
+  (when he asks to forget/remove a remembered fact; to correct one, forget the old one and remember the new one)
 
 Rules:
 - Only what the owner clearly asks for (or confirms) now. Never repeat a change the conversation shows as [DONE by the bot].
@@ -211,7 +226,10 @@ CLIENTS (id | brand | owner | email | phone | website | facebook | instagram | t
 ${clients.map((c) => [c.id, c.brandName, c.ownerName, c.email, c.mobileNumber, c.websiteUrl, c.facebookLink, c.instagramLink, c.tiktokLink, c.googleLink].map((v) => v || '-').join(' | ')).join('\n') || '(none)'}
 
 OPEN TASKS (id | title | when):
-${tasks.slice(0, 40).map((t) => `${t.id} | ${t.title} | ${formatWhen(t)}`).join('\n') || '(none)'}`;
+${tasks.slice(0, 40).map((t) => `${t.id} | ${t.title} | ${formatWhen(t)}`).join('\n') || '(none)'}
+
+MEMORY (id | fact):
+${facts.slice(-60).map((f) => `${f.id} | ${f.text}`).join('\n') || '(none)'}`;
 }
 
 function cleanUrl(value: unknown) {
@@ -241,7 +259,7 @@ function cleanFields(source: Record<string, unknown>) {
 }
 
 /** Checks the planner's JSON against the real clients and tasks; anything that doesn't match is dropped. */
-export function toActions(raw: Record<string, unknown>, clients: PlannerClient[], tasks: Task[]): AssistantAction[] {
+export function toActions(raw: Record<string, unknown>, clients: PlannerClient[], tasks: Task[], facts: MemoryFact[] = []): AssistantAction[] {
   const list = Array.isArray(raw.actions) ? (raw.actions as Record<string, unknown>[]) : [];
   const actions: AssistantAction[] = [];
   for (const a of list.slice(0, 3)) {
@@ -269,6 +287,12 @@ export function toActions(raw: Record<string, unknown>, clients: PlannerClient[]
     } else if (a.type === 'complete_task') {
       const task = tasks.find((t) => t.id === a.task_id);
       if (task) actions.push({ type: 'complete_task', taskId: task.id, title: task.title });
+    } else if (a.type === 'remember') {
+      const text = cleanText(a.text, 300);
+      if (text && !facts.some((f) => f.text.toLowerCase() === text.toLowerCase())) actions.push({ type: 'remember', text });
+    } else if (a.type === 'forget') {
+      const fact = facts.find((f) => f.id === a.memory_id);
+      if (fact) actions.push({ type: 'forget', factId: fact.id, text: fact.text });
     }
   }
   // A new client's main website is checked by add_client already.
@@ -284,6 +308,8 @@ export function actionSummary(a: AssistantAction) {
   if (a.type === 'add_client') return `Add client ${a.fields.brandName}${a.checkWebsite ? ` and check ${host(a.fields.websiteUrl)} hourly` : ''}`;
   if (a.type === 'update_client') return `Update ${a.clientName}: ${Object.keys(a.changes).map((k) => CLIENT_FIELDS[k as ClientField]).join(', ')}`;
   if (a.type === 'add_website') return `Check ${host(a.url)} hourly for ${a.clientName}`;
+  if (a.type === 'remember') return `Remember: ${a.text.slice(0, 150)}`;
+  if (a.type === 'forget') return `Forget: ${a.text.slice(0, 150)}`;
   return `Mark task done: ${a.title}`;
 }
 
@@ -339,16 +365,16 @@ async function callModel(m: ChatModel, context: string, history: ChatMessage[], 
  * Gemini as fallback) in strict JSON, whatever model the owner chats with, so a light chat model
  * can't break them. A failure means no changes, never a wrong one.
  */
-async function planActions(question: string, history: ChatMessage[], clients: PlannerClient[], tasks: Task[]) {
+async function planActions(question: string, history: ChatMessage[], clients: PlannerClient[], tasks: Task[], facts: MemoryFact[]) {
   const recent = history.slice(-4).map((m) => `${m.role === 'user' ? 'OWNER' : 'BOT'}: ${m.content.slice(0, 500)}`);
   try {
     const raw = await aiJson({
-      system: plannerPrompt(clients, tasks),
+      system: plannerPrompt(clients, tasks, facts),
       user: [...recent, `LATEST (OWNER): ${question.slice(0, 2000)}`].join('\n'),
       feature: 'assistant',
       timeBudgetMs: 20_000,
     });
-    return toActions(raw, clients, tasks);
+    return toActions(raw, clients, tasks, facts);
   } catch (error) {
     console.error('Action planner failed:', error instanceof Error ? error.message.slice(0, 200) : error);
     return [];
@@ -371,7 +397,7 @@ export interface AssistantReply {
 export async function askAssistant(chosen: ChatModel, question: string, history: ChatMessage[]): Promise<AssistantReply> {
   const [context, available, profiles] = await Promise.all([buildContext(question, history), availableChatModels(), listClientProfiles()]);
   const clients = profiles.filter((c) => c.id && c.brandName) as PlannerClient[];
-  const actions = await planActions(question, history, clients, context.tasks);
+  const actions = await planActions(question, history, clients, context.tasks, context.memory.facts);
   const order = [chosen, ...available.filter((m) => m.key !== chosen.key)].slice(0, 3);
   const planned = `\n\n(PLANNED CHANGES for this message: ${actions.length ? actions.map(actionSummary).join('; ') : 'none'})`;
 

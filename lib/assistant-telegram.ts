@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { addFact, removeFact } from './assistant-memory';
 import { listClientProfiles } from './admin-ops';
 import { CHAT_MODELS, CLIENT_FIELDS, actionSummary, askAssistant, availableChatModels, claimsDone, type AssistantAction, type ChatMessage, type ChatModel, type ClientField } from './assistant';
 import { addDoc, updateDoc } from './data/store';
@@ -215,6 +216,8 @@ function actionCard(a: AssistantAction) {
     return [`✏️ <b>Confirm: update ${h(a.clientName)}</b>`, '', ...rows].join('\n');
   }
   if (a.type === 'add_website') return [`🌐 <b>Confirm: check a website every hour</b>`, '', `• Client: <b>${h(a.clientName)}</b>`, `• Address: <b>${h(a.url)}</b>`].join('\n');
+  if (a.type === 'remember') return ['🧠 <b>Confirm: remember this</b>', '', h(a.text), '', '<i>It will be part of every chat from now on. /memory shows everything saved.</i>'].join('\n');
+  if (a.type === 'forget') return ['🗑 <b>Confirm: forget this</b>', '', `<s>${h(a.text)}</s>`].join('\n');
   return [`✅ <b>Confirm: mark task done</b>`, '', h(a.title)].join('\n');
 }
 
@@ -237,6 +240,16 @@ async function runAction(chatId: number, a: AssistantAction): Promise<{ ok: bool
   if (a.type === 'task') {
     await startTaskFromText(chatId, a.text, 'chat');
     return { ok: true, message: `task "${truncate(a.text, 80)}" sent to the task bot`, card: `📝 <b>Sent to the task bot</b>\n${h(a.text)}\n<i>Its card is below.</i>` };
+  }
+  if (a.type === 'remember') {
+    const fact = await addFact(a.text);
+    return { ok: true, message: `remembered: ${fact.text}`, card: `🧠 <b>Saved to memory</b>\n${h(fact.text)}` };
+  }
+  if (a.type === 'forget') {
+    const fact = await removeFact(a.factId);
+    return fact
+      ? { ok: true, message: `forgot: ${fact.text}`, card: `🗑 <b>Forgotten</b>\n<s>${h(fact.text)}</s>` }
+      : { ok: false, message: 'that fact was already gone', card: '⚠️ That fact was already removed.' };
   }
   if (a.type === 'complete_task') {
     const { task, movedTo } = await completeTask(a.taskId);
