@@ -4,7 +4,7 @@ import { supabase } from './supabase';
 // screen. Gemini can't report its remaining quota to an API key, so these counts are ours;
 // Groq returns its remaining limits in response headers, which are kept with the count.
 
-export type AiProvider = 'gemini' | 'groq';
+export type AiProvider = 'gemini' | 'groq' | 'openrouter';
 export type AiFeature = 'tasks' | 'reviews' | 'comments' | 'chat' | 'check' | 'knowledge' | 'assistant' | 'posts';
 
 export interface GroqLimits {

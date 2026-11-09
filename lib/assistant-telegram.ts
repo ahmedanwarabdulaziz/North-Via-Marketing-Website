@@ -110,7 +110,7 @@ async function modelPicker(sessionId: string, intro: string): Promise<OutgoingMe
 }
 
 /** Best first: smartest with a big free quota, then strong Gemini, then the lighter ones. */
-const AUTO_ORDER = ['g120', 'gf', 'qw', 'glt', 'gfl', 'g20'];
+const AUTO_ORDER = ['orh', 'g120', 'gf', 'qw', 'glt', 'gfl', 'g20'];
 
 /** The best model that still has free quota today, or null if none has. */
 async function autoModel(): Promise<ChatModel | null> {

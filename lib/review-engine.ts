@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { trackGemini } from './ai-usage';
+import { openRouterChat, openRouterOn } from './openrouter';
 import { getDoc, getDocs, getSetting, listDocs, setDoc, setDocs, setSetting, updateDoc } from './data/store';
 import { GBP_LOCATIONS, fetchAllLocationReviews, fetchLocationReviews, listLinkedLocations, publishReviewReply } from './google-business';
 import { LANGUAGE_OPTIONS, LENGTH_OPTIONS, TONE_OPTIONS, defaultReplySettings } from './review-reply-options';
@@ -178,6 +179,17 @@ export async function generateReplyDraft(
 
   let lastError: unknown;
   let sawBusy = false;
+  // Paid OpenRouter (Claude Haiku) first when it's on; the free Gemini models below are the fallback.
+  if (await openRouterOn().catch(() => false)) {
+    try {
+      const text = (await openRouterChat({ feature: 'reviews', temperature: 0.7, maxTokens: 1024, messages: [{ role: 'system', content: systemInstruction }, { role: 'user', content: reviewBlock }] }))
+        .replace(/^["“]|["”]$/g, '')
+        .trim();
+      if (text) return text.slice(0, MAX_REPLY_LENGTH);
+    } catch (error) {
+      lastError = error;
+    }
+  }
   for (const modelName of models) {
     try {
       try {

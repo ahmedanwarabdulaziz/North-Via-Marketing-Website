@@ -6,19 +6,21 @@ import { listCategories, searchKnowledge, type KnowledgeItem } from './knowledge
 import { cairoParts, describeRepeat, formatWhen, groupTasks, listOpenTasks, WEEKDAYS, weekdayOf, type Task } from './tasks';
 import { getMemory, memoryContext, type AssistantMemory, type MemoryFact } from './assistant-memory';
 import { supabase } from './supabase';
+import { openRouterChat, openRouterOn } from './openrouter';
 
 // The bot's chat assistant: answers questions from the owner's library, open tasks and client
 // list, with a model the owner picks among those that still have free quota today.
 
 export interface ChatModel {
   key: string; // short, for Telegram buttons
-  provider: 'groq' | 'gemini';
+  provider: 'groq' | 'gemini' | 'openrouter';
   model: string;
   label: string;
   note: string;
 }
 
 export const CHAT_MODELS: ChatModel[] = [
+  { key: 'orh', provider: 'openrouter', model: 'anthropic/claude-haiku-5.5', label: 'Claude Haiku 5.5', note: 'paid, best Arabic' },
   { key: 'g120', provider: 'groq', model: 'openai/gpt-oss-120b', label: 'GPT-OSS 120B', note: 'smartest' },
   { key: 'qw', provider: 'groq', model: 'qwen/qwen3.8-27b', label: 'Qwen 3.8', note: 'fastest, good Arabic' },
   { key: 'g20', provider: 'groq', model: 'openai/gpt-oss-20b', label: 'GPT-OSS 20B', note: 'fast' },
@@ -43,7 +45,12 @@ export async function availableChatModels(): Promise<ModelAvailability[]> {
   const rows = (await listAiUsage(1).catch(() => [] as AiUsageRow[])).filter((r) => r.day === today);
   const now = Date.now();
   const result: ModelAvailability[] = [];
+  const paid = await openRouterOn().catch(() => false);
   for (const m of CHAT_MODELS) {
+    if (m.provider === 'openrouter') {
+      if (paid) result.push({ ...m, requestsLeft: null, warning: null });
+      continue;
+    }
     if (m.provider === 'groq' && !process.env.GROQ_API_KEY) continue;
     if (m.provider === 'gemini' && !process.env.GEMINI_API_KEY) continue;
     const mine = rows.filter((r) => r.provider === m.provider && r.model === m.model);
@@ -381,6 +388,17 @@ function stripThinking(text: string) {
 
 async function callModel(m: ChatModel, context: string, history: ChatMessage[], question: string) {
   const turns = history.slice(-6).map((h) => ({ role: h.role, content: h.content.slice(0, 1200) }));
+  if (m.provider === 'openrouter') {
+    return stripThinking(
+      await openRouterChat({
+        model: m.model,
+        feature: 'assistant',
+        temperature: 0.4,
+        maxTokens: 2048,
+        messages: [{ role: 'system', content: `${SYSTEM_PROMPT}\n\nCONTEXT:\n${context}` }, ...turns, { role: 'user', content: question }],
+      })
+    );
+  }
   if (m.provider === 'groq') {
     const data = await groqFetch<{ choices?: Array<{ message?: { content?: string } }> }>(
       'chat/completions',

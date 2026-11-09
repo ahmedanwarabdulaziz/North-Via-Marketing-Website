@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI, TaskType } from '@google/generative-ai';
 import { groqFetch, trackGemini, type AiFeature } from './ai-usage';
+import { openRouterJson, openRouterOn } from './openrouter';
 
 // Asks the AI for a JSON object: Groq first (fast, its own daily quota), then Gemini models in
 // turn. Images go straight to Gemini (Groq has no vision model on this account). A model that
@@ -32,6 +33,16 @@ export async function aiJson(opts: {
 }): Promise<Record<string, unknown>> {
   const deadline = Date.now() + (opts.timeBudgetMs ?? 45_000);
   let lastError: unknown = new Error('No AI model is available right now.');
+
+  // Paid OpenRouter (Claude Haiku) first when it's on; any failure falls through to the free chain.
+  if (await openRouterOn().catch(() => false)) {
+    try {
+      return await openRouterJson({ system: opts.system, user: opts.user, feature: opts.feature, image: opts.image, timeoutMs: Math.max(5_000, Math.min(30_000, deadline - Date.now() - 3_000)) });
+    } catch (error) {
+      lastError = error;
+      console.error(`AI (${opts.feature}): OpenRouter failed, using the free models:`, error instanceof Error ? error.message.slice(0, 200) : error);
+    }
+  }
 
   const groqModel = process.env.GROQ_TASK_MODEL || 'openai/gpt-oss-120b';
   const tryGroq = async (): Promise<Record<string, unknown> | null> => {

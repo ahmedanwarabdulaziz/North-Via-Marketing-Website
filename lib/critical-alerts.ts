@@ -2,6 +2,7 @@ import { availableChatModels, CHAT_MODELS } from './assistant';
 import { listClientProfiles } from './admin-ops';
 import { getSetting, listDocs, setSetting } from './data/store';
 import { META_CONNECTIONS } from './meta';
+import { isLowBalance, openRouterBalance, openRouterOn } from './openrouter';
 import { ringPhone, type Ring } from './ntfy';
 import { allowedChatIds, escapeHtml as h, sendMessage } from './telegram';
 import { cairoParts } from './tasks';
@@ -17,8 +18,21 @@ const FB_WARN_DAYS = 5;
 
 interface Problem {
   key: string; // stable per problem, for "once a day"
-  ring: Ring;
+  ring?: Ring; // left out: Telegram only
   telegram: string; // HTML
+}
+
+/** OpenRouter credit running low (Telegram only, once a day); Anwarz falls back to free models when it's gone. */
+async function balanceProblems(): Promise<Problem[]> {
+  if (!(await openRouterOn().catch(() => false))) return [];
+  const balance = await openRouterBalance();
+  if (!isLowBalance(balance)) return [];
+  return [
+    {
+      key: 'or:low',
+      telegram: `💸 <b>OpenRouter credit is low: $${balance!.left.toFixed(2)} left</b> (of $${balance!.total.toFixed(2)})\nTop up at openrouter.ai/credits, or open /ai and tap 🆓 to use the free models only. When it runs out, Anwarz switches to the free models by itself.`,
+    },
+  ];
 }
 
 async function facebookProblems(): Promise<Problem[]> {
@@ -58,8 +72,8 @@ async function aiProblems(): Promise<Problem[]> {
 }
 
 export async function runCriticalChecks(now = new Date()) {
-  const [fb, ai] = await Promise.all([facebookProblems().catch(() => []), aiProblems().catch(() => [])]);
-  const problems = [...fb, ...ai];
+  const [fb, ai, balance] = await Promise.all([facebookProblems().catch(() => []), aiProblems().catch(() => []), balanceProblems().catch(() => [])]);
+  const problems = [...fb, ...ai, ...balance];
   if (!problems.length) return { problems: 0, rang: 0 };
   const { date: today } = cairoParts(now);
   const state = await getSetting<{ day?: string; keys?: string[] }>(STATE);
@@ -70,7 +84,7 @@ export async function runCriticalChecks(now = new Date()) {
   await setSetting(STATE, { day: today, keys: [...done, ...fresh.map((p) => p.key)] });
   for (const p of fresh) {
     for (const chatId of allowedChatIds()) await sendMessage(chatId, { text: p.telegram });
-    await ringPhone(p.ring);
+    if (p.ring) await ringPhone(p.ring);
   }
   return { problems: problems.length, rang: fresh.length };
 }

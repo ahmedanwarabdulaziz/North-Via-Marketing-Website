@@ -5,6 +5,7 @@ import { backlogOverview, draftBacklog, releaseBacklog, scanForOldReviews, type 
 import { InlineButton, OutgoingMessage, answerCallback, editMessage, escapeHtml as h, sendMessage, truncate } from './telegram';
 import { getMemory, removeFact } from './assistant-memory';
 import { handlePrayerAction, prayerScreen } from './prayer';
+import { setOpenRouterOn } from './openrouter';
 import { runWebsiteChecks, websiteOverview, websitesScreenText } from './website-monitor';
 import { listCommentQueue } from './social-sync';
 import { checkSocialNow, showWaitingComments, socialStatsLines } from './social-telegram';
@@ -568,6 +569,12 @@ export async function handleMenuCallback(query: { id: string; data?: string; mes
     }
 
     if (screen === 'ai') {
+      if (action === 'free' || action === 'paid') {
+        // One-tap rollback: free models only, or OpenRouter (paid) first again. No deploy needed.
+        await setOpenRouterOn(action === 'paid');
+        await editMessage(chatId, messageId, await aiUsageScreen(action === 'paid' ? '💸 <i>OpenRouter is on again (paid, first choice).</i>' : '🆓 <i>Switched to the free models only. Nothing is charged.</i>'));
+        return answerCallback(query.id, action === 'paid' ? 'OpenRouter on' : 'Free models only');
+      }
       if (action === 'live') {
         await answerCallback(query.id, 'Asking Groq…');
         await editMessage(chatId, messageId, await aiUsageScreen(await checkGroqNow()));

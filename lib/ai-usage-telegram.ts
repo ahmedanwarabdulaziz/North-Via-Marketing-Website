@@ -1,5 +1,6 @@
 import { aiUsageDay, groqFetch, listAiUsage, type AiUsageRow, type GroqLimits } from './ai-usage';
 import { OutgoingMessage, escapeHtml as h, truncate } from './telegram';
+import { OPENROUTER_MODEL, isLowBalance, openRouterBalance, openRouterConfigured, openRouterOn } from './openrouter';
 
 // "🤖 AI usage" in the bot: Groq's real remaining limits (from its response headers) and the
 // app's own count of Gemini calls, since Google doesn't expose the remaining quota to an API key.
@@ -111,6 +112,20 @@ export async function aiUsageScreen(note?: string): Promise<OutgoingMessage> {
 
   const lines = ['🤖 <b>AI usage — today</b>', ''];
 
+  // Paid OpenRouter (first choice when on) with its balance and the on/off switch.
+  const [paidOn, balance] = await Promise.all([openRouterOn().catch(() => false), openRouterBalance()]);
+  const openrouter = models.filter((m) => m.provider === 'openrouter');
+  lines.push(`💸 <b>OpenRouter · ${h(OPENROUTER_MODEL.replace('anthropic/', ''))}</b> <i>(paid, first choice when on)</i>`);
+  if (!openRouterConfigured()) lines.push('    ❌ No OPENROUTER_API_KEY set in Vercel.');
+  else {
+    lines.push(`    ${paidOn ? '🟢 On' : '⚪ Off: using the free models only'}`);
+    if (balance) {
+      lines.push(`    💰 Spent <b>$${balance.used.toFixed(2)}</b> of $${balance.total.toFixed(2)} · <b>$${balance.left.toFixed(2)} left</b>${isLowBalance(balance) ? ' ⚠️ low' : ''}`);
+    }
+    for (const row of openrouter) lines.push(...modelLines(row));
+  }
+  lines.push('');
+
   lines.push('⚡ <b>Groq</b> <i>(first choice for tasks, website chat)</i>');
   if (!process.env.GROQ_API_KEY) lines.push('    ❌ No GROQ_API_KEY set.');
   else if (!groq.length) lines.push('    <i>No calls yet today. Tap “Check Groq now” for the live limits.</i>');
@@ -132,12 +147,15 @@ export async function aiUsageScreen(note?: string): Promise<OutgoingMessage> {
 
   const week = { groq: 0, gemini: 0 } as Record<string, number>;
   for (const r of rows) week[r.provider] = (week[r.provider] || 0) + r.calls;
-  lines.push(`🗓 <b>Last 7 days:</b> Groq ${week.groq} · Gemini ${week.gemini} calls`);
+  lines.push(`🗓 <b>Last 7 days:</b> OpenRouter ${week.openrouter || 0} · Groq ${week.groq} · Gemini ${week.gemini} calls`);
   if (note) lines.push('', note);
 
   return {
     text: lines.join('\n'),
     buttons: [
+      ...(openRouterConfigured()
+        ? [[paidOn ? { text: '🆓 Switch to free models only', callback_data: 'm:ai:free' } : { text: '💸 Use OpenRouter (paid) again', callback_data: 'm:ai:paid' }]]
+        : []),
       [
         { text: '🔄 Refresh', callback_data: 'm:ai' },
         { text: '⚡ Check Groq now', callback_data: 'm:ai:live' },

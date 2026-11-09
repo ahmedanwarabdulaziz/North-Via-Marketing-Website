@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { trackGemini } from './ai-usage';
+import { openRouterChat, openRouterOn } from './openrouter';
 import { getDoc, getDocs, listDocs, setDoc, setDocs, updateDoc } from './data/store';
 import {
   MetaApiError,
@@ -114,6 +115,24 @@ export async function assessComment(
 
   let lastError: unknown;
   let sawBusy = false;
+  // Paid OpenRouter (Claude Haiku) first when it's on; the free Gemini models below are the fallback.
+  if (await openRouterOn().catch(() => false)) {
+    try {
+      const text = await openRouterChat({
+        feature: 'comments',
+        json: true,
+        temperature: 0.4,
+        maxTokens: 1024,
+        messages: [
+          { role: 'system', content: `${assessmentPrompt(settings, businessName, comment.platform)}\n\nAnswer with the JSON object only.` },
+          { role: 'user', content: input },
+        ],
+      });
+      return parseAssessment(text.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, ''));
+    } catch (error) {
+      lastError = error;
+    }
+  }
   for (const modelName of models) {
     for (const minimalThinking of [true, false]) {
       try {
