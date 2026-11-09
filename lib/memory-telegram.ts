@@ -1,22 +1,83 @@
+import crypto from 'crypto';
 import { addFact } from './assistant-memory';
+import { getSetting, setSetting } from './data/store';
 import { findUrls } from './knowledge';
-import { escapeHtml as h, sendMessage } from './telegram';
+import { saveTextToLibrary } from './knowledge-telegram';
+import { answerCallback, editMessage, escapeHtml as h, sendMessage, truncate } from './telegram';
 
-// "احفظ: …", "افتكر إن …", "remember …" outside a chat: an instruction or fact for Anwarz's memory
-// (used by the chat and by the email sorting in every inbox), not a library note.
-// With a link it's still a library item (the library handler takes it).
+// "احفظ …", "save …", "افتكر …", "remember …" outside a chat could mean an instruction for
+// Anwarz's memory (used by the chat and the email sorting) or a note for the library, so the
+// bot asks: 🧠 Memory or 📚 Library. Links, screenshots and "ملاحظة:" / "note:" go to the
+// library without asking (the library handler takes them). Button data: "sv:m|l|x:<id>".
 
-const MEMORY_PREFIX = /^(احفظ|افتكر|إفتكر|خلي بالك|خلّي بالك|سجل عندك|سجّل عندك|remember|memorize)\s*(إن|ان|that)?\s*[:：\-–,]?\s+/i;
+const ASK_PREFIX = /^(احفظ|حفظ|افتكر|إفتكر|خلي بالك|خلّي بالك|سجل عندك|سجّل عندك|save|keep|remember|memorize)\s*(إن|ان|that)?\s*[:：\-–,]?\s+/i;
+const PENDING = 'pending_save';
+const KEEP_MS = 24 * 3_600_000;
 
-export async function handleMemoryMessage(message: { chat: { id: number }; text?: string }): Promise<boolean> {
+type Pending = Record<string, { text: string; messageId?: number; at: number }>;
+
+export async function handleMemoryMessage(message: { chat: { id: number }; message_id?: number; text?: string }): Promise<boolean> {
   const text = (message.text || '').trim();
-  if (!MEMORY_PREFIX.test(text) || findUrls(text).length) return false;
-  const fact = text.replace(MEMORY_PREFIX, '').trim();
-  if (fact.length < 3) return false;
-  const saved = await addFact(fact);
+  if (!ASK_PREFIX.test(text) || findUrls(text).length) return false;
+  if (text.replace(ASK_PREFIX, '').trim().length < 3) return false;
+
+  const id = crypto.randomBytes(5).toString('base64url');
+  const pending = (await getSetting<Pending>(PENDING)) || {};
+  for (const [k, v] of Object.entries(pending)) if (Date.now() - v.at > KEEP_MS) delete pending[k];
+  pending[id] = { text, messageId: message.message_id, at: Date.now() };
+  await setSetting(PENDING, pending);
+
   await sendMessage(message.chat.id, {
-    text: `🧠 <b>Saved to memory</b>\n${h(saved.text)}\n\n<i>Used in chats and when sorting email in every inbox. /memory shows everything saved.</i>`,
-    buttons: [[{ text: '↩️ Undo', callback_data: `m:mem:del:${saved.id}` }, { text: '🧠 All memory', callback_data: 'm:mem' }]],
+    text: [
+      '💾 <b>Where should I save this?</b>',
+      `<i>${h(truncate(text.replace(ASK_PREFIX, '').trim(), 300))}</i>`,
+      '',
+      '🧠 <b>Memory</b>: an instruction or fact I should always keep in mind (chats, email sorting).',
+      '📚 <b>Library</b>: a note or idea to find later.',
+    ].join('\n'),
+    buttons: [
+      [
+        { text: '🧠 Memory', callback_data: `sv:m:${id}` },
+        { text: '📚 Library', callback_data: `sv:l:${id}` },
+      ],
+      [{ text: '✖️ Cancel', callback_data: `sv:x:${id}` }],
+    ],
   });
   return true;
+}
+
+export async function handleSaveChoice(query: { id: string; data?: string; message?: { message_id: number; chat: { id: number } } }) {
+  const chatId = query.message?.chat.id;
+  const messageId = query.message?.message_id;
+  if (!chatId || !messageId) return answerCallback(query.id);
+  const [, choice, id] = (query.data || '').split(':');
+  const pending = (await getSetting<Pending>(PENDING)) || {};
+  const item = pending[id];
+  if (!item) {
+    await editMessage(chatId, messageId, { text: '<i>This was already handled or has expired.</i>' });
+    return answerCallback(query.id);
+  }
+  delete pending[id];
+  await setSetting(PENDING, pending);
+
+  if (choice === 'x') {
+    await editMessage(chatId, messageId, { text: '✖️ <i>Not saved.</i>' });
+    return answerCallback(query.id, 'Cancelled');
+  }
+  if (choice === 'm') {
+    const fact = await addFact(item.text.replace(ASK_PREFIX, '').trim());
+    await editMessage(chatId, messageId, {
+      text: `🧠 <b>Saved to memory</b>\n${h(fact.text)}\n\n<i>Used in chats and when sorting email in every inbox. /memory shows everything saved.</i>`,
+      buttons: [[{ text: '↩️ Undo', callback_data: `m:mem:del:${fact.id}` }, { text: '🧠 All memory', callback_data: 'm:mem' }]],
+    });
+    return answerCallback(query.id, 'Saved to memory');
+  }
+  await editMessage(chatId, messageId, { text: '📚 <i>Saving to the library…</i>' });
+  await answerCallback(query.id);
+  try {
+    await saveTextToLibrary(chatId, item.text, item.messageId);
+  } catch (error) {
+    console.error('Library save failed:', error);
+    await sendMessage(chatId, { text: '⚠️ I couldn’t save that right now (the AI may be busy). Please send it again in a minute.' });
+  }
 }
