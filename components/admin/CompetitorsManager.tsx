@@ -88,7 +88,12 @@ export function CompetitorsManager({
                     )}
                     {c.website && (
                       <p>
-                        🌐 <a className="underline" href={c.website} target="_blank">{c.website}</a>
+                        🌐 {c.website.split('\n').map((u, i) => (
+                          <span key={u}>
+                            {i > 0 && ' · '}
+                            <a className="underline" href={u} target="_blank">{u.replace(/^https?:\/\/(www\.)?/, '')}</a>
+                          </span>
+                        ))}
                         <span className="text-zinc-400"> · checked {when(c.status.web?.checkedAt)}</span>
                         {c.status.web?.error && <span className="text-amber-700"> · {c.status.web.error}</span>}
                       </p>
@@ -111,7 +116,7 @@ export function CompetitorsManager({
                     <RefreshCw className={`w-4 h-4 ${pending ? 'animate-spin' : ''}`} /> Check now
                   </button>
                   <button
-                    onClick={() => setForm({ id: c.id, name: c.name, website: c.website || '', instagram: c.instagram || '', google: query || '', notes: c.notes || '' })}
+                    onClick={() => setForm({ id: c.id, name: c.name, website: (c.website || '').split('\n').join(', '), instagram: c.instagram || '', google: query || '', notes: c.notes || '' })}
                     className="p-1.5 rounded-lg text-zinc-500 hover:bg-zinc-100"
                     title="Edit"
                   >
@@ -139,7 +144,7 @@ export function CompetitorsManager({
             [
               ['name', 'Name *', 'Karioka Fine Egyptian Cuisine'],
               ['instagram', 'Instagram (handle or link)', 'karioka.cuisine'],
-              ['website', 'Website', 'karioka.carrd.co'],
+              ['website', 'Website pages (separate with commas)', 'karioka.ca/menu, karioka.ca/specials'],
               ['google', 'Google Maps name and area', 'Karioka Fine Egyptian Cuisine Toronto'],
             ] as const
           ).map(([key, label, placeholder]) => (

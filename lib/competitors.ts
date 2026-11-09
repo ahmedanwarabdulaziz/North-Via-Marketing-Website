@@ -39,9 +39,15 @@ interface MenuItem {
   price?: string; // as written, e.g. "$13.99" or "150 EGP"
 }
 
+interface PageState {
+  text: string;
+  items?: MenuItem[];
+  error?: string;
+}
+
 interface CompetitorState {
   ig?: { checkedAt: string; followers?: number; seen: string[]; history?: { d: string; followers: number }[]; error?: string };
-  web?: { checkedAt: string; text: string; items?: MenuItem[]; error?: string };
+  web?: { checkedAt: string; pages?: Record<string, PageState>; error?: string };
   google?: { checkedAt: string; placeId?: string; rating?: number; count?: number; seenReviews: string[]; history?: { d: string; rating?: number; count?: number }[]; error?: string };
 }
 
@@ -98,7 +104,7 @@ export async function saveCompetitor(input: Omit<Competitor, 'id' | 'createdAt'>
     id: input.id || crypto.randomBytes(5).toString('base64url'),
     clientId: input.clientId,
     name: input.name.trim().slice(0, 80),
-    website: cleanUrl(input.website),
+    website: (input.website || '').split(/[\s,]+/).map((u) => cleanUrl(u)).filter((u): u is string => Boolean(u)).slice(0, 6).join('\n') || undefined,
     instagram: cleanHandle(input.instagram),
     google: input.google?.trim().slice(0, 200) || undefined,
     notes: input.notes?.trim().slice(0, 500) || undefined,
@@ -301,18 +307,14 @@ const itemKey = (name: string) => name.toLowerCase().replace(/[^\w؀-ۿ]+/g, ' '
  * removed items and price changes are worked out here by comparing the lists. Anything else
  * important (an offer, a new branch, new hours) comes from the same AI call.
  */
-async function checkWebsite(c: Competitor, state: CompetitorState, clientName: string): Promise<Finding[]> {
-  if (!c.website) return [];
+async function checkPage(c: Competitor, url: string, pages: Record<string, PageState>, clientName: string): Promise<Finding[]> {
   try {
-    const page = await readPage(c.website, 20_000); // menus are long
+    const page = await readPage(url, 20_000); // menus are long
     const text = normalize([page?.title, page?.description, page?.text].filter(Boolean).join(' · '));
     if (!text) throw new Error('Could not read the page (it may need JavaScript or block bots).');
-    const before = state.web?.text || '';
-    const oldItems = state.web?.items;
-    if (before && similarity(before, text) > 0.97 && oldItems) {
-      state.web = { ...state.web!, checkedAt: new Date().toISOString() };
-      return [];
-    }
+    const before = pages[url]?.text || '';
+    const oldItems = pages[url]?.items;
+    if (before && similarity(before, text) > 0.97 && oldItems) return [];
     const raw = await aiJson({
       system: `You read a competitor's website for a marketing agency (client: ${clientName}; competitor: ${c.name}).
 1) "items": every product / menu item / service with its price exactly as written on the page (no price → omit "price"). Use the item names as written. [] if the page lists none.
@@ -330,10 +332,10 @@ ${text.slice(0, 16_000)}`,
       .filter((i) => i && typeof i.name === 'string' && i.name.trim())
       .map((i) => ({ name: i.name.trim().slice(0, 80), ...(typeof i.price === 'string' && i.price.trim() ? { price: i.price.trim().slice(0, 30) } : {}) }))
       .slice(0, 150);
-    state.web = { checkedAt: new Date().toISOString(), text, items };
-    if (!oldItems) return []; // first check: remember the starting point only
+    pages[url] = { text, items };
+    if (!oldItems) return []; // first check of this page: remember the starting point only
 
-    const base = { clientId: c.clientId, competitorId: c.id, competitorName: c.name, source: 'website' as const, url: c.website };
+    const base = { clientId: c.clientId, competitorId: c.id, competitorName: c.name, source: 'website' as const, url };
     const findings: Finding[] = [];
     const oldMap = new Map(oldItems.map((i) => [itemKey(i.name), i]));
     const newMap = new Map(items.map((i) => [itemKey(i.name), i]));
@@ -362,9 +364,65 @@ ${text.slice(0, 16_000)}`,
     }
     return findings;
   } catch (error) {
-    state.web = { ...(state.web || { text: '' }), checkedAt: new Date().toISOString(), error: error instanceof Error ? error.message.slice(0, 200) : 'failed' };
+    pages[url] = { ...(pages[url] || { text: '' }), error: error instanceof Error ? error.message.slice(0, 200) : 'failed' };
     return [];
   }
+}
+
+const PAGE_WORDS = /menu|special|offer|deal|promo|discount|event|catering|happy-?hour|brunch|order|عروض|عرض|منيو|قائمة|خصم/i;
+const MAX_PAGES = 6;
+
+/** Internal links on these pages whose address or text suggests offers or menus. */
+async function discoverPages(sources: string[]): Promise<string[]> {
+  const all = await Promise.all(sources.map(linksOn));
+  return [...new Set(all.flat())].slice(0, MAX_PAGES);
+}
+
+async function linksOn(home: string): Promise<string[]> {
+  try {
+    const res = await fetch(home, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; NorthViaBot/1.0)' }, signal: AbortSignal.timeout(10_000) });
+    const html = (await res.text()).slice(0, 800_000);
+    const origin = new URL(home).origin;
+    const found = new Set<string>();
+    for (const m of html.matchAll(/<a[^>]*href=["']([^"'#]+)["'][^>]*>([\s\S]*?)<\/a>/gi)) {
+      let url: URL;
+      try {
+        url = new URL(m[1], home);
+      } catch {
+        continue;
+      }
+      if (url.origin !== origin || /\.(pdf|jpe?g|png|webp|gif|zip)$/i.test(url.pathname)) continue;
+      const label = m[2].replace(/<[^>]+>/g, ' ');
+      if (PAGE_WORDS.test(url.pathname) || PAGE_WORDS.test(label)) found.add(`${url.origin}${url.pathname}`.replace(/\/$/, ''));
+    }
+    return [...found];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The competitor's website: the pages Ahmed listed, the homepage, and pages found on it that
+ * look like menus or offers (up to 6). Each page is compared with its own last copy.
+ */
+async function checkWebsite(c: Competitor, state: CompetitorState, clientName: string, deadline: number): Promise<Finding[]> {
+  if (!c.website) return [];
+  const listed = c.website.split('\n').filter(Boolean);
+  const home = new URL(listed[0]).origin;
+  // Look for offer and menu links on the homepage and on the listed pages (some homepages are
+  // only a script shell with no links).
+  const discovered = await discoverPages([...new Set([home, ...listed])].slice(0, 3));
+  const urls = [...new Set([...listed.map((u) => u.replace(/\/$/, '')), home, ...discovered])].slice(0, MAX_PAGES);
+  const pages: Record<string, PageState> = { ...(state.web?.pages || {}) };
+  const findings: Finding[] = [];
+  for (const url of urls) {
+    if (Date.now() > deadline) break;
+    findings.push(...(await checkPage(c, url, pages, clientName)));
+  }
+  // Forget pages that are no longer part of the site's watched set.
+  for (const key of Object.keys(pages)) if (!urls.includes(key)) delete pages[key];
+  state.web = { checkedAt: new Date().toISOString(), pages };
+  return findings;
 }
 
 // ---------- Google (Places API, New) ----------
@@ -442,7 +500,7 @@ export async function runCompetitorChecks(opts: { budgetMs?: number; onlyId?: st
     if (!wantIg && !wantWeb && !wantGoogle) continue;
     const found = [
       ...(wantIg ? await checkInstagram(c, state, clientName, deadline) : []),
-      ...(wantWeb ? await checkWebsite(c, state, clientName) : []),
+      ...(wantWeb ? await checkWebsite(c, state, clientName, deadline) : []),
       ...(wantGoogle ? await checkGoogle(c, state) : []),
     ];
     await setSetting(stateKey(c.id), state);
