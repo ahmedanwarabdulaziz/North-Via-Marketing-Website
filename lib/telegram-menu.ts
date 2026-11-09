@@ -4,7 +4,6 @@ import { checkReviewsNow, reviewQueueOverview, showWaitingReviews } from './revi
 import { backlogOverview, draftBacklog, releaseBacklog, scanForOldReviews, type BacklogScope } from './review-engine';
 import { InlineButton, OutgoingMessage, answerCallback, editMessage, escapeHtml as h, sendMessage, truncate } from './telegram';
 import { handleMemoryScreen, memoryHomeScreen } from './memory-screens';
-import { handlePrayerAction, prayerScreen } from './prayer';
 import { setOpenRouterOn } from './openrouter';
 import { runWebsiteChecks, websiteOverview, websitesScreenText } from './website-monitor';
 import { listCommentQueue } from './social-sync';
@@ -18,7 +17,7 @@ import { GBP_LOCATIONS } from './google-business';
 import { adsScreenText } from './ads-telegram';
 import { metaAdsScreenText, type MetaAdsPeriod } from './meta-ads-telegram';
 import { analyticsScreenText } from './analytics-telegram';
-import { taskCounts, taskListScreen, tasksHomeScreen } from './task-telegram';
+import { routinesScreen, taskCounts, taskListScreen, tasksHomeScreen } from './task-telegram';
 import { aiUsageScreen, checkGroqNow } from './ai-usage-telegram';
 import { libraryCount, libraryHomeScreen } from './knowledge-telegram';
 import { startConversation } from './assistant-telegram';
@@ -124,8 +123,8 @@ export const BOT_COMMANDS = [
   { command: 'find', description: '🔎 Search the library, e.g. /find reel ideas' },
   { command: 'chat', description: '💬 Chat with AI about your tasks, clients and library' },
   { command: 'end', description: '👋 End the chat' },
+  { command: 'routines', description: '🔁 Daily and weekly routines' },
   { command: 'memory', description: '🧠 What the bot remembers about you' },
-  { command: 'prayer', description: '🕌 Prayer times and alarms' },
   { command: 'ai', description: '🤖 AI usage (Groq and Gemini)' },
 ];
 
@@ -356,6 +355,7 @@ export async function sendMenu(chatId: number | string) {
 const COMMAND_SCREENS: Record<string, () => Promise<OutgoingMessage>> = {
   '/tasks': tasksHomeScreen,
   '/today': () => taskListScreen('today'),
+  '/routines': () => routinesScreen(),
   '/tomorrow': () => taskListScreen('tomorrow'),
   '/reviews': () => reviewsScreen(),
   '/post': postLocationsScreen,
@@ -367,7 +367,6 @@ const COMMAND_SCREENS: Record<string, () => Promise<OutgoingMessage>> = {
   '/websites': () => websitesScreen(),
   '/library': libraryHomeScreen,
   '/memory': () => memoryScreen(),
-  '/prayer': () => prayerScreen(),
   '/ai': () => aiUsageScreen(),
 };
 
@@ -398,13 +397,6 @@ export async function handleMenuCallback(query: { id: string; data?: string; mes
   try {
     if (screen === 'home') {
       await editMessage(chatId, messageId, await homeScreen());
-      return answerCallback(query.id);
-    }
-
-    if (screen === 'pr') {
-      // m:pr (show) or m:pr:on / off / city-<city>. Alarms send a new message with this button.
-      const note = await handlePrayerAction(action);
-      await editMessage(chatId, messageId, await prayerScreen(note));
       return answerCallback(query.id);
     }
 

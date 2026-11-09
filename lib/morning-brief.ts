@@ -2,7 +2,6 @@ import { listAdminInvoices } from './admin-ops';
 import { adsDigestLines } from './ads-telegram';
 import { metaAdsDigestLines } from './meta-ads-telegram';
 import { ringPhone } from './ntfy';
-import { PRAYERS, PRAYER_CITIES, todaysPrayerTimes } from './prayer';
 import { reviewQueueOverview } from './review-telegram';
 import { escapeHtml as h, type InlineButton } from './telegram';
 import { websiteDigestLine } from './website-monitor';
@@ -10,7 +9,7 @@ import { whatsAppShareLink } from './whatsapp-share';
 import type { AdminInvoiceItem } from '@/types/database';
 
 // The 9 AM morning brief: everything for the day in one message, above the task list
-// (prayers, reviews waiting, websites, yesterday's ads, overdue invoices). Each part is
+// (reviews waiting, websites, yesterday's ads, overdue invoices). Each part is
 // optional: one that fails or has nothing to say is left out, so the brief always goes.
 // Ads problems (no spend yesterday, an expired ads login) also ring the phone, once a day.
 
@@ -26,11 +25,6 @@ function money(amount: number, currency: string) {
   } catch {
     return `${Math.round(amount)} ${currency}`;
   }
-}
-
-async function prayerLine() {
-  const { settings, state } = await todaysPrayerTimes();
-  return `🕌 ${PRAYER_CITIES[settings.city].nameAr}: ${PRAYERS.map((p) => `${p.ar} ${state.times[p.key]}`).join(' · ')}`;
 }
 
 async function reviewsLine() {
@@ -64,8 +58,7 @@ export interface BriefSections {
 }
 
 export async function morningBriefSections(today: string): Promise<BriefSections> {
-  const [prayer, reviews, websites, ads, metaAds, invoices] = await Promise.all([
-    withTimeout(prayerLine(), ''),
+  const [reviews, websites, ads, metaAds, invoices] = await Promise.all([
     withTimeout(reviewsLine(), ''),
     withTimeout(websiteDigestLine(), ''),
     withTimeout(adsDigestLines(), [] as string[]),
@@ -79,14 +72,13 @@ export async function morningBriefSections(today: string): Promise<BriefSections
     await ringPhone({ title: '📉 Ads need attention', message: problems.slice(0, 4).join('\n'), priority: 4, tags: ['chart_with_downwards_trend'] });
   }
 
-  const lines = [prayer, reviews, websites].filter(Boolean);
+  const lines = [reviews, websites].filter(Boolean);
   for (const block of [ads, metaAds, invoices.lines]) if (block.length) lines.push('', ...block);
   const buttons: InlineButton[][] = [
     ...invoices.buttons,
     [
       { text: '⭐ Reviews', callback_data: 'm:gr' },
       { text: '🌐 Websites', callback_data: 'm:ws' },
-      { text: '🕌 Prayer', callback_data: 'm:pr' },
     ],
   ];
   return { lines, buttons };

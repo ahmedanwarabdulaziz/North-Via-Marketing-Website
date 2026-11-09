@@ -1,7 +1,6 @@
 import { isAutomationRequest, unauthorized } from '@/lib/automation-auth';
 import { sendDueReminders, sendMorningDigest, sendWeeklySummary } from '@/lib/task-telegram';
 import { runWebsiteChecks } from '@/lib/website-monitor';
-import { sendPrayerAlarms } from '@/lib/prayer';
 import { runCriticalChecks } from '@/lib/critical-alerts';
 import { checkInboxes } from '@/lib/email/inbox';
 import { summarizeFinishedChats } from '@/lib/chat-history';
@@ -14,13 +13,12 @@ export const maxDuration = 60;
  * Called every 5 minutes by n8n on the VPS. Sends every reminder due before the next run
  * (a 5:33 task is reminded at 5:30; missed ones catch up on the next run) and rings the phone
  * for timed ones, once a day from 9 AM Cairo the morning digest, on Sundays from 8 PM Cairo
- * the week-ahead summary, checks the client websites so a site going down rings within minutes,
- * and sends the prayer alarms (lib/prayer.ts).
+ * the week-ahead summary, checks the client websites so a site going down rings within minutes.
  */
 async function run(request: Request) {
   if (!isAutomationRequest(request)) return unauthorized();
   const now = new Date();
-  const [reminders, digest, weekly, websites, prayers, critical, email, chats, competitors] = await Promise.all([
+  const [reminders, digest, weekly, websites, critical, email, chats, competitors] = await Promise.all([
     sendDueReminders(now).catch((error) => {
       console.error('Task reminders failed:', error);
       return { error: error instanceof Error ? error.message : 'Task reminders failed' };
@@ -37,10 +35,6 @@ async function run(request: Request) {
     runWebsiteChecks().catch((error) => {
       console.error('Website checks failed:', error);
       return { error: error instanceof Error ? error.message : 'Website checks failed' };
-    }),
-    sendPrayerAlarms(now).catch((error) => {
-      console.error('Prayer alarms failed:', error);
-      return { error: error instanceof Error ? error.message : 'Prayer alarms failed' };
     }),
     runCriticalChecks(now).catch((error) => {
       console.error('Critical checks failed:', error);
@@ -62,7 +56,7 @@ async function run(request: Request) {
     }),
   ]);
   const failed = 'error' in reminders && 'error' in digest;
-  return Response.json({ reminders, digest, weekly, websites, prayers, critical, email, chats, competitors }, { status: failed ? 500 : 200 });
+  return Response.json({ reminders, digest, weekly, websites, critical, email, chats, competitors }, { status: failed ? 500 : 200 });
 }
 
 export const POST = run;

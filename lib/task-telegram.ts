@@ -531,7 +531,7 @@ export async function handleTaskCallback(query: CallbackQuery) {
     if (action === 'l') {
       // tk:l:home, tk:l:<list>, tk:l:c (clients), tk:l:c:<clientId>
       const screen =
-        id === 'c' ? (key ? await clientTasksScreen(key) : await clientsScreen()) : id === 'home' || !id ? await tasksHomeScreen() : await taskListScreen(id as TaskListKey);
+        id === 'c' ? (key ? await clientTasksScreen(key) : await clientsScreen()) : id === 'routines' ? await routinesScreen() : id === 'home' || !id ? await tasksHomeScreen() : await taskListScreen(id as TaskListKey);
       await editMessage(chatId, messageId, screen);
       return answerCallback(query.id);
     }
@@ -726,8 +726,9 @@ function listMessage(title: string, tasks: Task[], clients: TaskClient[], back: 
 }
 
 export async function taskCounts() {
-  const groups = groupTasks(await listOpenTasks());
-  return { today: groups.today.length, tomorrow: groups.tomorrow.length, overdue: groups.overdue.length, week: groups.week.length, nodate: groups.nodate.length };
+  const open = await listOpenTasks();
+  const groups = groupTasks(open);
+  return { routines: open.filter((t) => t.repeat_rule).length, today: groups.today.length, tomorrow: groups.tomorrow.length, overdue: groups.overdue.length, week: groups.week.length, nodate: groups.nodate.length };
 }
 
 export async function tasksHomeScreen(): Promise<OutgoingMessage> {
@@ -752,6 +753,7 @@ export async function tasksHomeScreen(): Promise<OutgoingMessage> {
         { text: `📝 No date (${c.nodate})`, callback_data: 'tk:l:nodate' },
         { text: '👥 By client', callback_data: 'tk:l:c' },
       ],
+      [{ text: `🔁 Routines (${c.routines})`, callback_data: 'tk:l:routines' }],
       [{ text: '⬅️ Back to menu', callback_data: 'm:home' }],
     ],
   };
@@ -761,6 +763,30 @@ export async function taskListScreen(key: TaskListKey): Promise<OutgoingMessage>
   if (!LIST_TITLES[key]) return tasksHomeScreen();
   const [tasks, clients] = await Promise.all([listOpenTasks(), taskClients()]);
   return listMessage(LIST_TITLES[key], groupTasks(tasks)[key], clients, 'tk:l:home', key === 'overdue' ? moveAllRow() : undefined);
+}
+
+/** Repeating tasks and reminders (every day, every Monday…): each with how often and its next time. */
+export async function routinesScreen(): Promise<OutgoingMessage> {
+  const [tasks, clients] = await Promise.all([listOpenTasks(), taskClients()]);
+  const routines = tasks.filter((t) => t.repeat_rule).sort((a, b) => (a.due_at || '').localeCompare(b.due_at || ''));
+  const shown = routines.slice(0, 15);
+  const lines = shown.map((t, i) => {
+    const client = clientName(clients, t.client_id);
+    return `${i + 1}. <b>${h(truncate(t.title, 80))}</b>${client ? ` — <i>${h(client)}</i>` : ''}\n    🔁 ${describeRepeat(t.repeat_rule!, t.repeat_until, t.repeat_count)} · next ${t.due_at ? formatWhen(t) : '—'}`;
+  });
+  const buttons: InlineButton[][] = shown.map((t, i) => [{ text: `${i + 1}. ${truncate(t.title, 40)}`, callback_data: `tk:o:${t.id}` }]);
+  buttons.push([{ text: '⬅️ Back', callback_data: 'tk:l:home' }]);
+  return {
+    text: [
+      '🔁 <b>Routines</b>',
+      '',
+      ...(lines.length ? lines : ['<i>No routines yet.</i>']),
+      ...(routines.length > shown.length ? ['', `<i>+${routines.length - shown.length} more</i>`] : []),
+      '',
+      '<i>To add one, send it in your own words (voice or text), e.g. “every day at 9 PM remind me to take my vitamins” or “every Sunday 10 AM review the ads”. Tap a routine to change its time, edit it or stop it.</i>',
+    ].join('\n'),
+    buttons,
+  };
 }
 
 async function clientsScreen(): Promise<OutgoingMessage> {
@@ -932,7 +958,7 @@ function digestMessage(
   const overdue = groups.overdue.slice(0, 10);
   const work = groups.today.filter((t) => t.category === 'work').length;
   const lines = [`☀️ <b>Good morning — ${formatDate(today)}</b>`];
-  // The rest of the day first (prayers, reviews, websites, ads, invoices), then the tasks.
+  // The rest of the day first (reviews, websites, ads, invoices), then the tasks.
   if (brief.lines.length) lines.push('', ...brief.lines, '', '━━━━━━━━━━', '✅ <b>Tasks</b>');
   const summary = [
     groups.today.length ? `Today: ${groups.today.length} task${groups.today.length === 1 ? '' : 's'} (${work} work, ${groups.today.length - work} personal)` : 'Nothing scheduled for today.',
