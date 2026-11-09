@@ -819,6 +819,9 @@ export async function sendDueReminders(now = new Date()) {
           title: '⏰ تذكير',
           message: [task.title, client ? `👤 ${client}` : null, `📅 ${formatWhen(task)}`].filter(Boolean).join('\n'),
           tags: ['alarm_clock'],
+          // "High", not "max": max-priority alarms keep ringing (ntfy's "keep alerting") even after
+          // a button is pressed; high rings once and stops when Done / Snooze is tapped.
+          priority: 4,
           // Buttons on the alarm itself, so it can be handled from the lock screen.
           actions: [
             { label: '☑️ Done', url: taskActionUrl(task.id, 'done') },
