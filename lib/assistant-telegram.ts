@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { addFact, removeFact } from './assistant-memory';
+import { addFact, removeFact, type MemoryFact } from './assistant-memory';
 import { listClientProfiles } from './admin-ops';
 import { CHAT_MODELS, CLIENT_FIELDS, actionSummary, askAssistant, availableChatModels, claimsDone, type AssistantAction, type ChatMessage, type ChatModel, type ClientField } from './assistant';
 import { addDoc, updateDoc } from './data/store';
@@ -109,18 +109,47 @@ async function modelPicker(sessionId: string, intro: string): Promise<OutgoingMe
   };
 }
 
-/** Opens a conversation: ends any other, then asks which model to use. */
+/** Best first: smartest with a big free quota, then strong Gemini, then the lighter ones. */
+const AUTO_ORDER = ['g120', 'gf', 'qw', 'glt', 'gfl', 'g20'];
+
+/** The best model that still has free quota today, or null if none has. */
+async function autoModel(): Promise<ChatModel | null> {
+  const available = await availableChatModels();
+  const ranked = [...available].sort((a, b) => {
+    const ia = AUTO_ORDER.indexOf(a.key);
+    const ib = AUTO_ORDER.indexOf(b.key);
+    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+  });
+  return ranked.find((m) => !m.warning) || ranked[0] || null;
+}
+
+/** Opens a conversation: ends any other, picks the best model with quota left and answers. */
 export async function startConversation(chatId: number, question: string | null) {
   await endOpenSessions(chatId);
+  const model = await autoModel();
   const session = check(
     await supabase
       .from('chat_sessions')
-      .insert({ id: crypto.randomBytes(6).toString('base64url'), chat_id: String(chatId), pending_question: question })
+      .insert({
+        id: crypto.randomBytes(6).toString('base64url'),
+        chat_id: String(chatId),
+        pending_question: model ? null : question,
+        model: model?.model ?? null,
+        provider: model?.provider ?? null,
+      })
       .select()
       .single()
   ) as ChatSession;
-  const intro = question ? `💬 <b>Let’s talk.</b> I’ll answer from your library, tasks and clients.\n<i>“${h(truncate(question, 200))}”</i>` : '💬 <b>Let’s talk.</b> Ask me anything about your tasks, clients or library.';
-  await sendMessage(chatId, await modelPicker(session.id, intro));
+  if (!model) {
+    // Nothing has free quota: show the (empty) list so it's clear why.
+    await sendMessage(chatId, await modelPicker(session.id, '💬 <b>Let’s talk.</b>'));
+    return;
+  }
+  if (question) return answer(chatId, session, question);
+  await sendMessage(chatId, {
+    text: '💬 <b>Let’s talk.</b> Ask me anything about your tasks, clients or library. I remember what you’ve asked me to save (/memory).',
+    buttons: [[{ text: '✖️ End chat', callback_data: `ch:e:${session.id}` }]],
+  });
 }
 
 export async function endConversation(chatId: number) {
@@ -149,6 +178,14 @@ async function answer(chatId: number, session: ChatSession, question: string) {
     return;
   }
 
+  // "Remember this" that he clearly asked for is saved right away (with Undo), like a note;
+  // everything else still waits for a ✅ Confirm tap.
+  const saved: MemoryFact[] = [];
+  for (const a of reply.actions) {
+    if (a.type === 'remember' && a.explicit) saved.push(await addFact(a.text).catch(() => null as unknown as MemoryFact));
+  }
+  const toConfirm = reply.actions.filter((a) => !(a.type === 'remember' && a.explicit));
+
   const now = new Date().toISOString();
   const messages: ChatMessage[] = [
     ...history,
@@ -156,9 +193,15 @@ async function answer(chatId: number, session: ChatSession, question: string) {
     {
       role: 'assistant' as const,
       // The history says plainly that proposals aren't done yet, so the model can't later assume they were.
-      content: [reply.text, ...reply.actions.map((a) => `[PROPOSED, not done yet: ${actionSummary(a)}]`)].filter(Boolean).join('\n'),
+      content: [
+        reply.text,
+        ...saved.filter(Boolean).map((f) => `[DONE by the bot] remembered: ${f.text}`),
+        ...toConfirm.map((a) => `[PROPOSED, not done yet: ${actionSummary(a)}]`),
+      ]
+        .filter(Boolean)
+        .join('\n'),
       at: now,
-      actions: reply.actions.map((a) => ({ ...a, id: crypto.randomBytes(4).toString('base64url') })),
+      actions: toConfirm.map((a) => ({ ...a, id: crypto.randomBytes(4).toString('base64url') })),
     },
   ].slice(-KEEP_MESSAGES);
   // Switch to the model that answered, so the next turn doesn't wait on the busy one again.
@@ -181,6 +224,13 @@ async function answer(chatId: number, session: ChatSession, question: string) {
       : '';
   const body = reply.text ? toTelegramHtml(reply.text) : reply.actions.length ? 'Here’s what I prepared:' : '…';
   await sendMessage(chatId, { text: `${truncate(body, 3400)}${warning}\n\n${footer}`, buttons });
+
+  for (const f of saved.filter(Boolean)) {
+    await sendMessage(chatId, {
+      text: `🧠 <b>Saved to memory</b>\n${h(f.text)}`,
+      buttons: [[{ text: '↩️ Undo', callback_data: `m:mem:del:${f.id}` }, { text: '🧠 All memory', callback_data: 'm:mem' }]],
+    });
+  }
 
   // One confirmation card per change: exactly what will be saved, Confirm / Cancel.
   const proposed = messages[messages.length - 1].actions || [];

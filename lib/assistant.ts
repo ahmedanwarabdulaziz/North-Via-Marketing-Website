@@ -146,7 +146,7 @@ You can see his profile and the facts he asked you to remember (ABOUT THE OWNER,
 
 Memory:
 - Use ABOUT THE OWNER and REMEMBERED FACTS naturally; they are true unless he corrects them. Never invent facts about him.
-- When he shares something lasting about himself, his companies, clients or preferences, the bot may prepare a "remember" change (see PLANNED CHANGES); say in one short line that he can tap ✅ to save it.
+- When he asks you to remember something, the bot saves it right away ("saved right away" in PLANNED CHANGES): confirm in one short line, e.g. "حفظتها 🧠". When the bot only suggests saving ("needs his ✅ tap"), say he can tap ✅ to keep it.
 
 How to answer:
 - Reply in the language the owner writes in (Egyptian Arabic, English or mixed). Be direct and practical; short unless they ask for detail (aim under 150 words).
@@ -182,7 +182,8 @@ export type AssistantAction =
   | { type: 'update_client'; clientId: string; clientName: string; changes: Partial<Record<ClientField, string>>; before: Partial<Record<ClientField, string>> }
   | { type: 'add_website'; clientId: string | null; clientName: string; url: string; label: string | null }
   | { type: 'complete_task'; taskId: string; title: string }
-  | { type: 'remember'; text: string }
+  /** explicit = he clearly asked to remember it: saved right away (with Undo), no confirm tap. */
+  | { type: 'remember'; text: string; explicit?: boolean }
   | { type: 'forget'; factId: string; text: string };
 
 interface PlannerClient {
@@ -212,8 +213,9 @@ Action types:
 {"type":"add_website","client_id":"<id from the list, or null when the client is being added in this same reply>","client_name":"…","url":"https://…","label":null}
   (an extra page or site to check hourly for an existing client; not needed for a new client's main website)
 {"type":"complete_task","task_id":"<id from the task list>"}
-{"type":"remember","text":"<one short lasting fact, in the owner's language, e.g. 'Bloom prefers WhatsApp over email' or 'الDBA defence is in March 2027'>"}
-  (when he says remember / احفظ / خلي بالك / سجل عندك, or shares a lasting fact about himself, his companies, clients or how he likes things done. NOT for things with a date to act on — those are tasks. One fact per action. Skip if it's already in MEMORY.)
+{"type":"remember","text":"<one short lasting fact, in the owner's language, e.g. 'Bloom prefers WhatsApp over email' or 'الDBA defence is in March 2027'>","asked":true}
+  (when he says remember / احفظ / خلي بالك / سجل عندك / افتكر إن, or shares a lasting fact about himself, his companies, clients or how he likes things done. NOT for things with a date to act on — those are tasks. One fact per action. Skip if it's already in MEMORY.
+   "asked": true only when he explicitly asked you to remember/save it; false when you're suggesting it yourself.)
 {"type":"forget","memory_id":"<id from MEMORY>"}
   (when he asks to forget/remove a remembered fact; to correct one, forget the old one and remember the new one)
 
@@ -289,7 +291,7 @@ export function toActions(raw: Record<string, unknown>, clients: PlannerClient[]
       if (task) actions.push({ type: 'complete_task', taskId: task.id, title: task.title });
     } else if (a.type === 'remember') {
       const text = cleanText(a.text, 300);
-      if (text && !facts.some((f) => f.text.toLowerCase() === text.toLowerCase())) actions.push({ type: 'remember', text });
+      if (text && !facts.some((f) => f.text.toLowerCase() === text.toLowerCase())) actions.push({ type: 'remember', text, explicit: a.asked === true });
     } else if (a.type === 'forget') {
       const fact = facts.find((f) => f.id === a.memory_id);
       if (fact) actions.push({ type: 'forget', factId: fact.id, text: fact.text });
@@ -308,7 +310,7 @@ export function actionSummary(a: AssistantAction) {
   if (a.type === 'add_client') return `Add client ${a.fields.brandName}${a.checkWebsite ? ` and check ${host(a.fields.websiteUrl)} hourly` : ''}`;
   if (a.type === 'update_client') return `Update ${a.clientName}: ${Object.keys(a.changes).map((k) => CLIENT_FIELDS[k as ClientField]).join(', ')}`;
   if (a.type === 'add_website') return `Check ${host(a.url)} hourly for ${a.clientName}`;
-  if (a.type === 'remember') return `Remember: ${a.text.slice(0, 150)}`;
+  if (a.type === 'remember') return a.explicit ? `Remember (saved right away, no tap needed): ${a.text.slice(0, 150)}` : `Remember (needs his ✅ tap): ${a.text.slice(0, 150)}`;
   if (a.type === 'forget') return `Forget: ${a.text.slice(0, 150)}`;
   return `Mark task done: ${a.title}`;
 }
