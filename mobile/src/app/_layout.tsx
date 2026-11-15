@@ -67,6 +67,7 @@ function RootStack() {
         <Stack.Screen name="sounds" options={{ title: 'Notification sounds' }} />
         <Stack.Screen name="marketing" options={{ title: 'Marketing' }} />
         <Stack.Screen name="library" options={{ headerShown: false }} />
+        <Stack.Screen name="connections" options={{ title: 'Connections' }} />
       </Stack.Protected>
       <Stack.Protected guard={!signedIn}>
         <Stack.Screen name="login" options={{ headerShown: false }} />

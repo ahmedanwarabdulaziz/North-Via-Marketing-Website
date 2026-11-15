@@ -1,3 +1,4 @@
+import { useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Alert, View } from 'react-native';
 
@@ -20,6 +21,13 @@ interface InboxData {
 export default function Inbox() {
   const p = usePalette();
   const [view, setView] = useState<Filter>('waiting');
+  // The 9 PM "Skipped today" notification opens this tab on Skipped.
+  const params = useLocalSearchParams<{ view?: string }>();
+  const [seenParam, setSeenParam] = useState<string | undefined>(undefined);
+  if (params.view !== seenParam) {
+    setSeenParam(params.view);
+    if (params.view === 'skipped' || params.view === 'waiting' || params.view === 'handled') setView(params.view);
+  }
   const [inbox, setInbox] = useState<string | null>(null);
   const { data, error, loading, refreshing, refresh, reload } = useApi<InboxData>(`/emails?view=${view}${inbox ? `&inbox=${encodeURIComponent(inbox)}` : ''}`);
   const [selected, setSelected] = useState<Set<string>>(new Set());

@@ -29,7 +29,7 @@ export interface Ring {
   /** The app's alert kind (its own sound): site_down, task, email, review, jl_order, attention, info. */
   channel?: PushChannel;
   /** Buttons on the app's notification: 'task' = ☑️ Done / 💤 1 hour. */
-  category?: 'task';
+  category?: 'task' | 'ask' | 'email';
 }
 
 export function ntfyConfigured() {

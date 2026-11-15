@@ -8,6 +8,7 @@ import { isAdminAuthenticated } from '@/lib/admin-auth';
 import { googleRedirectUri } from '@/lib/google-oauth';
 import { completeGmailConnection } from '@/lib/email/gmail';
 import { saveEmailAccount } from '@/lib/email/inbox';
+import { appDoneUrl, splitAppState, verifyAppConnectToken } from '@/lib/app-connect';
 
 // Business Profile authorizations carry a signed `state`; Google Ads ones carry
 // "ads:<clientId>" and Google Analytics ones "ga:<clientId>".
@@ -40,20 +41,24 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const code = searchParams.get('code');
-    const state = searchParams.get('state');
+    // From the Anwarz app, the state ends in "~<signed token>", which stands in for the admin login.
+    const { base, token: appToken } = splitAppState(searchParams.get('state'));
+    const state = appToken ? base : searchParams.get('state');
+    const fromApp = appToken ? await verifyAppConnectToken(appToken) : null;
+    if (appToken && !fromApp) return NextResponse.redirect(appDoneUrl(request.url, 'error', 'The link expired'));
 
-    // Gmail inboxes from Admin → Email ("mail:gmail").
+    // Gmail inboxes from Admin → Email ("mail:gmail") or the app.
     if (state === 'mail:gmail') {
-      if (!(await isAdminAuthenticated())) return NextResponse.redirect(new URL('/admin/login', request.url));
-      if (!code) return NextResponse.redirect(new URL('/admin/email?error=cancelled', request.url));
+      if (!fromApp && !(await isAdminAuthenticated())) return NextResponse.redirect(new URL('/admin/login', request.url));
+      if (!code) return NextResponse.redirect(fromApp ? appDoneUrl(request.url, 'error', 'Gmail') : new URL('/admin/email?error=cancelled', request.url));
       try {
         const { email, encryptedRefreshToken } = await completeGmailConnection(code, googleRedirectUri(request.url));
         await saveEmailAccount('gmail', email, encryptedRefreshToken);
-        return NextResponse.redirect(new URL(`/admin/email?connected=${encodeURIComponent(email)}`, request.url));
+        return NextResponse.redirect(fromApp ? appDoneUrl(request.url, 'connected', email) : new URL(`/admin/email?connected=${encodeURIComponent(email)}`, request.url));
       } catch (error) {
         console.error('Gmail callback error:', error);
         const reason = error instanceof Error ? error.message : 'failed';
-        return NextResponse.redirect(new URL(`/admin/email?error=${encodeURIComponent(reason.slice(0, 200))}`, request.url));
+        return NextResponse.redirect(fromApp ? appDoneUrl(request.url, 'error', `Gmail: ${reason}`) : new URL(`/admin/email?error=${encodeURIComponent(reason.slice(0, 200))}`, request.url));
       }
     }
 
@@ -65,10 +70,12 @@ export async function GET(request: Request) {
     // Back to the client page the connection was started from, or Settings.
     const adsClientId = state?.split(':')[1] || '';
     const adsDone = (query: string) =>
-      new URL(adsClientId ? `/admin/clients/${adsClientId}?${kind}=${query}` : `/admin/settings?${query === 'connected' ? 'success=connected' : 'error=' + query}`, request.url);
+      fromApp
+        ? appDoneUrl(request.url, query === 'connected' ? 'connected' : 'error', 'Google Ads')
+        : new URL(adsClientId ? `/admin/clients/${adsClientId}?${kind}=${query}` : `/admin/settings?${query === 'connected' ? 'success=connected' : 'error=' + query}`, request.url);
 
-    // The shared Google Ads / Analytics connections may only be replaced by a signed-in admin.
-    if (!(await isAdminAuthenticated())) {
+    // The shared Google Ads / Analytics connections may only be replaced by a signed-in admin (or the app's signed link).
+    if (!(fromApp && fromApp.kind === 'google_ads' && kind === 'ads') && !(await isAdminAuthenticated())) {
       return NextResponse.redirect(new URL('/admin/login', request.url));
     }
 

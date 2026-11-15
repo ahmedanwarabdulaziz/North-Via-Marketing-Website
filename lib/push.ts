@@ -15,15 +15,18 @@ const APP_NAME = 'anwarz-push';
  * The app's notification channels (mobile/src/lib/notifications.ts CHANNELS): each has its own sound,
  * pop-up and vibration on the phone, changeable there per channel.
  */
-export type PushChannel = 'site_down' | 'task' | 'email' | 'review' | 'jl_order' | 'ads_stopped' | 'attention' | 'info';
+export type PushChannel = 'site_down' | 'task' | 'email' | 'review' | 'jl_order' | 'ads_stopped' | 'attention' | 'summary' | 'info';
 
 export interface PushMessage {
   title: string;
   body: string;
   /** Which kind of alert this is (sound and pop-up on the phone). Default 'attention'. */
   channel?: PushChannel;
-  /** Buttons on the notification (also on a Galaxy Watch): 'task' = ☑️ Done / 💤 1 hour. */
-  category?: 'task';
+  /**
+   * Buttons on the notification (also on a Galaxy Watch, where 🎙 is voice): 'task' = ☑️ Done / 💤 1 hour /
+   * 📅 Tomorrow, 'ask' = 🎙 Ask Anwarz, 'email' = ✔️ Done / 🎙 Reply.
+   */
+  category?: 'task' | 'ask' | 'email';
   /** What a tap opens in the app, e.g. { type: 'task', id: 'abc' }. Strings only. */
   data?: Record<string, string>;
 }

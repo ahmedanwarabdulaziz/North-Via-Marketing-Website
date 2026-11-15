@@ -166,3 +166,20 @@ export async function sendGmailReply(
   const res = await gmail.users.messages.send({ userId: 'me', requestBody: { raw, threadId: reply.threadId || undefined } });
   return res.data.id || null;
 }
+
+/** Sends a new email (not a reply) from the connected inbox. */
+export async function sendGmailNew(gmail: gmail_v1.Gmail, mail: { from: string; to: string; subject: string; text: string }) {
+  const lines = [
+    `From: ${mail.from}`,
+    `To: ${mail.to}`,
+    `Subject: ${encodeHeader(mail.subject)}`,
+    'MIME-Version: 1.0',
+    'Content-Type: text/plain; charset="UTF-8"',
+    'Content-Transfer-Encoding: base64',
+    '',
+    Buffer.from(mail.text, 'utf8').toString('base64'),
+  ];
+  const raw = Buffer.from(lines.join('\r\n'), 'utf8').toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const res = await gmail.users.messages.send({ userId: 'me', requestBody: { raw } });
+  return res.data.id || null;
+}

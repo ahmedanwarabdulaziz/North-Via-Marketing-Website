@@ -3,6 +3,7 @@ import { Pressable, Text, View } from 'react-native';
 
 import { EmailCard } from '@/components/email-card';
 import { StoppedAdsBanner } from '@/components/marketing';
+import { automationQuietFor, type ConnectionsData } from '@/lib/connections';
 import { WebsiteRow } from '@/components/rows';
 import { TaskCard } from '@/components/task-card';
 import { Button, Card, Chip, ChipRow, Empty, ErrorBox, Loading, Row, Screen, Section, Stat, T } from '@/components/ui';
@@ -21,13 +22,19 @@ export default function Home() {
   const { data, error, loading, refreshing, refresh, reload } = useApi<HomeData>('/home');
   const links = useApi<{ links: QuickLink[] }>('/links');
   const pinned = (links.data?.links ?? []).filter((l) => l.pinned);
+  const health = useApi<ConnectionsData>('/connections');
+  const quiet = automationQuietFor(health.data);
+  const broken = health.data?.connections.filter((c) => !c.ok) ?? [];
 
   return (
     <Screen
       title={greeting()}
       subtitle="Here’s what needs you today"
       refreshing={refreshing}
-      onRefresh={refresh}>
+      onRefresh={() => {
+        refresh();
+        void health.reload();
+      }}>
       {/* Pages that aren't in the bottom bar: two rows of four. */}
       <Row wrap style={{ rowGap: 14 }}>
         <Shortcut icon="＋" label="Task" primary onPress={() => router.push('/task/new')} />
@@ -49,6 +56,17 @@ export default function Home() {
       {error && !data ? <ErrorBox message={error} onRetry={refresh} /> : null}
       {data ? (
         <>
+          {(quiet !== null && quiet > 20) || broken.length ? (
+            <Card tone="danger" onPress={() => router.push('/connections')} style={{ backgroundColor: p.dangerSoft }}>
+              <T variant="heading" color={p.danger}>
+                {quiet !== null && quiet > 20 ? `⛔ Automation quiet for ${quiet} min` : `🔌 ${broken.length} connection${broken.length === 1 ? '' : 's'} need${broken.length === 1 ? 's' : ''} you`}
+              </T>
+              {broken.slice(0, 3).map((c) => (
+                <T key={c.id} variant="small" color={p.text}>{`${c.name}: ${c.problem}`}</T>
+              ))}
+              <T variant="small" color={p.text}>Tap to reconnect.</T>
+            </Card>
+          ) : null}
           <StoppedAdsBanner stopped={data.adsStopped ?? []} onPress={() => router.push('/marketing')} />
           <Row wrap gap={10}>
             <Stat label="Overdue" value={data.tasks.counts.overdue} tone={data.tasks.counts.overdue ? 'danger' : 'ok'} onPress={() => router.push('/tasks')} />

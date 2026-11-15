@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type ComponentRef } from 'react';
 import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Button, ErrorBox, Loading, Row, T } from '@/components/ui';
+import { Button, ErrorBox, Input, Loading, Row, T } from '@/components/ui';
 import { VoiceButton } from '@/components/voice-button';
 import { api } from '@/lib/api';
 import { radius, space, usePalette } from '@/lib/theme';
@@ -18,7 +18,7 @@ import { useApi } from '@/lib/use-api';
 interface ChatAction {
   id: string;
   type: string;
-  state: 'proposed' | 'done' | 'cancelled' | 'failed' | 'undone';
+  state: 'proposed' | 'drafted' | 'done' | 'cancelled' | 'failed' | 'undone';
   result?: string;
   undo?: { kind: string; id: string } | null;
   link?: { type: 'task' | 'email' | 'library'; id: string } | null;
@@ -30,6 +30,20 @@ interface ChatAction {
   clientName?: string | null;
   url?: string;
   fields?: Record<string, string>;
+  // Email replies:
+  to?: string;
+  notes?: string;
+  draft?: string;
+  from?: string;
+  toEmail?: string | null;
+  inbox?: string;
+  draftSubject?: string;
+  // Ads:
+  pause?: boolean;
+  campaigns?: { platform: 'google' | 'meta'; id: string; name: string }[];
+  // Comments:
+  author?: string;
+  message?: string;
 }
 
 interface ChatMessage {
@@ -45,10 +59,14 @@ interface ChatMessage {
 const SUGGESTIONS = [
   'What needs me today?',
   'Any emails I should worry about?',
-  'Which ads are stopped?',
+  'How did the ads do this week?',
   'Reviews waiting for a reply?',
   'How are the followers this week?',
   'JL Comfort orders this week?',
+  'What did I finish this week?',
+  'Any comments waiting on Facebook or Instagram?',
+  'What are the competitors doing?',
+  'Pause the ads for a client',
 ];
 
 function describe(a: ChatAction) {
@@ -69,6 +87,18 @@ function describe(a: ChatAction) {
       return `⭐ Bring back as important: ${a.subject}`;
     case 'email_done':
       return `✔️ Mark email done: ${a.subject}`;
+    case 'email_reply':
+      return `✉️ Reply to ${a.to}: ${a.subject}${a.notes ? `\n“${a.notes}”` : ''}`;
+    case 'email_new':
+      return `✉️ New email from ${a.inbox} to ${a.to}\n“${a.notes}”`;
+    case 'ads_status':
+      return `${a.pause ? '⏸ Pause' : '▶️ Resume'} ${a.clientName}'s ads:\n${(a.campaigns ?? []).map((c) => `• ${c.platform === 'google' ? 'Google' : 'Meta'}: ${c.name}`).join('\n')}`;
+    case 'comment_reply':
+      return `💬 Reply to ${a.author}${a.clientName ? ` (${a.clientName})` : ''}: “${a.message}”${a.text ? `\n→ ${a.text}` : '\n→ the AI draft'}`;
+    case 'comment_hide':
+      return `🙈 Hide ${a.author}'s comment${a.clientName ? ` (${a.clientName})` : ''}: “${a.message}”`;
+    case 'comment_skip':
+      return `Skip ${a.author}'s comment: “${a.message}”`;
     case 'approve_five_star':
       return `⭐ Post all ready 5★ review replies${a.clientName ? ` for ${a.clientName}` : ' (all clients)'}`;
     case 'add_client':
@@ -93,30 +123,89 @@ function openLink(link: { type: 'task' | 'email' | 'library'; id: string; title?
 function ActionCard({ action, onChange }: { action: ChatAction; onChange: (a: ChatAction) => void }) {
   const p = usePalette();
   const [busy, setBusy] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [draftText, setDraftText] = useState('');
+  const [subject, setSubject] = useState('');
 
-  const decide = async (decision: 'confirm' | 'cancel' | 'undo') => {
+  const decide = async (decision: 'confirm' | 'cancel' | 'undo' | 'send' | 'edit', extra: Record<string, string> = {}) => {
     setBusy(decision);
     try {
-      const r = await api<{ action: ChatAction }>(`/chat/actions/${action.id}`, { body: { decision }, timeoutMs: 90_000 });
+      const r = await api<{ action: ChatAction }>(`/chat/actions/${action.id}`, { body: { decision, ...extra }, timeoutMs: 90_000 });
       onChange(r.action);
+      return true;
     } catch (e) {
       Alert.alert('Not done', e instanceof Error ? e.message : String(e));
+      return false;
     } finally {
       setBusy(null);
     }
   };
 
-  const tone = action.state === 'done' ? p.ok : action.state === 'failed' ? p.danger : action.state === 'proposed' ? p.brand : p.muted;
+  const tone = action.state === 'done' ? p.ok : action.state === 'failed' ? p.danger : action.state === 'proposed' || action.state === 'drafted' ? p.brand : p.muted;
+  const newMail = action.type === 'email_new';
+  const reply = action.type === 'email_reply' || newMail;
+
+  const send = () =>
+    Alert.alert(newMail ? 'Send this email?' : 'Send this reply?', `To ${action.toEmail ?? action.to}\nFrom ${action.from ?? ''}`, [
+      { text: 'Not yet', style: 'cancel' },
+      { text: 'Send', onPress: () => void decide('send') },
+    ]);
   return (
     <View style={{ borderWidth: 1.5, borderColor: tone, borderRadius: radius.md, padding: space.md, gap: space.sm, backgroundColor: p.card }}>
       <T style={{ fontWeight: '600', textDecorationLine: action.state === 'cancelled' || action.state === 'undone' ? 'line-through' : 'none' }}>{describe(action)}</T>
       {action.result ? <T variant="small" color={tone}>{action.result}</T> : null}
-      {action.state === 'cancelled' ? <T variant="small">Cancelled</T> : null}
+      {action.state === 'cancelled' ? <T variant="small">{reply ? 'Not sent' : 'Cancelled'}</T> : null}
+      {editing ? (
+        <View style={{ gap: space.sm }}>
+          <Input value={subject} onChangeText={setSubject} placeholder="Subject" />
+          <Input value={draftText} onChangeText={setDraftText} multiline style={{ minHeight: 180 }} />
+          <Row>
+            <Button
+              title="Save"
+              small
+              busy={busy === 'edit'}
+              disabled={draftText.trim().length < 2}
+              onPress={async () => {
+                if (await decide('edit', { draft: draftText.trim(), subject: subject.trim() })) setEditing(false);
+              }}
+            />
+            <Button title="Cancel" small kind="outline" onPress={() => setEditing(false)} />
+          </Row>
+        </View>
+      ) : reply && action.draft && (action.state === 'drafted' || action.state === 'done') ? (
+        <View style={{ backgroundColor: p.bg, borderRadius: radius.md, padding: space.md, gap: 4 }}>
+          {newMail && action.draftSubject ? <T style={{ fontWeight: '700' }}>{`Subject: ${action.draftSubject}`}</T> : null}
+          <T selectable>{action.draft}</T>
+        </View>
+      ) : null}
+      {action.state === 'drafted' && /\[[^\]]+\]/.test(action.draft ?? '') ? <T variant="small" color={p.danger}>Fill in the [brackets] first: tap ✏️ Edit.</T> : null}
+      {busy === 'confirm' && reply ? <T variant="small">{newMail ? 'Writing the email…' : 'Writing the reply…'}</T> : null}
       <Row wrap>
         {action.state === 'proposed' ? (
           <>
-            <Button title="✅ Confirm" small tone="ok" busy={busy === 'confirm'} disabled={busy !== null} onPress={() => void decide('confirm')} />
+            <Button title={newMail ? '✍️ Write the email' : reply ? '✍️ Write the reply' : '✅ Confirm'} small tone="ok" busy={busy === 'confirm'} disabled={busy !== null} onPress={() => void decide('confirm')} />
             <Button title="✖️ Cancel" small kind="outline" busy={busy === 'cancel'} disabled={busy !== null} onPress={() => void decide('cancel')} />
+          </>
+        ) : null}
+        {action.state === 'drafted' && !editing ? (
+          <>
+            <Button title="📨 Send" small tone="ok" busy={busy === 'send'} disabled={busy !== null} onPress={send} />
+            {newMail ? (
+              <Button
+                title="✏️ Edit"
+                small
+                kind="soft"
+                disabled={busy !== null}
+                onPress={() => {
+                  setDraftText(action.draft ?? '');
+                  setSubject(action.draftSubject ?? '');
+                  setEditing(true);
+                }}
+              />
+            ) : action.link ? (
+              <Button title="✏️ Edit" small kind="soft" disabled={busy !== null} onPress={() => openLink(action.link!)} />
+            ) : null}
+            <Button title="🗑 Drop" small kind="outline" busy={busy === 'cancel'} disabled={busy !== null} onPress={() => void decide('cancel')} />
           </>
         ) : null}
         {action.state === 'done' && action.link ? <Button title="Open" small kind="soft" onPress={() => openLink({ ...action.link!, title: action.result?.replace(/^📚 Saved: /, '') })} /> : null}

@@ -7,8 +7,8 @@ import { ringPhone } from '../ntfy';
 import { supabase } from '../supabase';
 import { getSetting, setSetting } from '../data/store';
 import { allowedChatIds, escapeHtml as h, sendMessage, truncate, type InlineButton, type OutgoingMessage } from '../telegram';
-import { gmailClient, listNewGmail, readGmail, sendGmailReply, type MailMessage } from './gmail';
-import { listNewOutlook, outlookSession, sendOutlookReply } from './outlook';
+import { gmailClient, listNewGmail, readGmail, sendGmailNew, sendGmailReply, type MailMessage } from './gmail';
+import { listNewOutlook, outlookSession, sendOutlookNew, sendOutlookReply } from './outlook';
 
 // Connected inboxes: every 5 minutes (from /api/tasks/due) new mail is read, the AI keeps the
 // important ones and a Telegram card is sent. The AI sees each inbox's focus rules, Ahmed's
@@ -176,6 +176,51 @@ function matchesIgnoreRule(rules: IgnoreRule[], accountId: string, mail: Pick<Ma
   return Boolean(matchingIgnoreRule(rules, accountId, mail));
 }
 
+// ---------- Emails that are never skipped ----------
+// A real person acting through a platform (a Drive share, a calendar invite, a platform message, a
+// Google / Meta staff member) and anything from a client's address or domain. The AI still writes the
+// summary; it just can't skip them. Ignore rules and ignored senders still win.
+
+const PUBLIC_DOMAINS = /^(gmail|googlemail|hotmail|outlook|live|msn|yahoo|ymail|icloud|me|aol|proton|protonmail|gmx|mail|yandex)\./i;
+
+const domainOf = (address: string) => address.toLowerCase().split('@')[1] || '';
+const hostOf = (url: string | undefined) => {
+  try {
+    return url ? new URL(/^https?:\/\//i.test(url) ? url : `https://${url}`).hostname.replace(/^www\./, '').toLowerCase() : '';
+  } catch {
+    return '';
+  }
+};
+
+/** Clients' email addresses, and their own domains (from email and website; not Gmail-style ones, not Ahmed's own). */
+export async function clientSenders(ownInboxes: string[]) {
+  const clients = await listClientProfiles().catch(() => []);
+  const own = new Set(ownInboxes.map(domainOf));
+  const addresses = new Map<string, string>();
+  const domains = new Map<string, string>();
+  for (const c of clients) {
+    if (!c.brandName) continue;
+    const email = (c.email || '').trim().toLowerCase();
+    if (email.includes('@')) addresses.set(email, c.brandName);
+    for (const d of [domainOf(email), hostOf(c.websiteUrl)]) if (d && !PUBLIC_DOMAINS.test(d) && !own.has(d)) domains.set(d, c.brandName);
+  }
+  for (const own of ownInboxes) addresses.delete(own.toLowerCase());
+  return { addresses, domains };
+}
+
+/** Why this email must be shown whatever the AI thinks, or null. */
+export function mustShow(mail: Pick<MailMessage, 'fromName' | 'fromEmail' | 'subject'>, clients: Awaited<ReturnType<typeof clientSenders>>) {
+  const from = (mail.fromEmail || '').toLowerCase();
+  const client = clients.addresses.get(from) || clients.domains.get(domainOf(from));
+  if (client) return `From the client ${client}`;
+  const via = /^(.+?)\s*\(via (Google (Drive|Docs|Sheets|Slides|Calendar|Chat|Meet)|Dropbox|OneDrive|SharePoint|Canva|Figma)[^)]*\)/i.exec(mail.fromName || '');
+  if (via) return `${via[1].trim()} shared or sent something (${via[2]})`;
+  if (/^(updated )?invitation:|^invitation from |^new event:/i.test(mail.subject || '')) return 'A calendar invitation';
+  if (/new message from |sent you a message|messaged you|mentioned you|assigned (you|to you)/i.test(mail.subject || '')) return 'A real person messaged or mentioned you';
+  if (/@(xwf\.google\.com|google\.com)$/.test(from) && !/no-?reply|noreply|notification|alerts?@|ads-|googleplay|payments|accounts/i.test(from)) return 'A person at Google';
+  return null;
+}
+
 // ---------- "Always important" senders (the app's Skipped tab) ----------
 // Emails from these senders (in that inbox) are never skipped: the AI still writes the summary.
 
@@ -334,6 +379,8 @@ async function triage(account: EmailAccount, mail: MailMessage, history: EmailIt
     system: `You sort Ahmed Anwar's email. Decide if this email needs Ahmed's attention.
 IMPORTANT: from a real person or business about his work, clients, money (invoices, payments, bank), contracts, meetings, legal or government matters, a real account problem that needs action (account suspended or restricted, payment failed, policy violation, domain or hosting expiring), or anything his instructions or this inbox's focus say to watch for. A reply in a conversation he already had is usually important.
 NOT IMPORTANT: newsletters, marketing, promotions, tips and recommendations, weekly/monthly stats, automated notifications that need no action, routine security notices (sign-in alerts, "new device", verification or 2FA codes, "password changed", recovery email checks), receipts for small routine things, spam.
+PEOPLE BEAT PLATFORMS: when a real person is behind the email, it is IMPORTANT even if it comes through a platform or a no-reply address: someone shared a file or folder ("Name (via Google Drive)"), mentioned or assigned him, sent him a direct message on a platform ("You have a new message from …"), a calendar invite, a person at Google / Meta / a bank or a supplier writing about his or a client's account, or a client forwarding him something (even a promotion: they want his opinion). Judge the person, not the platform.
+WHEN IN DOUBT, IT IS IMPORTANT: if you are not sure, choose important. A few extra emails are fine; a missed one is not.
 ORDER OF PRECEDENCE when rules disagree: 1) this inbox's FOCUS, 2) his instructions about a specific inbox, sender or client, 3) his general instructions (newer beats older), 4) these defaults. E.g. if he says to ignore something, it's not important; if he says to watch for something, it is.
 URGENT (rings his phone): needs action today, a deadline, an angry client or complaint, a payment problem, an account suspended, or his instructions say to alert him.
 Write "summary" in 1-2 short sentences in the email's language (Arabic or English), and "reason" in a few words (e.g. "client asking for a quote").
@@ -406,7 +453,11 @@ export async function checkInboxes(now = new Date()) {
   if (!accounts.length) return { accounts: 0, new: 0, important: 0 };
   let fresh = 0;
   let important = 0;
-  const [rules, importantSenders] = await Promise.all([listIgnoreRules(), listImportantSenders()]);
+  const [rules, importantSenders, clients] = await Promise.all([
+    listIgnoreRules(),
+    listImportantSenders(),
+    clientSenders(accounts.map((a) => a.email)).catch(() => ({ addresses: new Map<string, string>(), domains: new Map<string, string>() })),
+  ]);
 
   for (const account of accounts) {
     if (Date.now() > deadline) break;
@@ -441,7 +492,8 @@ export async function checkInboxes(now = new Date()) {
         const mail = await read();
         if (mail.fromEmail === account.email || mail.labels.includes('SENT')) continue;
         fresh++;
-        const alwaysImportant = isImportantSender(importantSenders, account.id, mail.fromEmail);
+        const keep = isImportantSender(importantSenders, account.id, mail.fromEmail) ? 'Always important sender' : mustShow(mail, clients);
+        const alwaysImportant = Boolean(keep);
         const ignored = !alwaysImportant && (account.ignored_senders.includes(mail.fromEmail) || matchesIgnoreRule(rules, account.id, mail));
         const item: EmailItem = {
           id: newEmailId(),
@@ -475,7 +527,7 @@ export async function checkInboxes(now = new Date()) {
             console.error('Email triage failed:', error instanceof Error ? error.message.slice(0, 150) : error);
             return { important: true, urgent: false, summary: mail.snippet.slice(0, 300), reason: 'AI busy: not sorted' };
           });
-          if (alwaysImportant && !verdict.important) verdict = { ...verdict, important: true, reason: 'Always important sender' };
+          if (keep && !verdict.important) verdict = { ...verdict, important: true, reason: keep };
         }
         Object.assign(item, {
           summary: verdict.summary || null,
@@ -493,7 +545,7 @@ export async function checkInboxes(now = new Date()) {
           await updateEmailItem(item.id, { chat_id: String(chatId), ...(messageId ? { card_message_id: messageId } : {}) });
         }
         if (verdict.urgent && account.ring_urgent) {
-          await ringPhone({ title: `🚨 Email: ${mail.fromName || mail.fromEmail}`, message: `${mail.subject}\n${verdict.summary}`.slice(0, 500), tags: ['email'], channel: 'email', data: { type: 'email', id: item.id } });
+          await ringPhone({ title: `🚨 Email: ${mail.fromName || mail.fromEmail}`, message: `${mail.subject}\n${verdict.summary}`.slice(0, 500), tags: ['email'], channel: 'email', category: 'email', data: { type: 'email', id: item.id } });
         }
       }
       await supabase.from('email_accounts').update({ ...(finished ? { last_checked_at: startedAt } : {}), last_error: null }).eq('id', account.id);
@@ -504,6 +556,48 @@ export async function checkInboxes(now = new Date()) {
     }
   }
   return { accounts: accounts.length, new: fresh, important };
+}
+
+// ---------- 9 PM: what was skipped today ----------
+
+const SKIPPED_DIGEST = 'skipped_email_digest';
+const SKIPPED_DIGEST_FROM = '21:00';
+const AUTOMATED = /no-?reply|noreply|notifications?@|notify@|alerts?@|news(letter)?@|updates?@|marketing@|promo|mailer|digest@|info@e\.|@e\.|@(mail|email|messaging|t|em|news)\.|bounce|do-not-reply|donotreply|automated|support@|billing@|invoic/i;
+
+/** Once a day from 9 PM Cairo: an app notification counting today's skipped emails, naming the ones from real people. */
+export async function sendSkippedDigest(now = new Date()) {
+  const { cairoParts } = await import('../tasks');
+  const { sendPush } = await import('../push');
+  const { date: today, time } = cairoParts(now);
+  if (time < SKIPPED_DIGEST_FROM) return { sent: false, reason: 'before 9 PM Cairo' };
+  const last = await getSetting<{ day?: string }>(SKIPPED_DIGEST).catch(() => null);
+  if (last?.day === today) return { sent: false, reason: 'already sent today' };
+  await setSetting(SKIPPED_DIGEST, { day: today, at: now.toISOString() });
+
+  const { data, error } = await supabase
+    .from('email_items')
+    .select('id, from_name, from_email, subject, reason, received_at')
+    .eq('status', 'skipped')
+    .gte('received_at', new Date(now.getTime() - 26 * 3_600_000).toISOString())
+    .order('received_at', { ascending: false })
+    .limit(300);
+  if (error) throw new Error(error.message);
+  const todays = ((data || []) as Pick<EmailItem, 'id' | 'from_name' | 'from_email' | 'subject' | 'reason' | 'received_at'>[]).filter(
+    (e) => e.received_at && cairoParts(new Date(e.received_at)).date === today
+  );
+  if (!todays.length) return { sent: false, reason: 'nothing skipped today' };
+  const people = todays.filter((e) => !AUTOMATED.test(e.from_email || '') || /\(via /i.test(e.from_name || ''));
+  const names = [...new Set(people.map((e) => (e.from_name || e.from_email || '').replace(/\s*\(via .*\)$/i, '').trim()).filter(Boolean))].slice(0, 3);
+  const sent = await sendPush({
+    title: `📭 Skipped today: ${todays.length}`,
+    body: names.length
+      ? `${people.length} from real people: ${names.join(', ')}${people.length > names.length ? '…' : ''}. Tap to check.`
+      : 'All automated (newsletters, notices, promotions). Tap to check.',
+    channel: 'summary',
+    category: 'ask',
+    data: { type: 'skipped' },
+  });
+  return { sent: true, skipped: todays.length, people: people.length, devices: sent };
 }
 
 // ---------- Replies ----------
@@ -558,4 +652,46 @@ export async function sendEmailReply(item: EmailItem, account: EmailAccount) {
     inReplyTo: item.rfc_message_id,
     references: null,
   });
+}
+
+// ---------- New emails (the app chat: "send an email from … to …") ----------
+
+export const isEmailAddress = (s: string) => /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(s);
+
+/** Writes a new email for Ahmed from his notes: { subject, body }. Nothing is sent. */
+export async function draftNewEmail(account: EmailAccount, to: string, notes: string, subject: string | null) {
+  const [history, memory] = await Promise.all([
+    supabase.from('email_items').select().eq('account_id', account.id).eq('from_email', to.toLowerCase()).order('received_at', { ascending: false }).limit(4),
+    memoryText([account.email, to], account.id),
+  ]);
+  const raw = await aiJson({
+    system: `You write new emails for Ahmed Anwar, sent from ${account.email} (${account.label || ''}).
+Ahmed tells you roughly what to say (often spoken, in Egyptian Arabic or English). Write the full email:
+- In English unless he asks for Arabic or the earlier emails with this person are in Arabic.
+- Professional, warm, direct, short paragraphs. Keep every fact, amount, date and request he gave; never invent new ones (no invoice numbers, dates or links he didn't give: write a short [placeholder] in square brackets if one is clearly needed).
+- A greeting (the person's first name if known, otherwise "Hello"), the message, a short closing and the signature "Ahmed Anwar" plus the business that matches the inbox (e.g. JL Comfort for jlcomfort.com, North Via Marketing for NVM work).
+- Plain text only (no markdown). A clear, short subject${subject ? ` (he asked for: ${subject})` : ''}.
+Return ONLY JSON: {"subject": "...", "body": "..."}
+
+${memory}`,
+    user: [`TO: ${to}`, `EARLIER EMAILS FROM THIS PERSON:\n${conversationText((history.data || []) as EmailItem[])}`, '', `WHAT AHMED WANTS TO SAY:\n${notes}`].join('\n'),
+    feature: 'comments',
+    timeBudgetMs: 25_000,
+    geminiFirst: true,
+  });
+  const body = typeof raw.body === 'string' ? raw.body.trim() : '';
+  if (body.length < 10) throw new Error('The AI returned an empty email.');
+  return { subject: (typeof raw.subject === 'string' && raw.subject.trim()) || subject || '(no subject)', body };
+}
+
+/** Sends a new email from the connected inbox (Gmail or Outlook). */
+export async function sendNewEmail(account: EmailAccount, mail: { to: string; subject: string; text: string }) {
+  if (!isEmailAddress(mail.to)) throw new Error(`“${mail.to}” isn’t an email address.`);
+  if (account.provider === 'outlook') {
+    const session = await outlookSession(account.encrypted_refresh_token);
+    if (session.encryptedRefreshToken) await supabase.from('email_accounts').update({ encrypted_refresh_token: session.encryptedRefreshToken }).eq('id', account.id);
+    await sendOutlookNew(session.accessToken, mail);
+    return;
+  }
+  await sendGmailNew(gmailClient(account.encrypted_refresh_token), { from: account.email, ...mail });
 }

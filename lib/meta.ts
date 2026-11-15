@@ -28,6 +28,10 @@ export const META_SCOPES = [
   'instagram_manage_insights',
   'business_management', // Pages owned through a business portfolio
   'ads_read', // Facebook Ads numbers on the client page and in Telegram
+  // Pause / resume a campaign from the Anwarz app (always confirmed first). Opt-in with
+  // META_ADS_MANAGEMENT=on: the Facebook app must have the Marketing API permission, or the login
+  // dialog would reject every reconnect with "Invalid scopes".
+  ...(process.env.META_ADS_MANAGEMENT === 'on' ? ['ads_management'] : []),
 ];
 
 const STATE_PURPOSE = 'meta_connect';

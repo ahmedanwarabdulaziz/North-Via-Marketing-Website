@@ -2,10 +2,12 @@ import { isAutomationRequest, unauthorized } from '@/lib/automation-auth';
 import { sendDueReminders, sendMorningDigest, sendWeeklySummary } from '@/lib/task-telegram';
 import { runWebsiteChecks } from '@/lib/website-monitor';
 import { runCriticalChecks } from '@/lib/critical-alerts';
-import { checkInboxes } from '@/lib/email/inbox';
+import { checkInboxes, sendSkippedDigest } from '@/lib/email/inbox';
 import { summarizeFinishedChats } from '@/lib/chat-history';
 import { runCompetitorWatch, sendWeeklyCompetitorReports } from '@/lib/competitor-telegram';
 import { runAdsWatch } from '@/lib/ads-watch';
+import { runHealthChecks, writeHeartbeat } from '@/lib/health';
+import { sendMorningAppSummary } from '@/lib/app-summary';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -19,7 +21,8 @@ export const maxDuration = 60;
 async function run(request: Request) {
   if (!isAutomationRequest(request)) return unauthorized();
   const now = new Date();
-  const [reminders, digest, weekly, websites, critical, email, chats, competitors, ads] = await Promise.all([
+  await writeHeartbeat(now).catch((error) => console.error('Heartbeat failed:', error));
+  const [reminders, digest, weekly, websites, critical, email, chats, competitors, ads, skipped, health, summary] = await Promise.all([
     sendDueReminders(now).catch((error) => {
       console.error('Task reminders failed:', error);
       return { error: error instanceof Error ? error.message : 'Task reminders failed' };
@@ -60,9 +63,24 @@ async function run(request: Request) {
       console.error('Ads watch failed:', error);
       return { error: error instanceof Error ? error.message : 'Ads watch failed' };
     }),
+    // 9 PM Cairo: one app notification about the emails skipped today, so nothing stays hidden.
+    sendSkippedDigest(now).catch((error) => {
+      console.error('Skipped digest failed:', error);
+      return { error: error instanceof Error ? error.message : 'Skipped digest failed' };
+    }),
+    // Connections that broke (inbox not read, Google / Facebook sign-in failed): alert once, with a reconnect link.
+    runHealthChecks().catch((error) => {
+      console.error('Health checks failed:', error);
+      return { error: error instanceof Error ? error.message : 'Health checks failed' };
+    }),
+    // 9 AM Cairo: the day in one app notification (with 🎙 Ask Anwarz on the watch).
+    sendMorningAppSummary(now).catch((error) => {
+      console.error('Morning app summary failed:', error);
+      return { error: error instanceof Error ? error.message : 'Morning app summary failed' };
+    }),
   ]);
   const failed = 'error' in reminders && 'error' in digest;
-  return Response.json({ reminders, digest, weekly, websites, critical, email, chats, competitors, ads }, { status: failed ? 500 : 200 });
+  return Response.json({ reminders, digest, weekly, websites, critical, email, chats, competitors, ads, skipped, health, summary }, { status: failed ? 500 : 200 });
 }
 
 export const POST = run;

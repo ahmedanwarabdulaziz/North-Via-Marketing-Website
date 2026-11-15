@@ -41,6 +41,12 @@ export function setSession(value: string | null) {
   token = value;
 }
 
+/** Background work (notification buttons, watch replies) runs without the app's screens: load the token. */
+export async function ensureSession() {
+  if (!token) token = await tokenStore.get().catch(() => null);
+  return Boolean(token);
+}
+
 /** Called when the server says the token no longer works (signed out from elsewhere, expired). */
 export function onUnauthorized(callback: () => void) {
   onSignedOut = callback;

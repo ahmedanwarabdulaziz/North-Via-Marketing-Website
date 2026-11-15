@@ -316,11 +316,13 @@ async function groqJson(system: string, user: string) {
   return JSON.parse(data.choices?.[0]?.message?.content || '') as Record<string, unknown>;
 }
 
-async function groqTranscribe(audio: TaskAudio) {
+async function groqTranscribe(audio: TaskAudio, vocabulary = '') {
   const form = new FormData();
   const ext = audio.mimeType.includes('ogg') ? 'ogg' : audio.mimeType.split('/')[1]?.split(';')[0] || 'ogg';
   form.append('file', new Blob([Buffer.from(audio.data, 'base64')], { type: audio.mimeType }), `voice.${ext}`);
   form.append('model', GROQ_WHISPER_MODEL);
+  // Whisper spells names it was given in the prompt correctly (client brands, owners).
+  if (vocabulary) form.append('prompt', vocabulary.slice(0, 800));
   const data = await groqFetch<{ text?: string }>('audio/transcriptions', form, { model: GROQ_WHISPER_MODEL, feature: 'tasks', timeoutMs: 20_000 });
   const text = data.text?.trim();
   if (!text) throw new Error('Groq Whisper heard nothing.');
@@ -334,25 +336,90 @@ function repeatMatches(date: string, rule: RepeatRule) {
   return true;
 }
 
-/** Just the words in a voice note: Groq Whisper first, Gemini when Groq is unavailable. */
-export async function transcribeAudio(audio: TaskAudio): Promise<string> {
-  if (process.env.GROQ_API_KEY) {
-    try {
-      return await groqTranscribe(audio);
-    } catch (error) {
-      console.error('Whisper failed:', error instanceof Error ? error.message.slice(0, 200) : error);
-    }
-  }
+// ---------- Voice notes → text ----------
+// 1. Groq Whisper (1–2 s), given the client and owner names so it spells them right.
+// 2. Arabic (or Whisper down): Gemini 2.5 Flash listens to the audio itself; it is better with
+//    Egyptian dialect and names (4–6 s). It also gets the names.
+// 3. Otherwise a quick clean-up pass fixes misheard client names in Whisper's text.
+// Any step that fails falls back to the one before, so a voice note is never lost.
+
+let vocabularyCache: { at: number; names: string[] } | null = null;
+
+/** Client brands and owners, so speech-to-text spells them right. */
+async function knownNames() {
+  if (vocabularyCache && Date.now() - vocabularyCache.at < 10 * 60_000) return vocabularyCache.names;
+  const { listClientProfiles } = await import('./admin-ops');
+  const clients = await listClientProfiles().catch(() => []);
+  const names = [...new Set(clients.flatMap((c) => [c.brandName, c.ownerName]).filter((n): n is string => Boolean(n && n.trim())).map((n) => n.trim()))];
+  vocabularyCache = { at: Date.now(), names };
+  return names;
+}
+
+const hasArabic = (text: string) => (text.match(/[\u0600-\u06FF]/g) || []).length >= 3;
+
+async function geminiTranscribe(audio: TaskAudio, names: string[]) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error('No speech-to-text model is available.');
   const model = new GoogleGenerativeAI(apiKey).getGenerativeModel({ model: 'gemini-2.5-flash' }, { timeout: 30_000 });
   const result = await trackGemini('gemini-2.5-flash', 'assistant', () =>
     model.generateContent([
-      { text: 'Write down exactly what is said in this voice note, in its own language (Egyptian Arabic, English or mixed). Only the words, nothing else.' },
+      {
+        text: [
+          'Write down exactly what is said in this voice note, in its own language (Egyptian Arabic, English or mixed). Only the words, nothing else.',
+          'Keep English words (brand names, marketing terms, emails, numbers) in English letters when they are said in English.',
+          names.length ? `Names that may be said (spell them exactly like this): ${names.join(', ')}` : '',
+        ]
+          .filter(Boolean)
+          .join('\n'),
+      },
       { inlineData: { mimeType: audio.mimeType, data: audio.data } },
     ])
   );
   const text = result.response.text().trim();
   if (!text) throw new Error('Nothing was heard in the voice note.');
   return text;
+}
+
+/** Fixes misheard client / owner names in a transcript; anything else stays word for word. */
+async function fixNames(text: string, names: string[]) {
+  if (!names.length || text.length < 3) return text;
+  try {
+    const { aiJson } = await import('./ai-json');
+    const raw = await aiJson({
+      system: `You correct a speech-to-text transcript. Fix ONLY names that were misheard, using this list: ${names.join(', ')}.
+Do not change anything else: same words, same language, same order, no punctuation changes beyond the fixed names. If nothing needs fixing, return it unchanged.
+Return ONLY JSON: {"text": "..."}`,
+      user: text,
+      feature: 'tasks',
+      timeBudgetMs: 6_000,
+    });
+    const fixed = typeof raw.text === 'string' ? raw.text.trim() : '';
+    // A "fix" that changes much more than a name is not trusted.
+    return fixed && Math.abs(fixed.length - text.length) <= Math.max(20, text.length * 0.25) ? fixed : text;
+  } catch {
+    return text;
+  }
+}
+
+/** Just the words in a voice note (see the steps above). */
+export async function transcribeAudio(audio: TaskAudio): Promise<string> {
+  const names = await knownNames().catch(() => [] as string[]);
+  let whisper: string | null = null;
+  if (process.env.GROQ_API_KEY) {
+    try {
+      whisper = await groqTranscribe(audio, names.join(', '));
+    } catch (error) {
+      console.error('Whisper failed:', error instanceof Error ? error.message.slice(0, 200) : error);
+    }
+  }
+  if (!whisper || hasArabic(whisper)) {
+    try {
+      return await geminiTranscribe(audio, names);
+    } catch (error) {
+      console.error('Gemini transcription failed:', error instanceof Error ? error.message.slice(0, 200) : error);
+      if (!whisper) throw error;
+      return fixNames(whisper, names);
+    }
+  }
+  return fixNames(whisper, names);
 }

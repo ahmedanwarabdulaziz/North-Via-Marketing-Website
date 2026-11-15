@@ -3,21 +3,41 @@ import { listClientProfiles } from './admin-ops';
 import { clientNames } from './app-api';
 import { saveTextFromApp } from './app-library';
 import { taskClientList } from './app-tasks';
+import { clientsWithAds, costPerConversion, fetchClientAds } from './ads-metrics';
 import { stoppedAds } from './ads-watch';
-import { actionSummary, askAssistant, claimsDone, CHAT_MODELS, type AssistantAction, type ChatMessage } from './assistant';
+import { actionSummary, askAssistant, claimsDone, CHAT_MODELS, type AssistantAction, type ChatMessage, type PlannerCampaign, type PlannerComment } from './assistant';
+import { clientCampaigns, setCampaignStatus } from './ads-control';
+import { clientIdsWithMetaAds as metaAdClients } from './meta-ads';
 import { autoModel } from './assistant-telegram';
 import { addDoc, listDocs, updateDoc } from './data/store';
-import { getEmailAccount, getEmailItem, listIgnoreRules, removeIgnoreRule, skipCause, updateEmailAccount, updateEmailItem } from './email/inbox';
+import {
+  draftEmailReply,
+  draftNewEmail,
+  getEmailAccount,
+  listEmailAccounts,
+  sendNewEmail,
+  getEmailItem,
+  isNoReply,
+  listIgnoreRules,
+  removeIgnoreRule,
+  sendEmailReply,
+  skipCause,
+  updateEmailAccount,
+  updateEmailItem,
+} from './email/inbox';
+import { autoBrief } from './email/reply-brief';
 import { setKnowledgeStatus } from './knowledge';
+import { clientIdsWithMetaAds, fetchClientMetaAds } from './meta-ads';
 import { removeFact } from './assistant-memory';
 import { placeFact } from './memory-guard';
 import { addFactTo, clientIdOf, removeFactFrom, type FileKey } from './memory-files';
 import { applyProfileUpdate } from './master-profile';
 import { approveFiveStarDrafts, GBP_REVIEWS } from './review-engine';
-import { socialOverview } from './social-sync';
+import { cairoDay, hideStoredComment, listCommentQueue, postApprovedCommentReply, setCommentDraft, skipComment, socialOverview } from './social-sync';
+import { clientInstagramGrowth, googleGrowth, listCompetitors, listFindings } from './competitors';
 import { supabase } from './supabase';
 import { understandTaskMessage } from './task-ai';
-import { completeTask, createTask, formatWhen, missingFields, setTaskStatus, type TaskFields } from './tasks';
+import { completeTask, createTask, formatWhen, listDoneSince, missingFields, setTaskStatus, type TaskFields } from './tasks';
 import { addWebsite, runWebsiteChecks, websiteOverview } from './website-monitor';
 import type { GbpStoredReview } from '@/types/database';
 
@@ -33,8 +53,14 @@ const MODEL_TURNS = 12;
 
 export type AppChatAction = AssistantAction & {
   id: string;
-  state: 'proposed' | 'done' | 'cancelled' | 'failed' | 'undone';
+  /** drafted: an email reply written and shown on the card, sent only on ✅ Send. */
+  state: 'proposed' | 'drafted' | 'done' | 'cancelled' | 'failed' | 'undone';
   result?: string;
+  draft?: string;
+  from?: string;
+  toEmail?: string | null;
+  prevStatus?: string; // the email's status before the draft, put back on Drop
+  draftSubject?: string; // a new email's subject
   undo?: { kind: 'task' | 'library' | 'fact'; id: string; file?: FileKey } | null;
   link?: { type: 'task' | 'email' | 'library'; id: string } | null;
 };
@@ -95,7 +121,7 @@ async function openSession(): Promise<Session> {
 const settle = <T,>(p: Promise<T>, fallback: T, ms = 8_000) =>
   Promise.race([p.catch(() => fallback), new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms))]);
 
-async function jlSnapshot() {
+async function jlSnapshot(detail: boolean) {
   const key = process.env.JLCOMFORT_API_KEY?.trim();
   if (!key) return '';
   const base = (process.env.JLCOMFORT_URL || 'https://www.jlcomfort.com').replace(/\/+$/, '');
@@ -104,7 +130,11 @@ async function jlSnapshot() {
     if (!r.ok) throw new Error(`JL ${path} ${r.status}`);
     return r.json() as Promise<Record<string, unknown>>;
   };
-  const [overview, orders, samples] = await Promise.all([get('overview'), get('orders').catch(() => null), get('samples').catch(() => null)]);
+  const [overview, orders, samples] = await Promise.all([
+    get('overview'),
+    detail ? get('orders').catch(() => null) : Promise.resolve(null),
+    detail ? get('samples').catch(() => null) : Promise.resolve(null),
+  ]);
   const brief = (list: unknown, n: number) =>
     (Array.isArray(list) ? list : [])
       .slice(0, n)
@@ -124,14 +154,162 @@ async function jlSnapshot() {
     .join('\n');
 }
 
-async function businessNow() {
+// Each part of BUSINESS NOW is detailed only when the question is about it, so the context stays
+// small enough for the free models (Groq allows ~8K tokens a minute); a one-line count is always there.
+const REVIEW_WORDS = /\breviews?\b|ريفيو|تقييم|مراجع|جوجل ماب/i;
+const SOCIAL_WORDS = /\b(followers?|facebook|instagram|insta|fb|ig|social|posts?|comments?|page)\b|فولو|متابع|فيسبوك|فيس|انستا|إنستا|سوشيال|بوست|كومنت|تعليق/i;
+const JL_WORDS = /\b(jl|comfort|orders?|samples?|shop|store|sales?)\b|اوردر|أوردر|طلبات|عينات|عينة|المتجر|مبيعات/i;
+const COMPETITOR_WORDS = /\b(competitors?|competition|rivals?)\b|منافس|المنافسين|منافسين|المنافسة/i;
+const COMMENT_WORDS = /\b(comments?|replies|reply to .* (comment|post)|dm)\b|كومنت|تعليق|تعليقات|الردود/i;
+const DONE_WORDS = /\b(finish(ed)?|done|did i|completed|this week|last week|progress)\b|خلصت|خلّصت|عملت|انجزت|أنجزت|اتعمل|الاسبوع|الأسبوع/i;
+const BROAD_WORDS = /\b(status|summary|overview|today|everything|update me|what'?s new|what needs)\b|ملخص|ايه الأخبار|ايه الاخبار|إيه الأخبار|النهارده|كل حاجة|محتاج مني/i;
+
+const DAY_MS = 86_400_000;
+const cairoDayAgo = (days: number) => cairoDay(new Date(Date.now() - days * DAY_MS));
+const ADS_WORDS =
+  /\b(ads?|adverts?|campaigns?|spend|spent|spending|budget|clicks?|conversions?|cpc|ctr|cpa|roas|leads?|impressions?|reach|performance|meta|google ads|facebook ads)\b|إعلان|اعلان|الاعلانات|الإعلانات|حمل|حملة|ميزاني|صرف|مصروف|كليك|نقرات|تحويلات|نتايج|نتائج|أداء|اداء/i;
+
+const pct = (now: number, before: number | undefined) => (before ? `${now >= before ? '+' : ''}${Math.round(((now - before) / before) * 100)}%` : '');
+const money = (n: number, currency?: string) => `${n.toFixed(n >= 100 ? 0 : 2)}${currency ? ` ${currency}` : ''}`;
+
+/** Google and Meta results per client for the last 7 (or 30) days, with the change from the period before. Only when he asks about ads. */
+async function adsPerformance(days: 7 | 30) {
+  const [names, googleClients, metaClients] = await Promise.all([clientNames(), clientsWithAds(), clientIdsWithMetaAds()]);
+  const from = cairoDayAgo(days);
+  const to = cairoDayAgo(1);
+  const prevFrom = cairoDayAgo(days * 2);
+  const prevTo = cairoDayAgo(days + 1);
+  const lines = await Promise.all([
+    ...googleClients.map(async (c) => {
+      const [cur, prev] = await Promise.all([fetchClientAds(c.id as string, from, to), fetchClientAds(c.id as string, prevFrom, prevTo).catch(() => null)]);
+      if (!cur) return '';
+      const t = cur.totals;
+      const cpa = costPerConversion(t);
+      return `- ${names.get(c.id as string) || 'Client'} · Google Ads: spend ${money(t.cost, cur.currency)} ${pct(t.cost, prev?.totals.cost)}, ${t.impressions} impressions, ${t.clicks} clicks ${pct(t.clicks, prev?.totals.clicks)}, ${Math.round(t.conversions * 10) / 10} conversions ${pct(t.conversions, prev?.totals.conversions)}${cpa !== null && cpa !== undefined ? `, ${money(Number(cpa), cur.currency)} per conversion` : ''}`;
+    }),
+    ...metaClients.map(async (id) => {
+      const [cur, prev] = await Promise.all([fetchClientMetaAds(id, from, to), fetchClientMetaAds(id, prevFrom, prevTo).catch(() => null)]);
+      if (!cur) return '';
+      const t = cur.totals;
+      return `- ${names.get(id) || 'Client'} · Meta: spend ${money(t.spend, cur.currency)} ${pct(t.spend, prev?.totals.spend)}, reach ${t.reach} ${pct(t.reach, prev?.totals.reach)}, ${t.impressions} impressions, ${t.linkClicks} link clicks ${pct(t.linkClicks, prev?.totals.linkClicks)}`;
+    }),
+  ].map((p) => p.catch((error) => `- (one ad account couldn’t be read: ${(error instanceof Error ? error.message : String(error)).slice(0, 80)})`)));
+  const shown = lines.filter(Boolean);
+  return `ADS RESULTS, last ${days} days (${from} to ${to}; % = change from the ${days} days before):\n${shown.length ? shown.join('\n') : 'no ad accounts connected'}`;
+}
+
+/** Tasks he marked done in the last 7 days, newest first. */
+async function doneLately() {
+  const [done, names] = await Promise.all([listDoneSince(new Date(Date.now() - 7 * DAY_MS)), clientNames()]);
+  if (!done.length) return 'DONE LATELY (last 7 days): none';
+  const seen = new Set<string>();
+  const rows = done.filter((d) => (seen.has(d.task.id) ? false : (seen.add(d.task.id), true))).slice(0, 30);
+  return [
+    `DONE LATELY (last 7 days, ${rows.length}${done.length > rows.length ? '+' : ''}):`,
+    ...rows.map((d) => `- ${d.at.slice(0, 10)} · ${d.task.title}${d.task.client_id ? ` · ${names.get(d.task.client_id) || ''}` : ''}`),
+  ].join('\n');
+}
+
+async function businessNow(topic = '') {
+  const broad = BROAD_WORDS.test(topic);
+  const wants = {
+    ads: ADS_WORDS.test(topic),
+    reviews: broad || REVIEW_WORDS.test(topic),
+    social: broad || SOCIAL_WORDS.test(topic),
+    jl: JL_WORDS.test(topic),
+    done: DONE_WORDS.test(topic),
+    competitors: COMPETITOR_WORDS.test(topic),
+  };
+  const days = /\b(30|month|monthly)\b|شهر/i.test(topic) ? 30 : 7;
+  const [snapshot, done, adsResults, rivals] = await Promise.all([
+    businessSnapshot(wants),
+    wants.done ? settle(doneLately(), '') : Promise.resolve(''),
+    wants.competitors ? settle(competitorsText(), 'COMPETITORS: couldn’t be read right now.', 15_000) : Promise.resolve(''),
+    wants.ads ? settle(adsPerformance(days), 'ADS RESULTS: couldn’t be read right now.', 20_000) : Promise.resolve(''),
+  ]);
+  return [snapshot, done, adsResults, rivals].filter(Boolean).join('\n\n');
+}
+
+/** Each client's competitors: Instagram followers (gained in 7 days), Google rating, and their latest moves. */
+async function competitorsText() {
+  const clients = (await listClientProfiles()).filter((c): c is typeof c & { id: string } => Boolean(c.id && c.brandName));
+  const blocks = await Promise.all(
+    clients.map(async (client) => {
+      const list = await listCompetitors(client.id);
+      if (!list.length) return '';
+      const [own, findings, rows] = await Promise.all([
+        clientInstagramGrowth(client.id).catch(() => null),
+        listFindings(client.id).catch(() => []),
+        Promise.all(
+          list.map(async (c) => {
+            const [ig, g] = await Promise.all([igGrowth(c.id), googleGrowth(c.id).catch(() => null)]);
+            const parts = [
+              ig ? `IG ${ig.followers}${ig.gained7 !== null ? ` (${ig.gained7 >= 0 ? '+' : ''}${ig.gained7} in 7d)` : ''}` : '',
+              g?.rating ? `Google ${g.rating.toFixed(1)}★ (${g.count ?? '?'} reviews${g.gained7 ? `, +${g.gained7} in 7d` : ''})` : '',
+            ].filter(Boolean);
+            return `  - ${c.name}${parts.length ? `: ${parts.join(' · ')}` : ''}`;
+          })
+        ),
+      ]);
+      const fortnight = new Date(Date.now() - 14 * DAY_MS).toISOString();
+      const recent = findings.filter((f) => f.at >= fortnight).slice(0, 6);
+      return [
+        `${client.brandName} (own Instagram ${own ? `${own.followers}${own.gained7 !== null ? `, ${own.gained7 >= 0 ? '+' : ''}${own.gained7} in 7d` : ''}` : 'not tracked'}) vs:`,
+        ...rows,
+        recent.length
+          ? `  Latest moves (14 days):\n${recent.map((f) => `  · ${f.at.slice(0, 10)} ${f.competitorName} [${f.kind}] ${f.title}${f.idea ? ` → idea: ${f.idea.slice(0, 120)}` : ''}`).join('\n')}`
+          : '  No new moves in 14 days.',
+      ].join('\n');
+    })
+  );
+  const shown = blocks.filter(Boolean);
+  return `COMPETITORS:\n${shown.length ? shown.join('\n') : 'none tracked yet (Admin → Competitors)'}`;
+}
+
+async function igGrowth(id: string) {
+  const { instagramGrowth } = await import('./competitors');
+  return instagramGrowth(id).catch(() => null);
+}
+
+const PAUSE_WORDS = /\b(pause|stop|resume|restart|turn (on|off)|switch (on|off)|enable|disable)\b|وقف|أوقف|اوقف|إيقاف|ايقاف|شغل|شغّل|رجع.*(الإعلان|الاعلان|الحمل)|قفل/i;
+
+/** Every client's campaigns that can be paused or resumed, with short keys for the planner. */
+async function allCampaigns(): Promise<PlannerCampaign[]> {
+  const [google, meta, names] = await Promise.all([
+    import('./ads-metrics').then((m) => m.clientsWithAds()).catch(() => []),
+    metaAdClients().catch(() => [] as string[]),
+    clientNames(),
+  ]);
+  const ids = [...new Set([...google.map((c) => c.id as string), ...meta])];
+  const lists = await Promise.all(ids.map((id) => clientCampaigns(id).then((list) => list.map((c) => ({ ...c, clientId: id }))).catch(() => [])));
+  return lists.flat().map((c, i) => ({ key: `c${i + 1}`, clientName: names.get(c.clientId) || 'Client', ...c }));
+}
+
+/** Comments waiting on Facebook / Instagram, for the planner (ids) and the answer (text). Risky first. */
+async function waitingComments(): Promise<PlannerComment[]> {
+  const [queue, names] = await Promise.all([listCommentQueue(), clientNames()]);
+  const risk = { high: 0, watch: 1, none: 2 } as Record<string, number>;
+  return queue
+    .sort((a, b) => (risk[a.riskLevel || 'none'] ?? 2) - (risk[b.riskLevel || 'none'] ?? 2) || b.createdTime.localeCompare(a.createdTime))
+    .slice(0, 12)
+    .map((c) => ({
+      id: c.id,
+      clientName: names.get(c.clientId) || null,
+      platform: c.platform,
+      author: c.authorName || 'Someone',
+      message: `${c.riskLevel === 'high' ? '[NEEDS CARE] ' : c.riskLevel === 'watch' ? '[WATCH] ' : ''}${c.message}`,
+      draft: c.draft || null,
+    }));
+}
+
+async function businessSnapshot(wants: { reviews: boolean; social: boolean; jl: boolean }) {
   const [names, reviews, ads, sites, social, jl] = await Promise.all([
     settle(clientNames(), new Map<string, string>()),
     settle(listDocs<GbpStoredReview>(GBP_REVIEWS, { where: { status: ['draft_ready', 'needs_draft'] } }), [] as (GbpStoredReview & { id: string })[]),
     settle(stoppedAds(), { checkedAt: null, stopped: [] }),
     settle(websiteOverview(), null),
-    settle(socialOverview(), []),
-    settle(jlSnapshot(), ''),
+    wants.social ? settle(socialOverview(), []) : Promise.resolve([]),
+    settle(jlSnapshot(wants.jl), ''),
   ]);
   const name = (id: string) => names.get(id) || 'Client';
   const waiting = reviews.filter((r) => r.backlog !== 'waiting' && r.backlog !== 'dismissed').sort((a, b) => b.createTime.localeCompare(a.createTime));
@@ -141,7 +319,7 @@ async function businessNow() {
   return [
     'BUSINESS NOW:',
     `GOOGLE REVIEWS WAITING FOR A REPLY: ${waiting.length}${waiting.length ? ` (${[...perClient].map(([id, n]) => `${name(id)} ${n}`).join(', ')}); ready 5★ drafts: ${waiting.filter((r) => r.rating === 5 && r.status === 'draft_ready' && r.draft).length}` : ''}`,
-    ...waiting.slice(0, 8).map((r) => `- ${name(r.clientId)} · ${r.rating}★ · ${r.reviewerName || 'Anonymous'}: ${(r.comment || '(rating only)').replace(/\s+/g, ' ').slice(0, 140)}${r.draft ? ` → drafted reply: ${r.draft.replace(/\s+/g, ' ').slice(0, 120)}` : ''}`),
+    ...waiting.slice(0, wants.reviews ? 8 : 0).map((r) => `- ${name(r.clientId)} · ${r.rating}★ · ${r.reviewerName || 'Anonymous'}: ${(r.comment || '(rating only)').replace(/\s+/g, ' ').slice(0, 140)}${r.draft ? ` → drafted reply: ${r.draft.replace(/\s+/g, ' ').slice(0, 120)}` : ''}`),
     `ADS STOPPED: ${ads.stopped.length ? ads.stopped.map((a) => `${a.clientName} (${a.platform === 'google' ? 'Google Ads' : 'Meta'}): ${a.reason} since ${a.since.slice(0, 10)}`).join('; ') : 'none'}${ads.checkedAt ? ` (checked ${ads.checkedAt.slice(0, 16).replace('T', ' ')} UTC)` : ''}`,
     sites
       ? `WEBSITES: ${sites.sites.length} checked hourly; ${sites.down.length ? `DOWN: ${sites.down.map((s) => `${sites.names.get(s.clientId) || s.url} ${s.url}`).join(', ')}` : 'all up'}${sites.sslSoon.length ? `; SSL expiring soon: ${sites.sslSoon.map((s) => s.url).join(', ')}` : ''}`
@@ -156,6 +334,8 @@ async function businessNow() {
           })
           .join('\n')}`
       : '',
+    wants.social ? '' : 'FACEBOOK / INSTAGRAM: not loaded for this question (followers and posts load when he asks about them).',
+    wants.reviews ? '' : '(Review texts load when he asks about reviews.)',
     jl,
   ]
     .filter(Boolean)
@@ -227,6 +407,52 @@ async function runAction(a: AppChatAction): Promise<AppChatAction> {
         await updateEmailItem(item.id, { status: 'new', summary: item.summary || item.snippet?.slice(0, 300) || null, reason: 'You marked it important' });
         return { ...a, state: 'done', result: `⭐ Back in Needs me: ${a.subject}`, link: { type: 'email', id: item.id } };
       }
+      case 'email_reply': {
+        // ✅ on the card writes the draft (nothing is sent); ✅ Send on the drafted card sends it.
+        const item = await getEmailItem(a.emailId);
+        if (!item) return { ...a, state: 'failed', result: 'That email is gone.' };
+        if (item.status === 'sent') return { ...a, state: 'failed', result: 'You already replied to this email.' };
+        if (isNoReply(item.from_email)) return { ...a, state: 'failed', result: 'This is a no-reply address: nobody reads replies to it.' };
+        const account = await getEmailAccount(item.account_id);
+        if (!account) return { ...a, state: 'failed', result: 'This inbox was disconnected.' };
+        const brief = a.notes ? a.notes : autoBrief(item, account.email);
+        const draft = await draftEmailReply({ ...item, brief }, account, brief);
+        await updateEmailItem(item.id, { status: 'draft', draft, brief });
+        return { ...a, state: 'drafted', draft, from: account.email, toEmail: item.from_email, prevStatus: item.status, result: undefined, link: { type: 'email', id: item.id } };
+      }
+      case 'ads_status': {
+        const done: string[] = [];
+        const failed: string[] = [];
+        for (const c of a.campaigns) {
+          try {
+            await setCampaignStatus(a.clientId, c, a.pause);
+            done.push(c.name);
+          } catch (error) {
+            failed.push(`${c.name}: ${(error instanceof Error ? error.message : String(error)).slice(0, 160)}`);
+          }
+        }
+        return {
+          ...a,
+          state: done.length ? 'done' : 'failed',
+          result: [done.length ? `${a.pause ? '⏸ Paused' : '▶️ Resumed'}: ${done.join(', ')}` : '', failed.length ? `⚠️ ${failed.join(' · ')}` : ''].filter(Boolean).join('\n'),
+        };
+      }
+      case 'comment_reply':
+        if (a.text) await setCommentDraft(a.commentId, a.text);
+        await postApprovedCommentReply(a.commentId);
+        return { ...a, state: 'done', result: `💬 Reply posted to ${a.author}` };
+      case 'comment_hide':
+        await hideStoredComment(a.commentId);
+        return { ...a, state: 'done', result: `🙈 Hid ${a.author}'s comment` };
+      case 'comment_skip':
+        await skipComment(a.commentId);
+        return { ...a, state: 'done', result: `Skipped ${a.author}'s comment` };
+      case 'email_new': {
+        const account = (await listEmailAccounts()).find((x) => x.email.toLowerCase() === a.inbox.toLowerCase());
+        if (!account) return { ...a, state: 'failed', result: `${a.inbox} isn’t connected (Admin → Email).` };
+        const mail = await draftNewEmail(account, a.to, a.notes, a.subject);
+        return { ...a, state: 'drafted', draft: mail.body, draftSubject: mail.subject, from: account.email, toEmail: a.to, result: undefined };
+      }
       case 'email_done':
         await updateEmailItem(a.emailId, { status: 'done' });
         return { ...a, state: 'done', result: `✔️ Done: ${a.subject}`, link: { type: 'email', id: a.emailId } };
@@ -290,6 +516,7 @@ const runsAtOnce = (a: AssistantAction) => a.type === 'task' || a.type === 'libr
 /** The model only sees plain text; this says what happened to each action. */
 function actionNote(a: AppChatAction) {
   if (a.state === 'done') return `[DONE by the bot] ${actionSummary(a)}${a.result ? ` → ${a.result}` : ''}`;
+  if (a.state === 'drafted') return `[DRAFT WRITTEN, NOT SENT yet: reply to "${a.type === 'email_reply' ? a.subject : ''}": ${(a.draft || '').slice(0, 300)}]`;
   if (a.state === 'failed') return `[FAILED] ${actionSummary(a)}: ${a.result || ''}`;
   if (a.state === 'cancelled' || a.state === 'undone') return `[CANCELLED by Ahmed] ${actionSummary(a)}`;
   return `[PROPOSED, not done yet: ${actionSummary(a)}]`;
@@ -307,7 +534,28 @@ export async function askFromApp(question: string, heard: boolean) {
   const chosen = CHAT_MODELS.find((m) => m.model === session.model) || (await autoModel());
   if (!chosen) throw new Error('No AI model has free quota left right now. Try again later.');
 
-  const reply = await askAssistant(chosen, question, toHistory(session.messages || []), { surface: 'app', extraContext: businessNow, runsAtOnce });
+  const recentAsks = (session.messages || []).filter((m) => m.role === 'user').slice(-2).map((m) => m.content);
+  const topic = [...recentAsks, question].join(' ');
+  const comments = SOCIAL_WORDS.test(topic) || COMMENT_WORDS.test(topic) || BROAD_WORDS.test(topic) ? await settle(waitingComments(), [] as PlannerComment[]) : [];
+  const campaigns = PAUSE_WORDS.test(question) ? await settle(allCampaigns(), [] as PlannerCampaign[], 15_000) : [];
+  const reply = await askAssistant(chosen, question, toHistory(session.messages || []), {
+    surface: 'app',
+    extraContext: async () =>
+      [
+        await businessNow(topic),
+        comments.length
+          ? `FACEBOOK / INSTAGRAM COMMENTS WAITING (${comments.length}, risky first):\n${comments
+              .map((c) => `- ${c.clientName || ''} · ${c.platform} · ${c.author}: ${c.message.replace(/\s+/g, ' ').slice(0, 160)}${c.draft ? ` → AI draft: ${c.draft.replace(/\s+/g, ' ').slice(0, 120)}` : ''}`)
+              .join('\n')}`
+          : '',
+      ]
+        .filter(Boolean)
+        .join('\n\n'),
+    runsAtOnce,
+    comments,
+    inboxes: (await listEmailAccounts().catch(() => [])).filter((x) => x.enabled).map((x) => x.email.toLowerCase()),
+    campaigns,
+  });
   const actions: AppChatAction[] = [];
   for (const a of reply.actions) {
     const action: AppChatAction = { ...a, id: crypto.randomBytes(4).toString('base64url'), state: 'proposed' };
@@ -334,7 +582,7 @@ export async function askFromApp(question: string, heard: boolean) {
 }
 
 /** ✅ Confirm, ✖️ Cancel or ↩️ Undo on an action card. */
-export async function decideAction(actionId: string, decision: 'confirm' | 'cancel' | 'undo') {
+export async function decideAction(actionId: string, decision: 'confirm' | 'cancel' | 'undo' | 'send' | 'edit', edits: { draft?: string; subject?: string } = {}) {
   const session = await appChatSession();
   if (!session) throw new Error('This chat has ended.');
   const messages = session.messages || [];
@@ -346,8 +594,36 @@ export async function decideAction(actionId: string, decision: 'confirm' | 'canc
   if (decision === 'confirm') {
     if (action.state !== 'proposed') throw new Error('Already handled.');
     next = await runAction(action);
+  } else if (decision === 'edit') {
+    if (action.state !== 'drafted' || action.type !== 'email_new') throw new Error('Only a new email’s draft is edited here.');
+    const draft = edits.draft?.trim();
+    if (!draft || draft.length < 2) throw new Error('Write the email first.');
+    next = { ...action, draft: draft.slice(0, 20_000), draftSubject: edits.subject?.trim().slice(0, 200) || action.draftSubject };
+  } else if (decision === 'send' && action.type === 'email_new') {
+    if (action.state !== 'drafted' || !action.draft) throw new Error('There’s no draft to send.');
+    const account = (await listEmailAccounts()).find((x) => x.email.toLowerCase() === action.inbox.toLowerCase());
+    if (!account) throw new Error(`${action.inbox} isn’t connected.`);
+    await sendNewEmail(account, { to: action.to, subject: action.draftSubject || '(no subject)', text: action.draft });
+    next = { ...action, state: 'done', result: `📨 Sent to ${action.to} from ${account.email}` };
+  } else if (decision === 'send') {
+    if (action.state !== 'drafted' || action.type !== 'email_reply') throw new Error('There’s no draft to send.');
+    const item = await getEmailItem(action.emailId);
+    if (!item) throw new Error('That email is gone.');
+    if (item.status === 'sent') throw new Error('Already sent.');
+    if (item.status !== 'draft' || !item.draft) throw new Error('The draft was dropped. Ask me to write it again.');
+    const account = await getEmailAccount(item.account_id);
+    if (!account) throw new Error('This inbox was disconnected.');
+    await sendEmailReply(item, account); // the latest draft, including edits made in the Inbox
+    await updateEmailItem(item.id, { status: 'sent', sent_at: new Date().toISOString() });
+    next = { ...action, state: 'done', draft: item.draft, result: `📨 Sent to ${item.from_email} from ${account.email}` };
+  } else if (decision === 'cancel' && action.state === 'drafted' && action.type === 'email_new') {
+    next = { ...action, state: 'cancelled' };
   } else if (decision === 'cancel') {
-    if (action.state !== 'proposed') throw new Error('Already handled.');
+    if (action.state === 'drafted' && action.type === 'email_reply') {
+      const item = await getEmailItem(action.emailId);
+      const back = (['new', 'done', 'ignored', 'skipped'] as const).find((st) => st === action.prevStatus) || 'new';
+      if (item && item.status === 'draft') await updateEmailItem(item.id, { status: back, draft: null, brief: null });
+    } else if (action.state !== 'proposed') throw new Error('Already handled.');
     next = { ...action, state: 'cancelled' };
   } else {
     if (action.state !== 'done' || !action.undo) throw new Error('This can’t be undone.');

@@ -122,3 +122,14 @@ export async function listNewOutlook(accessToken: string, sinceMs: number, max =
 export async function sendOutlookReply(accessToken: string, messageId: string, text: string) {
   await graph(accessToken, `/me/messages/${encodeURIComponent(messageId)}/reply`, { method: 'POST', body: JSON.stringify({ comment: text }) });
 }
+
+/** Sends a new email (not a reply); it is saved in Sent Items. */
+export async function sendOutlookNew(accessToken: string, mail: { to: string; subject: string; text: string }) {
+  await graph(accessToken, '/me/sendMail', {
+    method: 'POST',
+    body: JSON.stringify({
+      message: { subject: mail.subject, body: { contentType: 'Text', content: mail.text }, toRecipients: [{ emailAddress: { address: mail.to } }] },
+      saveToSentItems: true,
+    }),
+  });
+}

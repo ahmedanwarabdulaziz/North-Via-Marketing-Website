@@ -3,7 +3,7 @@ import { formatWhen, isOverdue, type Task } from './tasks';
 import { reviewShortRef } from './review-engine';
 import { whatsAppShareLink } from './whatsapp-share';
 import { isNoReply, type EmailAccount, type EmailItem } from './email/inbox';
-import type { ClientProfile, GbpStoredReview, Website } from '@/types/database';
+import type { ClientProfile, GbpStoredReview, SocialComment, Website } from '@/types/database';
 
 // What the Anwarz mobile app receives: plain JSON shapes built from the same data the
 // Telegram bot uses. Secrets (refresh tokens, API tokens) never leave the server.
@@ -114,5 +114,26 @@ export function appReview(review: GbpStoredReview & { id: string }, names: Clien
     reply: review.postedReply || review.existingReply || null,
     postedAt: review.postedAt || null,
     whatsappUrl: whatsAppShareLink('r', ref),
+  };
+}
+
+/** A Facebook / Instagram comment waiting for Ahmed, with the AI's risk check and draft reply. */
+export function appComment(c: SocialComment & { id: string }, names: ClientNames) {
+  return {
+    id: c.id,
+    clientId: c.clientId,
+    clientName: names.get(c.clientId) || null,
+    platform: c.platform,
+    author: c.authorName || 'Someone',
+    message: c.message,
+    createdAt: c.createdTime,
+    postExcerpt: c.postExcerpt || null,
+    postUrl: c.postPermalink || null,
+    status: c.status,
+    risk: c.riskLevel || 'none',
+    riskReason: c.riskReason || null,
+    draft: c.draft || null,
+    draftError: c.draftError || null,
+    postedReply: c.postedReply || null,
   };
 }

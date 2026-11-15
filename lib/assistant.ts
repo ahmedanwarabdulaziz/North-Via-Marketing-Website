@@ -256,12 +256,16 @@ function systemPromptFor(surface: ChatSurface) {
   return SYSTEM_PROMPT.replace('inside his private Telegram bot.', 'inside his Anwarz phone app (his control center while he is away from the office).')
     .replace(
       'his open tasks, his client list and the items in his knowledge library that match the conversation (screenshots, links, notes).',
-      'his open tasks, his client list, the items in his knowledge library that match the conversation (screenshots, links, notes), and BUSINESS NOW: Google reviews waiting, stopped ads, websites down, Facebook/Instagram followers, and JL Comfort orders and samples. EMAILS also include recent skipped ones (marked "not important").'
+      'his open tasks, his client list, the items in his knowledge library that match the conversation (screenshots, links, notes), and BUSINESS NOW: Google reviews waiting, stopped ads, websites down, Facebook/Instagram followers and comments waiting, competitors (their followers, Google rating and latest moves) and JL Comfort orders and samples. EMAILS also include recent skipped ones (marked "not important").'
     )
     .replace('Formatting: plain text for Telegram;', 'Formatting: plain text for a phone screen;')
     .replace(
+      'his open tasks,',
+      'his open tasks, the tasks he finished in the last 7 days (DONE LATELY),'
+    )
+    .replace(
       "or that it can't be done from the chat (ads, reviews, invoices, deleting things are in the admin panel).",
-      "or that it can't be done from the chat. From this chat you CAN prepare: tasks, library notes, remembering facts, adding/updating clients and website checks, marking tasks done, bringing a skipped email back as important, marking an email done, and posting ready 5★ review replies. Replying to an email or a 1–4★ review is done from the Inbox or Reviews tab; invoices and ads changes are in the admin panel."
+      "or that it can't be done from the chat. From this chat you CAN prepare: tasks, library notes, remembering facts, adding/updating clients and website checks, marking tasks done, bringing a skipped email back as important, marking an email done, replying to an email or writing a new one from any of his inboxes (a draft he reads and sends), posting ready 5★ review replies, replying to, hiding or skipping Facebook/Instagram comments, and pausing or resuming a client's Google / Meta ad campaigns (always confirmed). Replying to a 1–4★ review is done from the Reviews tab; invoices and ads changes are in the admin panel."
     );
 }
 
@@ -294,10 +298,38 @@ export type AssistantAction =
   | { type: 'library_note'; text: string }
   | { type: 'email_important'; emailId: string; subject: string }
   | { type: 'email_done'; emailId: string; subject: string }
-  | { type: 'approve_five_star'; clientId: string | null; clientName: string | null };
+  | { type: 'email_reply'; emailId: string; subject: string; to: string; notes: string }
+  | { type: 'email_new'; inbox: string; to: string; subject: string | null; notes: string }
+  | { type: 'approve_five_star'; clientId: string | null; clientName: string | null }
+  | { type: 'comment_reply'; commentId: string; author: string; message: string; clientName: string | null; text: string | null }
+  | { type: 'comment_hide'; commentId: string; author: string; message: string; clientName: string | null }
+  | { type: 'comment_skip'; commentId: string; author: string; message: string; clientName: string | null }
+  | { type: 'ads_status'; pause: boolean; clientId: string; clientName: string; campaigns: { platform: 'google' | 'meta'; account: string; id: string; name: string }[] };
+
+/** A client's campaign the app chat can pause or resume (key = short id for the planner). */
+export interface PlannerCampaign {
+  key: string;
+  clientId: string;
+  clientName: string;
+  platform: 'google' | 'meta';
+  account: string;
+  id: string;
+  name: string;
+  status: 'active' | 'paused';
+}
+
+/** A waiting Facebook / Instagram comment, for the app chat's planner. */
+export interface PlannerComment {
+  id: string;
+  clientName: string | null;
+  platform: string;
+  author: string;
+  message: string;
+  draft: string | null;
+}
 
 export type ChatSurface = 'telegram' | 'app';
-export const APP_ONLY_ACTIONS = ['library_note', 'email_important', 'email_done', 'approve_five_star'] as const;
+export const APP_ONLY_ACTIONS = ['library_note', 'email_important', 'email_done', 'email_reply', 'email_new', 'approve_five_star', 'comment_reply', 'comment_hide', 'comment_skip', 'ads_status'] as const;
 export type AppOnlyAction = Extract<AssistantAction, { type: (typeof APP_ONLY_ACTIONS)[number] }>;
 export const isAppOnlyAction = (a: AssistantAction): a is AppOnlyAction => (APP_ONLY_ACTIONS as readonly string[]).includes(a.type);
 
@@ -321,10 +353,27 @@ const APP_PLANNER_ACTIONS = `
   (a skipped email he wants back in his inbox: "this is important", "رجعه", "خليه مهم")
 {"type":"email_done","email_id":"<id from EMAILS>"}
   (an email he says is handled / no reply needed)
+{"type":"email_reply","email_id":"<id from EMAILS>","notes":"<what the reply should say, in his words and language; \"\" when he just says reply / answer professionally>"}
+  (when he asks to reply / answer / رد على an email. The app writes the draft; he reads it and taps Send. Never for no-reply senders.)
+{"type":"email_new","from_inbox":"<one address from INBOXES>","to":"<recipient email address>","subject":null,"notes":"<everything the email should say, in his words: amounts, dates, requests>"}
+  (a NEW email, not a reply: "send an email / mail / ابعت ايميل from X to Y …". from_inbox: the inbox he names (e.g. "sales@jlcomfort" = sales@jlcomfort.com), or the one that fits the business. The recipient must be a full email address he gave or one from CLIENTS/EMAILS; if missing, return no action so the reply asks for it.)
 {"type":"approve_five_star","client_id":"<client id, or null for all clients>"}
-  (post every ready 5★ Google review reply — of one client or all — only when he asks to approve/post them)`;
+  (post every ready 5★ Google review reply — of one client or all — only when he asks to approve/post them)
+{"type":"comment_reply","comment_id":"<id from COMMENTS>","text":"<the reply in his words, or null to post the AI draft shown in COMMENTS>"}
+  (reply publicly to a Facebook / Instagram comment; he confirms before it is posted)
+{"type":"comment_hide","comment_id":"<id from COMMENTS>"}
+  (hide a rude, spam or harmful comment, only when he asks)
+{"type":"comment_skip","comment_id":"<id from COMMENTS>"}
+  (no reply needed)
+{"type":"ads_status","campaigns":["<key from CAMPAIGNS>", ...],"pause":true|false}
+  (pause or resume ad campaigns when he asks: "pause Patriva's Meta ads", "وقف إعلانات", "شغل الحملة تاني". All the keys of ONE client that match what he said; pause=false to resume. He confirms first.)`;
 
-function plannerPrompt(clients: PlannerClient[], tasks: Task[], facts: MemoryFact[], app?: { emails: ChatEmail[] }) {
+function plannerPrompt(
+  clients: PlannerClient[],
+  tasks: Task[],
+  facts: MemoryFact[],
+  app?: { emails: ChatEmail[]; comments: PlannerComment[]; inboxes: string[]; campaigns: PlannerCampaign[] }
+) {
   return `You prepare changes a marketing agency owner asks their ${app ? 'phone app (Anwarz)' : 'Telegram bot'} for. You only PREPARE them; the owner confirms each one with a button.
 Read the LATEST message (earlier lines are context: a "yes / do it / go ahead" confirms what was discussed just before).
 Return ONLY JSON: {"actions": [ ... ]} with at most 3 actions, or {"actions": []} when the latest message asks for no change (a question, chit-chat, or details are missing).
@@ -362,8 +411,24 @@ ${facts.slice(-60).map((f) => `${f.id} | ${f.text}`).join('\n') || '(none)'}${
     app
       ? `
 
+INBOXES he can send from: ${app.inboxes.join(', ') || '(none connected)'}${
+          app.campaigns.length
+            ? `
+
+CAMPAIGNS (key | client | platform | campaign | status now):
+${app.campaigns.map((c) => `${c.key} | ${c.clientName} | ${c.platform === 'google' ? 'Google Ads' : 'Meta'} | ${c.name} | ${c.status}`).join('\n')}`
+            : ''
+        }
+
 EMAILS (id | from | subject | status):
-${app.emails.map((e) => `${e.id} | ${e.from_name || e.from_email || ''} | ${e.subject || ''} | ${e.status}`).join('\n') || '(none)'}`
+${app.emails.map((e) => `${e.id} | ${e.from_name || e.from_email || ''} | ${e.subject || ''} | ${e.status}`).join('\n') || '(none)'}${
+          app.comments.length
+            ? `
+
+COMMENTS waiting on Facebook / Instagram (id | client | platform | author | comment | AI draft):
+${app.comments.map((c) => `${c.id} | ${c.clientName || ''} | ${c.platform} | ${c.author} | ${c.message.replace(/\s+/g, ' ').slice(0, 160)} | ${(c.draft || '-').replace(/\s+/g, ' ').slice(0, 160)}`).join('\n')}`
+            : ''
+        }`
       : ''
   }`;
 }
@@ -395,7 +460,16 @@ function cleanFields(source: Record<string, unknown>) {
 }
 
 /** Checks the planner's JSON against the real clients and tasks; anything that doesn't match is dropped. */
-export function toActions(raw: Record<string, unknown>, clients: PlannerClient[], tasks: Task[], facts: MemoryFact[] = [], emails: ChatEmail[] | null = null): AssistantAction[] {
+export function toActions(
+  raw: Record<string, unknown>,
+  clients: PlannerClient[],
+  tasks: Task[],
+  facts: MemoryFact[] = [],
+  emails: ChatEmail[] | null = null,
+  comments: PlannerComment[] = [],
+  inboxes: string[] = [],
+  campaigns: PlannerCampaign[] = []
+): AssistantAction[] {
   const list = Array.isArray(raw.actions) ? (raw.actions as Record<string, unknown>[]) : [];
   const actions: AssistantAction[] = [];
   for (const a of list.slice(0, 3)) {
@@ -438,6 +512,47 @@ export function toActions(raw: Record<string, unknown>, clients: PlannerClient[]
     } else if (emails && (a.type === 'email_important' || a.type === 'email_done')) {
       const email = emails.find((e) => e.id === a.email_id);
       if (email) actions.push({ type: a.type, emailId: email.id, subject: email.subject || '(no subject)' });
+    } else if (emails && a.type === 'email_reply') {
+      const email = emails.find((e) => e.id === a.email_id);
+      if (email && email.status !== 'sent') {
+        actions.push({
+          type: 'email_reply',
+          emailId: email.id,
+          subject: email.subject || '(no subject)',
+          to: email.from_name || email.from_email || '',
+          // His points only; a whole letter here means the planner wrote the reply itself, so the AI drafts it instead.
+          notes: ((n) => (n.length > 300 || /^(dear|hi|hello|مرحبا|أهلا|اهلا)\b/i.test(n) ? '' : n))(cleanText(a.notes, 2000) || ''),
+        });
+      }
+    } else if (emails && a.type === 'ads_status' && Array.isArray(a.campaigns)) {
+      const pause = a.pause !== false;
+      const picked = (a.campaigns as unknown[]).map((k) => campaigns.find((c) => c.key === k)).filter((c): c is PlannerCampaign => Boolean(c));
+      const client = picked[0]?.clientId;
+      // One client per card, and only campaigns that would actually change.
+      const mine = picked.filter((c) => c.clientId === client && (pause ? c.status === 'active' : c.status === 'paused'));
+      if (client && mine.length) {
+        actions.push({
+          type: 'ads_status',
+          pause,
+          clientId: client,
+          clientName: mine[0].clientName,
+          campaigns: mine.map((c) => ({ platform: c.platform, account: c.account, id: c.id, name: c.name })),
+        });
+      }
+    } else if (emails && a.type === 'email_new') {
+      const to = (cleanText(a.to, 200) || '').replace(/^mailto:/i, '').toLowerCase();
+      const wanted = (cleanText(a.from_inbox, 200) || '').toLowerCase();
+      const inbox = inboxes.find((i) => i === wanted) || inboxes.find((i) => wanted && (i.startsWith(wanted) || i.split('@')[0] === wanted.split('@')[0]));
+      const notes = cleanText(a.notes, 3000) || '';
+      if (inbox && /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(to) && notes) actions.push({ type: 'email_new', inbox, to, subject: cleanText(a.subject, 200), notes });
+    } else if (emails && (a.type === 'comment_reply' || a.type === 'comment_hide' || a.type === 'comment_skip')) {
+      const c = comments.find((x) => x.id === a.comment_id);
+      if (!c) continue;
+      const base = { commentId: c.id, author: c.author, message: c.message.slice(0, 300), clientName: c.clientName };
+      if (a.type === 'comment_reply') {
+        const text = cleanText(a.text, 1500);
+        if (text || c.draft) actions.push({ type: 'comment_reply', ...base, text });
+      } else actions.push({ type: a.type, ...base });
     } else if (emails && a.type === 'approve_five_star') {
       const client = clients.find((c) => c.id === a.client_id);
       actions.push({ type: 'approve_five_star', clientId: client?.id || null, clientName: client?.brandName || null });
@@ -462,7 +577,16 @@ export function actionSummary(a: AssistantAction) {
   if (a.type === 'library_note') return `Save to the library: ${a.text.slice(0, 150)}`;
   if (a.type === 'email_important') return `Move the email "${a.subject}" back to the inbox as important`;
   if (a.type === 'email_done') return `Mark the email "${a.subject}" done`;
+  if (a.type === 'email_reply')
+    return `Reply to "${a.subject}" (${a.to})${a.notes ? `: ${a.notes.slice(0, 120)}` : ''} [a card under your answer writes the draft with the AI and shows it; he reads it and taps Send. Do NOT write the reply yourself: just say the card is below]`;
+  if (a.type === 'ads_status')
+    return `${a.pause ? 'Pause' : 'Resume'} ${a.clientName}'s ${a.campaigns.map((c) => `${c.platform === 'google' ? 'Google' : 'Meta'} "${c.name}"`).join(', ')} (he confirms first)`;
+  if (a.type === 'email_new')
+    return `New email from ${a.inbox} to ${a.to}: ${a.notes.slice(0, 120)} [a card under your answer writes the email and shows it; he reads it and taps Send. Do NOT write the email yourself: just say the card is below]`;
   if (a.type === 'approve_five_star') return `Post every ready 5★ review reply${a.clientName ? ` for ${a.clientName}` : ' for all clients'}`;
+  if (a.type === 'comment_reply') return `Reply publicly to ${a.author}'s comment${a.clientName ? ` on ${a.clientName}` : ''}${a.text ? `: ${a.text.slice(0, 120)}` : ' with the AI draft'} (he confirms first)`;
+  if (a.type === 'comment_hide') return `Hide ${a.author}'s comment${a.clientName ? ` on ${a.clientName}` : ''} (he confirms first)`;
+  if (a.type === 'comment_skip') return `Skip ${a.author}'s comment (no reply)`;
   return `Mark task done: ${a.title}`;
 }
 
@@ -530,16 +654,26 @@ async function callModel(m: ChatModel, context: string, history: ChatMessage[], 
  * Gemini as fallback) in strict JSON, whatever model the owner chats with, so a light chat model
  * can't break them. A failure means no changes, never a wrong one.
  */
-async function planActions(question: string, history: ChatMessage[], clients: PlannerClient[], tasks: Task[], facts: MemoryFact[], emails: ChatEmail[] | null = null) {
+async function planActions(
+  question: string,
+  history: ChatMessage[],
+  clients: PlannerClient[],
+  tasks: Task[],
+  facts: MemoryFact[],
+  emails: ChatEmail[] | null = null,
+  comments: PlannerComment[] = [],
+  inboxes: string[] = [],
+  campaigns: PlannerCampaign[] = []
+) {
   const recent = history.slice(-4).map((m) => `${m.role === 'user' ? 'OWNER' : 'BOT'}: ${m.content.slice(0, 500)}`);
   try {
     const raw = await aiJson({
-      system: plannerPrompt(clients, tasks, facts, emails ? { emails } : undefined),
+      system: plannerPrompt(clients, tasks, facts, emails ? { emails, comments, inboxes, campaigns } : undefined),
       user: [...recent, `LATEST (OWNER): ${question.slice(0, 2000)}`].join('\n'),
       feature: 'assistant',
       timeBudgetMs: 20_000,
     });
-    return toActions(raw, clients, tasks, facts, emails);
+    return toActions(raw, clients, tasks, facts, emails, comments, inboxes, campaigns);
   } catch (error) {
     console.error('Action planner failed:', error instanceof Error ? error.message.slice(0, 200) : error);
     return [];
@@ -564,7 +698,7 @@ export async function askAssistant(
   chosen: ChatModel,
   question: string,
   history: ChatMessage[],
-  opts: { surface?: ChatSurface; extraContext?: () => Promise<string>; runsAtOnce?: (a: AssistantAction) => boolean } = {}
+  opts: { surface?: ChatSurface; extraContext?: () => Promise<string>; runsAtOnce?: (a: AssistantAction) => boolean; comments?: PlannerComment[]; inboxes?: string[]; campaigns?: PlannerCampaign[] } = {}
 ): Promise<AssistantReply> {
   const surface = opts.surface || 'telegram';
   const [context, available, profiles, extra] = await Promise.all([
@@ -580,8 +714,9 @@ export async function askAssistant(
   ]);
   if (extra) context.text += `\n\n${extra}`;
   const clients = profiles.filter((c) => c.id && c.brandName) as PlannerClient[];
-  const actions = await planActions(question, history, clients, context.tasks, context.memory.facts, surface === 'app' ? context.emails : null);
-  const order = [chosen, ...available.filter((m) => m.key !== chosen.key)].slice(0, 3);
+  const actions = await planActions(question, history, clients, context.tasks, context.memory.facts, surface === 'app' ? context.emails : null, opts.comments || [], opts.inboxes || [], opts.campaigns || []);
+  // Up to 4 tries, so a Gemini model still answers when the Groq ones hit their per-minute limit.
+  const order = [chosen, ...available.filter((m) => m.key !== chosen.key)].slice(0, 4);
   const note = (a: AssistantAction) =>
     opts.runsAtOnce?.(a) ? `${actionSummary(a)} [the app does this right away, with an Undo button: say it's done, no Confirm needed]` : actionSummary(a);
   const planned = `\n\n(PLANNED CHANGES for this message: ${actions.length ? actions.map(note).join('; ') : 'none'})`;

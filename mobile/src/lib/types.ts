@@ -350,3 +350,22 @@ export interface CompetitorFinding {
   idea: string | null;
   url: string | null;
 }
+
+/** A Facebook / Instagram comment waiting for a reply (Marketing → Social). */
+export interface AppComment {
+  id: string;
+  clientId: string;
+  clientName: string | null;
+  platform: 'facebook' | 'instagram';
+  author: string;
+  message: string;
+  createdAt: string;
+  postExcerpt: string | null;
+  postUrl: string | null;
+  status: 'draft_ready' | 'needs_draft' | 'posted' | 'replied' | 'skipped' | 'hidden';
+  risk: 'none' | 'watch' | 'high';
+  riskReason: string | null;
+  draft: string | null;
+  draftError: string | null;
+  postedReply: string | null;
+}

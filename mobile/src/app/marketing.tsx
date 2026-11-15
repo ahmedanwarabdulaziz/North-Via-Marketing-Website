@@ -10,10 +10,11 @@ import {
   SocialClientCard,
   StoppedAdsBanner,
 } from '@/components/marketing';
+import { CommentCard } from '@/components/comment-card';
 import { Button, Chip, ChipRow, Empty, ErrorBox, Loading, Row, Screen, Section, Segmented, T } from '@/components/ui';
 import { api } from '@/lib/api';
 import { ago } from '@/lib/format';
-import type { AdsOverview, CompetitorFinding, CompetitorRow, SocialClient } from '@/lib/types';
+import type { AdsOverview, AppComment, CompetitorFinding, CompetitorRow, SocialClient } from '@/lib/types';
 import { useApi } from '@/lib/use-api';
 
 // 📈 Marketing: Google & Meta ads with a running / limited / stopped flag per client (hourly watch),
@@ -38,6 +39,7 @@ export default function Marketing() {
 
   const ads = useApi<AdsOverview>(tab === 'ads' ? `/marketing/ads?days=${days}` : null);
   const social = useApi<{ clients: SocialClient[] }>(tab === 'social' ? '/marketing/social' : null);
+  const comments = useApi<{ comments: AppComment[] }>(tab === 'social' ? '/marketing/comments' : null);
   const comp = useApi<CompetitorsData>(tab === 'competitors' ? `/marketing/competitors${compClient ? `?client=${encodeURIComponent(compClient)}` : ''}` : null);
   const current = tab === 'ads' ? ads : tab === 'social' ? social : comp;
 
@@ -56,7 +58,7 @@ export default function Marketing() {
 
   return (
     <>
-      <Screen padTop={false} refreshing={current.refreshing} onRefresh={current.refresh}>
+      <Screen padTop={false} refreshing={current.refreshing} onRefresh={() => { current.refresh(); if (tab === 'social') void comments.reload(); }}>
         <Segmented
           value={tab}
           onChange={setTab}
@@ -87,9 +89,23 @@ export default function Marketing() {
           </>
         ) : null}
 
+        {tab === 'social' && comments.data ? (
+          <Section title={`💬 Comments waiting (${comments.data.comments.length})`}>
+            {comments.data.comments.length ? (
+              comments.data.comments.map((c) => <CommentCard key={c.id} comment={c} onDone={() => void social.reload()} />)
+            ) : (
+              <Empty text="No comments waiting. ✅" />
+            )}
+          </Section>
+        ) : null}
+
         {tab === 'social' && social.data ? (
           social.data.clients.length ? (
-            social.data.clients.map((s) => <SocialClientCard key={s.clientId} s={s} />)
+            <Section title="👥 Followers">
+              {social.data.clients.map((s) => (
+                <SocialClientCard key={s.clientId} s={s} />
+              ))}
+            </Section>
           ) : (
             <Empty text="No Facebook or Instagram pages linked yet." />
           )

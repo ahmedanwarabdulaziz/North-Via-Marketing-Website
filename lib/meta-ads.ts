@@ -45,7 +45,7 @@ async function adsConnections() {
     .sort((a, b) => Number(b.id === 'admin') - Number(a.id === 'admin'));
 }
 
-async function tokenFor(connectionId: string) {
+export async function tokenFor(connectionId: string) {
   const connection = (await getMetaConnections()).find((c) => c.id === connectionId);
   if (!connection) throw new Error('The Facebook login for this ad account was removed. Reconnect Facebook and choose the ad account again.');
   return decryptString(connection.encryptedUserToken);
