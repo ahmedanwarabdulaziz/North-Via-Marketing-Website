@@ -12,7 +12,7 @@ export default function Clients() {
   const list = (data?.clients || []).filter((c) => !q || c.name.toLowerCase().includes(q) || (c.owner || '').toLowerCase().includes(q));
 
   return (
-    <Screen title="Clients" refreshing={refreshing} onRefresh={refresh}>
+    <Screen padTop={false} refreshing={refreshing} onRefresh={refresh}>
       <Input value={search} onChangeText={setSearch} placeholder="Search clients" autoCorrect={false} />
       {loading && !data ? <Loading /> : null}
       {error && !data ? <ErrorBox message={error} onRetry={refresh} /> : null}

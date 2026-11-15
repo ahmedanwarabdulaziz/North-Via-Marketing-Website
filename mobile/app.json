@@ -2,7 +2,7 @@
   "expo": {
     "name": "Anwarz",
     "slug": "anwarz",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "anwarz",
@@ -42,7 +42,22 @@
         }
       ],
       "expo-secure-store",
-      "expo-audio"
+      "expo-audio",
+      [
+        "expo-sharing",
+        {
+          "android": {
+            "enabled": true,
+            "singleShareMimeTypes": [
+              "image/*",
+              "text/plain"
+            ],
+            "multipleShareMimeTypes": [
+              "image/*"
+            ]
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

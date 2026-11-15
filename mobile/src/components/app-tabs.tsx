@@ -2,7 +2,8 @@ import { NativeTabs } from 'expo-router/native-tabs';
 
 import { usePalette } from '@/lib/theme';
 
-// Android/iOS: the phone's own bottom tab bar. (app-tabs.web.tsx is the web preview's.)
+// Android/iOS: the phone's own bottom tab bar (Android allows 5 tabs; Clients opens from Home).
+// app-tabs.web.tsx is the web preview's.
 export default function AppTabs() {
   const p = usePalette();
   return (
@@ -23,9 +24,9 @@ export default function AppTabs() {
         <NativeTabs.Trigger.Label>Reviews</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon sf="star.fill" md="star" />
       </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="clients">
-        <NativeTabs.Trigger.Label>Clients</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon sf="person.2.fill" md="groups" />
+      <NativeTabs.Trigger name="library">
+        <NativeTabs.Trigger.Label>Library</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon sf="books.vertical.fill" md="local_library" />
       </NativeTabs.Trigger>
     </NativeTabs>
   );

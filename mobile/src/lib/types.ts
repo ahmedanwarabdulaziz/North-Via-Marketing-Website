@@ -139,3 +139,33 @@ export interface AppReview {
   postedAt: string | null;
   whatsappUrl: string;
 }
+
+export interface LibraryItem {
+  id: string;
+  type: 'screenshot' | 'link' | 'note';
+  title: string;
+  summary: string | null;
+  url: string | null;
+  domain: string | null;
+  tags: string[];
+  clientId: string | null;
+  clientName: string | null;
+  personal: boolean;
+  categoryId: string;
+  categoryName: string | null;
+  imageUrl: string | null;
+  createdAt: string;
+  content?: string | null;
+  sourceText?: string | null;
+}
+
+export interface QuickLink {
+  id: string;
+  title: string;
+  url: string;
+  message: string | null;
+  clientId: string | null;
+  clientName: string | null;
+  pinned: boolean;
+  uses: number;
+}

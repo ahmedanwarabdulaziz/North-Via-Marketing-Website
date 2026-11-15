@@ -1,11 +1,13 @@
 import { router } from 'expo-router';
+import { Pressable, Text, View } from 'react-native';
 
 import { EmailCard } from '@/components/email-card';
 import { WebsiteRow } from '@/components/rows';
 import { TaskCard } from '@/components/task-card';
-import { Button, Card, Empty, ErrorBox, Loading, Row, Screen, Section, Stat, T } from '@/components/ui';
-import { usePalette } from '@/lib/theme';
-import type { HomeData } from '@/lib/types';
+import { Button, Card, Chip, ChipRow, Empty, ErrorBox, Loading, Row, Screen, Section, Stat, T } from '@/components/ui';
+import { shareLink } from '@/lib/share-link';
+import { radius, usePalette } from '@/lib/theme';
+import type { HomeData, QuickLink } from '@/lib/types';
 import { useApi } from '@/lib/use-api';
 
 function greeting() {
@@ -16,19 +18,29 @@ function greeting() {
 export default function Home() {
   const p = usePalette();
   const { data, error, loading, refreshing, refresh, reload } = useApi<HomeData>('/home');
+  const links = useApi<{ links: QuickLink[] }>('/links');
+  const pinned = (links.data?.links ?? []).filter((l) => l.pinned);
 
   return (
     <Screen
       title={greeting()}
       subtitle="Here’s what needs you today"
       refreshing={refreshing}
-      onRefresh={refresh}
-      right={
-        <Row>
-          <Button title="＋ Task" small onPress={() => router.push('/task/new')} />
-          <Button title="⚙️" small kind="soft" onPress={() => router.push('/more')} />
-        </Row>
-      }>
+      onRefresh={refresh}>
+      {/* Pages that aren't in the bottom bar. */}
+      <Row style={{ justifyContent: 'space-between' }}>
+        <Shortcut icon="＋" label="Task" primary onPress={() => router.push('/task/new')} />
+        <Shortcut icon="👥" label="Clients" onPress={() => router.push('/clients')} />
+        <Shortcut icon="🔗" label="Links" onPress={() => router.push('/links')} />
+        <Shortcut icon="⚙️" label="More" onPress={() => router.push('/more')} />
+      </Row>
+      {pinned.length ? (
+        <ChipRow>
+          {pinned.map((l) => (
+            <Chip key={l.id} text={`📤 ${l.title}`} onPress={() => shareLink(l)} />
+          ))}
+        </ChipRow>
+      ) : null}
       {loading && !data ? <Loading /> : null}
       {error && !data ? <ErrorBox message={error} onRetry={refresh} /> : null}
       {data ? (
@@ -91,5 +103,28 @@ export default function Home() {
         </>
       ) : null}
     </Screen>
+  );
+}
+
+/** A round icon with a small label under it, for pages outside the bottom bar. */
+function Shortcut({ icon, label, onPress, primary }: { icon: string; label: string; onPress: () => void; primary?: boolean }) {
+  const p = usePalette();
+  return (
+    <Pressable onPress={onPress} style={({ pressed }) => ({ alignItems: 'center', gap: 6, flex: 1, opacity: pressed ? 0.6 : 1 })}>
+      <View
+        style={{
+          width: 56,
+          height: 56,
+          borderRadius: radius.lg,
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: primary ? p.brand : p.card,
+          borderWidth: primary ? 0 : 1,
+          borderColor: p.border,
+        }}>
+        <Text style={{ fontSize: primary ? 28 : 24, color: primary ? p.onBrand : p.text, fontWeight: primary ? '700' : '400' }}>{icon}</Text>
+      </View>
+      <Text style={{ color: p.muted, fontSize: 12, fontWeight: '600' }}>{label}</Text>
+    </Pressable>
   );
 }
