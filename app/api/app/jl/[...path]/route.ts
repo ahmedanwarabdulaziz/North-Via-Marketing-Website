@@ -9,7 +9,8 @@ import { AppError, appRoute } from '@/lib/app-auth';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
-const BASE = (process.env.JLCOMFORT_URL || 'https://jlcomfort.com').replace(/\/+$/, '');
+// www: jlcomfort.com redirects there, and a redirect would drop the Authorization header.
+const BASE = (process.env.JLCOMFORT_URL || 'https://www.jlcomfort.com').replace(/\/+$/, '');
 // Only these JL Comfort endpoints can be reached through here.
 const ALLOWED = /^(overview|orders|samples)(\/[A-Za-z0-9-]{1,64})?$/;
 
