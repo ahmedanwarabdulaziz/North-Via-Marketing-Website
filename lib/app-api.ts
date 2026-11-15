@@ -1,5 +1,6 @@
 import { listClientProfiles } from './admin-ops';
 import { formatWhen, isOverdue, type Task } from './tasks';
+import { whatsAppShareLink } from './whatsapp-share';
 import type { EmailAccount, EmailItem } from './email/inbox';
 import type { ClientProfile, Website } from '@/types/database';
 
@@ -32,6 +33,8 @@ export function appTask(task: Task, names: ClientNames, now = new Date()) {
     source: task.source,
     createdAt: task.created_at,
     doneAt: task.done_at,
+    // A client's task: opens WhatsApp with a ready follow-up message (same link as the Telegram button).
+    whatsappUrl: task.client_id ? whatsAppShareLink('t', task.id) : null,
   };
 }
 

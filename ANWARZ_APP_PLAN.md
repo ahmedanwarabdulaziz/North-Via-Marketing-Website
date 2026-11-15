@@ -7,7 +7,9 @@ brain, Firebase only carries push notifications. Telegram (Anwarz bot) and ntfy 
 
 ## Phases
 1. **Website side** ✅ (2026-11-15): app sign-in, `app_devices` table, Firebase push next to ntfy, data endpoints below.
-2. **Core app**: Home, Tasks, Inbox, Clients, Anwarz chat tabs; More (Reviews, Competitors, Ads, Library, Memory, Invoices, Settings). Ahmed needs a free Expo account.
+2. **Core app** (2026-11-15, v0.1.0): Home, Tasks (add by text/voice, done, snooze, move, edit), Inbox (AI reply by text/voice, edit, send), Clients, More (admin pages in the browser, test push, sign out). Expo project `@ahmedahmedanwar/anwarz`, Android package `com.northviamarketing.anwarz`. Still to come: Anwarz chat tab, Reviews/Competitors/Ads screens in the app.
+   - Build an APK: `cd mobile; npx eas-cli@latest build -p android --profile preview`
+   - Web preview against a local server: `npx next dev -p 3011` at the root, then `EXPO_PUBLIC_API_URL=http://localhost:3011 npx expo start --web` in `mobile/` (dev-only CORS in next.config.js).
 3. **Notifications**: register the Android app in Firebase (`google-services.json`); FIREBASE_* env must be that project's service account. Done / Snooze / Approve buttons, tap opens the item.
 4. **WhatsApp client tracking**: read WhatsApp notifications on the phone (Android notification listener), link a chat to a client, save + alert.
 5. **Polish**: offline view of the last data, final signed APK.
