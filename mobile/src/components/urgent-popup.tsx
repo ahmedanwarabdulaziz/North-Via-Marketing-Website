@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Alert, AppState, Modal, Pressable, ScrollView, Switch, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { alarmsAvailable, openFullScreenSettings } from '@/lib/alarm';
 import { api } from '@/lib/api';
 import { ago } from '@/lib/format';
 import { openAlert } from '@/lib/notifications';
@@ -24,7 +25,7 @@ interface UrgentAlert {
 }
 
 interface UrgentData {
-  kinds: { key: string; label: string; urgent: boolean }[];
+  kinds: { key: string; label: string; urgent: boolean; alarm: boolean }[];
   unseen: UrgentAlert[];
 }
 
@@ -127,13 +128,15 @@ export function UrgentSettings() {
   const { data, setData, error } = useApi<UrgentData>('/alerts/urgent');
   const [saving, setSaving] = useState<string | null>(null);
 
-  const toggle = async (key: string, on: boolean) => {
+  const save = async (key: string, next: (k: UrgentData['kinds'][number]) => { urgent: boolean; alarm: boolean }) => {
     if (!data) return;
-    const kinds = data.kinds.filter((k) => (k.key === key ? on : k.urgent)).map((k) => k.key);
+    const rows = data.kinds.map((k) => ({ key: k.key, ...next(k) }));
     setSaving(key);
     try {
-      const r = await api<{ kinds: string[] }>('/alerts/urgent', { body: { kinds } });
-      setData({ ...data, kinds: data.kinds.map((k) => ({ ...k, urgent: r.kinds.includes(k.key) })) });
+      const r = await api<{ kinds: string[]; alarm: string[] }>('/alerts/urgent', {
+        body: { kinds: rows.filter((k) => k.urgent).map((k) => k.key), alarm: rows.filter((k) => k.alarm).map((k) => k.key) },
+      });
+      setData({ ...data, kinds: data.kinds.map((k) => ({ ...k, urgent: r.kinds.includes(k.key), alarm: r.alarm.includes(k.key) })) });
     } catch (e) {
       Alert.alert('Not saved', e instanceof Error ? e.message : String(e));
     } finally {
@@ -145,14 +148,32 @@ export function UrgentSettings() {
     <Card>
       <T style={{ fontWeight: '700' }}>🚨 Urgent pop-ups</T>
       <T variant="small">Urgent alerts stay pinned on the phone and pop up when you open Anwarz, until you tap Seen. The rest are normal notifications.</T>
-      {data?.kinds.map((k) => (
-        <Pressable key={k.key} onPress={() => void toggle(k.key, !k.urgent)}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', borderTopWidth: 1, borderTopColor: p.border, paddingTop: space.sm }}>
-            <T style={{ flex: 1 }}>{k.label}</T>
-            <Switch value={k.urgent} disabled={saving !== null} onValueChange={(v) => void toggle(k.key, v)} />
+      {data?.kinds.map((k) => {
+        // Turning urgent off also turns its alarm off; turning the alarm on makes it urgent.
+        const setUrgent = (on: boolean) => void save(k.key, (x) => (x.key === k.key ? { urgent: on, alarm: on && x.alarm } : x));
+        const setAlarm = (on: boolean) => void save(`a-${k.key}`, (x) => (x.key === k.key ? { urgent: x.urgent || on, alarm: on } : x));
+        return (
+          <View key={k.key} style={{ borderTopWidth: 1, borderTopColor: p.border, paddingTop: space.sm, gap: 2 }}>
+            <Pressable onPress={() => setUrgent(!k.urgent)} style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <T style={{ flex: 1 }}>{k.label}</T>
+              <Switch value={k.urgent} disabled={saving !== null} onValueChange={setUrgent} />
+            </Pressable>
+            {k.urgent ? (
+              <Pressable onPress={() => setAlarm(!k.alarm)} style={{ flexDirection: 'row', alignItems: 'center', paddingLeft: space.lg }}>
+                <T variant="small" style={{ flex: 1 }}>🚨 Full-screen alarm (lights up the screen, rings until Seen)</T>
+                <Switch value={k.alarm} disabled={saving !== null} onValueChange={setAlarm} />
+              </Pressable>
+            ) : null}
           </View>
-        </Pressable>
-      ))}
+        );
+      })}
+      {data?.kinds.some((k) => k.alarm) ? (
+        alarmsAvailable() ? (
+          <Button title="Allow full-screen alarms (Android settings)" small kind="outline" onPress={() => void openFullScreenSettings()} />
+        ) : (
+          <T variant="small" color={p.warn}>Full-screen alarms work in the installed app (0.5.0+), not in Expo Go.</T>
+        )
+      ) : null}
       {error && !data ? <T variant="small" color={p.danger}>{error}</T> : null}
     </Card>
   );

@@ -53,14 +53,22 @@ function pushApp(): App | null {
 
 const GONE = new Set(['messaging/registration-token-not-registered', 'messaging/invalid-registration-token', 'messaging/invalid-argument']);
 
+/** Full-screen alarms need app 0.5.0 or newer (react-native-notify-kit). */
+const ALARM_FROM = [0, 5, 0];
+function supportsAlarm(version: string | null) {
+  const v = (version || '0').split('.').map((n) => Number.parseInt(n, 10) || 0);
+  for (let i = 0; i < 3; i++) if ((v[i] || 0) !== ALARM_FROM[i]) return (v[i] || 0) > ALARM_FROM[i];
+  return true;
+}
+
 /** Sends to every signed-in phone with a push token. Returns how many phones got it. */
 export async function sendPush(message: PushMessage): Promise<number> {
   try {
     const app = pushApp();
     if (!app) return 0;
-    const { data, error } = await supabase.from('app_devices').select('id, push_token').is('revoked_at', null).not('push_token', 'is', null);
+    const { data, error } = await supabase.from('app_devices').select('id, push_token, app_version').is('revoked_at', null).not('push_token', 'is', null);
     if (error) throw new Error(error.message);
-    const devices = (data || []) as { id: string; push_token: string }[];
+    const devices = (data || []) as { id: string; push_token: string; app_version: string | null }[];
     if (!devices.length) return 0;
 
     // A data-only message: the app (expo-notifications) shows it itself, so it gets the channel's
@@ -68,32 +76,48 @@ export async function sendPush(message: PushMessage): Promise<number> {
     const channel = message.channel || 'attention';
     // Kept in app_alerts; the kinds Ahmed marked urgent stay pinned and pop up in the app until Seen.
     const { logAlert } = await import('./urgent-alerts');
-    const logged = await logAlert({ kind: channel, title: message.title, body: message.body, data: message.data }).catch(() => ({ id: null, urgent: false }));
-    const payload = { ...(message.data || {}), ...(logged.id ? { alertId: logged.id } : {}), ...(logged.urgent ? { urgent: '1' } : {}) };
+    const logged = await logAlert({ kind: channel, title: message.title, body: message.body, data: message.data }).catch(() => ({ id: null, urgent: false, alarm: false }));
+    const payload = {
+      ...(message.data || {}),
+      ...(logged.id ? { alertId: logged.id } : {}),
+      ...(logged.urgent ? { urgent: '1' } : {}),
+      // A full-screen alarm: sent without a title so expo-notifications leaves it to the app (lib/alarm.ts).
+      ...(logged.alarm ? { alarm: '1', alarmTitle: message.title.slice(0, 200), alarmBody: message.body.slice(0, 1000) } : {}),
+    };
     // Urgent ones without their own buttons get ✅ Seen / Open.
     const category = message.category || (logged.urgent ? 'urgent' : undefined);
-    const result = await getMessaging(app).sendEachForMulticast({
-      tokens: devices.map((d) => d.push_token),
-      data: {
-        title: message.title.slice(0, 200),
-        message: message.body.slice(0, 1000),
-        body: JSON.stringify(payload),
-        channelId: channel,
-        ...(category ? { categoryId: category } : {}),
-        ...(logged.urgent ? { sticky: 'true' } : {}),
-        threadIdentifier: channel, // groups alerts of one kind (also on the watch)
-        color: '#274290',
-      },
-      android: { priority: 'high', ttl: 24 * 3_600_000 },
-    });
+    const common = {
+      body: JSON.stringify(payload),
+      channelId: channel,
+      ...(category ? { categoryId: category } : {}),
+      ...(logged.urgent ? { sticky: 'true' } : {}),
+      threadIdentifier: channel, // groups alerts of one kind (also on the watch)
+      color: '#274290',
+    };
+    const normal = { title: message.title.slice(0, 200), message: message.body.slice(0, 1000), ...common };
+    const alarm = { alarm: '1', alarmTitle: payload.alarmTitle || '', alarmBody: payload.alarmBody || '', ...(logged.id ? { alertId: logged.id } : {}), ...common };
+    // Only app versions that can draw alarms get the alarm format; older ones get the normal (pinned) notification.
+    const groups = [
+      { devices: devices.filter((d) => !(logged.alarm && supportsAlarm(d.app_version))), data: normal },
+      { devices: devices.filter((d) => logged.alarm && supportsAlarm(d.app_version)), data: alarm },
+    ].filter((g) => g.devices.length);
 
-    // Phones that uninstalled the app (or got a new token) are dropped.
-    const gone = result.responses
-      .map((r, i) => (!r.success && r.error && GONE.has(r.error.code) ? devices[i].id : null))
-      .filter((id): id is string => Boolean(id));
-    if (gone.length) await supabase.from('app_devices').update({ push_token: null }).in('id', gone);
-    for (const r of result.responses) if (!r.success && r.error && !GONE.has(r.error.code)) console.error('Push failed:', r.error.code, r.error.message);
-    return result.successCount;
+    let sent = 0;
+    for (const g of groups) {
+      const result = await getMessaging(app).sendEachForMulticast({
+        tokens: g.devices.map((d) => d.push_token),
+        data: g.data,
+        android: { priority: 'high', ttl: 24 * 3_600_000 },
+      });
+      // Phones that uninstalled the app (or got a new token) are dropped.
+      const gone = result.responses
+        .map((r, i) => (!r.success && r.error && GONE.has(r.error.code) ? g.devices[i].id : null))
+        .filter((id): id is string => Boolean(id));
+      if (gone.length) await supabase.from('app_devices').update({ push_token: null }).in('id', gone);
+      for (const r of result.responses) if (!r.success && r.error && !GONE.has(r.error.code)) console.error('Push failed:', r.error.code, r.error.message);
+      sent += result.successCount;
+    }
+    return sent;
   } catch (error) {
     console.error('Push failed:', error);
     return 0;

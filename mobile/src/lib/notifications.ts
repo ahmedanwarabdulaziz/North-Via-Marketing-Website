@@ -5,6 +5,7 @@ import { router } from 'expo-router';
 import * as TaskManager from 'expo-task-manager';
 import { Platform } from 'react-native';
 
+import { registerAlarmEvents, showAlarm, type AlarmPush } from './alarm';
 import { api, ensureSession } from './api';
 
 // Push notifications from the website (lib/push.ts), sent through Firebase as data messages so this
@@ -44,8 +45,12 @@ export const CHANNELS: AlertChannel[] = [
 const BACKGROUND_TASK = 'anwarz-notification-actions';
 
 // Shown while the app is open too (as a banner, with its sound).
+// Alarms (no title) are drawn by lib/alarm.ts as a full-screen alarm instead.
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({ shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false }),
+  handleNotification: async (n) => {
+    const alarm = (n.request.content.data as Record<string, unknown> | undefined)?.alarm === '1' || !n.request.content.title;
+    return { shouldShowBanner: !alarm, shouldShowList: !alarm, shouldPlaySound: !alarm, shouldSetBadge: false };
+  },
 });
 
 /** The data the website puts in `body`: what the alert is about. */
@@ -172,6 +177,12 @@ async function runButton(action: string, data: AlertData, text?: string) {
 // Button presses while the app is closed arrive here (Android starts the app's JS in the background).
 TaskManager.defineTask<Notifications.NotificationResponse>(BACKGROUND_TASK, async ({ data, error }) => {
   if (error || !data) return;
+  // An incoming alarm push while the app is in the background or closed: ring it full screen.
+  if (!('actionIdentifier' in (data as object))) {
+    const push = (data as unknown as { data?: AlarmPush }).data;
+    if (push?.alarm === '1') await showAlarm(push).catch((e) => console.warn('Alarm failed', e));
+    return;
+  }
   const response = data as unknown as Notifications.NotificationResponse;
   if (!response.actionIdentifier || response.actionIdentifier === Notifications.DEFAULT_ACTION_IDENTIFIER) return;
   try {
@@ -286,6 +297,13 @@ export async function registerForPush(): Promise<'on' | 'denied' | 'unavailable'
 
 /** Taps (and buttons pressed while the app is open). Returns a cleanup function. */
 export function listenForTaps() {
+  // An alarm push while the app is open.
+  const received = Notifications.addNotificationReceivedListener((n) => {
+    const raw = n.request.content.data as Record<string, unknown> | undefined;
+    if (raw?.alarm !== '1') return;
+    const push = Object.fromEntries(Object.entries(raw).map(([k, v]) => [k, typeof v === 'string' ? v : JSON.stringify(v)])) as AlarmPush;
+    void showAlarm(push).catch(() => undefined);
+  });
   const sub = Notifications.addNotificationResponseReceivedListener((response) => {
     const data = dataOf(response.notification);
     if (response.actionIdentifier === Notifications.DEFAULT_ACTION_IDENTIFIER || response.actionIdentifier === 'open') {
@@ -295,5 +313,11 @@ export function listenForTaps() {
     }
     else void runButton(response.actionIdentifier, data, response.userText).catch(() => undefined);
   });
-  return () => sub.remove();
+  return () => {
+    sub.remove();
+    received.remove();
+  };
 }
+
+// Taps and ✅ Seen on a full-screen alarm (also while the app is closed).
+registerAlarmEvents((data) => openAlert(data));

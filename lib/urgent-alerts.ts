@@ -21,31 +21,55 @@ export const ALERT_KINDS: { key: PushChannel; label: string }[] = [
 ];
 
 const DEFAULT_URGENT: PushChannel[] = ['site_down', 'ads_stopped', 'attention'];
+// Full-screen alarm (lights up the locked screen, rings until Seen): only for some urgent kinds.
+const DEFAULT_ALARM: PushChannel[] = ['site_down'];
 
-let cache: { at: number; kinds: PushChannel[] } | null = null;
-
-export async function urgentKinds(): Promise<PushChannel[]> {
-  if (cache && Date.now() - cache.at < 30_000) return cache.kinds;
-  const stored = await getSetting<{ kinds?: PushChannel[] }>(SETTING).catch(() => null);
-  const kinds = Array.isArray(stored?.kinds) ? stored!.kinds!.filter((k) => ALERT_KINDS.some((a) => a.key === k)) : DEFAULT_URGENT;
-  cache = { at: Date.now(), kinds };
-  return kinds;
+interface Stored {
+  kinds?: PushChannel[];
+  alarm?: PushChannel[];
 }
 
-export async function setUrgentKinds(kinds: string[]) {
-  const clean = ALERT_KINDS.map((a) => a.key).filter((k) => kinds.includes(k));
-  await setSetting(SETTING, { kinds: clean, updatedAt: new Date().toISOString() });
-  cache = { at: Date.now(), kinds: clean };
+let cache: { at: number; kinds: PushChannel[]; alarm: PushChannel[] } | null = null;
+const valid = (list: unknown): PushChannel[] | null =>
+  Array.isArray(list) ? ALERT_KINDS.map((a) => a.key).filter((k) => (list as string[]).includes(k)) : null;
+
+async function load() {
+  if (cache && Date.now() - cache.at < 30_000) return cache;
+  const stored = await getSetting<Stored>(SETTING).catch(() => null);
+  const kinds = valid(stored?.kinds) ?? DEFAULT_URGENT;
+  const alarm = (valid(stored?.alarm) ?? DEFAULT_ALARM).filter((k) => kinds.includes(k));
+  cache = { at: Date.now(), kinds, alarm };
+  return cache;
+}
+
+export async function urgentKinds(): Promise<PushChannel[]> {
+  return (await load()).kinds;
+}
+
+export async function alarmKinds(): Promise<PushChannel[]> {
+  return (await load()).alarm;
+}
+
+/** Saves which kinds are urgent and which of those ring as a full-screen alarm (an alarm is always urgent). */
+export async function setUrgentKinds(kinds: string[], alarm?: string[]) {
+  const current = await load();
+  const nextAlarm = alarm ? valid(alarm)! : current.alarm;
+  const nextKinds = [...new Set([...valid(kinds)!, ...(alarm ? nextAlarm : [])])];
+  const clean = { kinds: ALERT_KINDS.map((a) => a.key).filter((k) => nextKinds.includes(k)), alarm: nextAlarm.filter((k) => nextKinds.includes(k)) };
+  await setSetting(SETTING, { ...clean, updatedAt: new Date().toISOString() });
+  cache = { at: Date.now(), ...clean };
   return clean;
 }
 
 /** Keeps a copy of an alert; returns its id and whether it is urgent. Never throws. */
 export async function logAlert(alert: { kind: PushChannel; title: string; body: string; data?: Record<string, string> }) {
-  const urgent = (await urgentKinds().catch(() => DEFAULT_URGENT)).includes(alert.kind);
+  const settings = await load().catch(() => ({ kinds: DEFAULT_URGENT, alarm: DEFAULT_ALARM }));
+  const urgent = settings.kinds.includes(alert.kind);
+  const alarm = urgent && settings.alarm.includes(alert.kind);
   const id = crypto.randomBytes(6).toString('base64url');
   const { error } = await supabase.from('app_alerts').insert({ id, kind: alert.kind, title: alert.title.slice(0, 200), body: alert.body.slice(0, 2000), data: alert.data || {}, urgent });
   if (error) console.error('Alert log failed:', error.message);
-  return { id: error ? null : id, urgent };
+  return { id: error ? null : id, urgent, alarm };
 }
 
 export interface StoredAlert {

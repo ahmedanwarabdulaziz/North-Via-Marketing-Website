@@ -1,24 +1,28 @@
 import { AppError, appRoute, jsonBody } from '@/lib/app-auth';
-import { ALERT_KINDS, markSeen, setUrgentKinds, unseenUrgent, urgentKinds } from '@/lib/urgent-alerts';
+import { ALERT_KINDS, alarmKinds, markSeen, setUrgentKinds, unseenUrgent, urgentKinds } from '@/lib/urgent-alerts';
 
 export const dynamic = 'force-dynamic';
 
 /** Which kinds are urgent, and the urgent alerts not seen yet (for the pop-up when the app opens). */
 export const GET = appRoute(async () => {
-  const [kinds, unseen] = await Promise.all([urgentKinds(), unseenUrgent()]);
+  const [kinds, alarm, unseen] = await Promise.all([urgentKinds(), alarmKinds(), unseenUrgent()]);
   return {
-    kinds: ALERT_KINDS.map((k) => ({ ...k, urgent: kinds.includes(k.key) })),
+    kinds: ALERT_KINDS.map((k) => ({ ...k, urgent: kinds.includes(k.key), alarm: alarm.includes(k.key) })),
     unseen: unseen.map((a) => ({ id: a.id, kind: a.kind, title: a.title, body: a.body, data: a.data || {}, createdAt: a.created_at })),
   };
 });
 
 /**
- * { kinds: string[] }  which alert kinds are urgent
+ * { kinds: string[], alarm?: string[] }  which alert kinds are urgent, and which ring as a full-screen alarm
  * { seen: string[] | 'all' }  mark urgent alerts seen
  */
 export const POST = appRoute(async (request) => {
-  const body = await jsonBody<{ kinds?: unknown; seen?: unknown }>(request);
-  if (Array.isArray(body.kinds)) return { kinds: await setUrgentKinds(body.kinds.filter((k): k is string => typeof k === 'string')) };
+  const body = await jsonBody<{ kinds?: unknown; alarm?: unknown; seen?: unknown }>(request);
+  const strings = (v: unknown) => (Array.isArray(v) ? v.filter((k): k is string => typeof k === 'string') : undefined);
+  if (Array.isArray(body.kinds)) {
+    const saved = await setUrgentKinds(strings(body.kinds)!, strings(body.alarm));
+    return { kinds: saved.kinds, alarm: saved.alarm };
+  }
   if (body.seen === 'all') {
     await markSeen('all');
     return { ok: true };
