@@ -531,7 +531,9 @@ function toHistory(messages: AppChatMessage[]): ChatMessage[] {
 
 export async function askFromApp(question: string, heard: boolean) {
   let session = await openSession();
-  const chosen = CHAT_MODELS.find((m) => m.model === session.model) || (await autoModel());
+  // Every message starts with the best model that has quota (Claude Haiku when OpenRouter is on), so a
+  // conversation doesn't stay on a fallback after one busy moment; askAssistant falls back if it fails.
+  const chosen = (await autoModel()) || CHAT_MODELS.find((m) => m.model === session.model) || null;
   if (!chosen) throw new Error('No AI model has free quota left right now. Try again later.');
 
   const recentAsks = (session.messages || []).filter((m) => m.role === 'user').slice(-2).map((m) => m.content);
