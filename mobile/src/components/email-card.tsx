@@ -25,7 +25,22 @@ const STATUS: Record<AppEmail['status'], { text: string; tone: 'brand' | 'danger
   skipped: { text: 'Skipped', tone: 'muted' },
 };
 
-export function EmailCard({ email: initial }: { email: AppEmail }) {
+/**
+ * `selecting`: the Inbox is in multi-select mode (started by holding a card), so a tap
+ * ticks the card instead of opening it.
+ */
+export function EmailCard({
+  email: initial,
+  selecting,
+  selected,
+  onSelect,
+}: {
+  email: AppEmail;
+  selecting?: boolean;
+  selected?: boolean;
+  onSelect?: (id: string) => void;
+}) {
+  const p = usePalette();
   const [email, setEmail] = useState(initial);
   const [open, setOpen] = useState(false);
   const s = STATUS[email.status];
@@ -33,8 +48,13 @@ export function EmailCard({ email: initial }: { email: AppEmail }) {
 
   return (
     <>
-      <Card onPress={() => setOpen(true)} tone={email.urgent && !handled ? 'danger' : undefined} style={{ paddingVertical: space.md }}>
+      <Card
+        onPress={() => (selecting ? onSelect?.(email.id) : setOpen(true))}
+        onLongPress={onSelect ? () => onSelect(email.id) : undefined}
+        tone={selected ? 'brand' : email.urgent && !handled ? 'danger' : undefined}
+        style={{ paddingVertical: space.md, ...(selected ? { backgroundColor: p.brandSoft } : {}) }}>
         <Row>
+          {selecting ? <Tick on={Boolean(selected)} /> : null}
           <T variant="heading" numberOfLines={1} style={{ flex: 1 }}>
             {email.fromName || email.fromEmail || 'Unknown sender'}
           </T>
@@ -56,6 +76,25 @@ export function EmailCard({ email: initial }: { email: AppEmail }) {
       </Card>
       <EmailSheet email={email} visible={open} onClose={() => setOpen(false)} onChange={setEmail} />
     </>
+  );
+}
+
+function Tick({ on }: { on: boolean }) {
+  const p = usePalette();
+  return (
+    <View
+      style={{
+        width: 22,
+        height: 22,
+        borderRadius: 11,
+        borderWidth: 2,
+        borderColor: on ? p.brand : p.muted,
+        backgroundColor: on ? p.brand : 'transparent',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}>
+      {on ? <T color={p.onBrand} style={{ fontSize: 13, fontWeight: '900', lineHeight: 16 }}>✓</T> : null}
+    </View>
   );
 }
 

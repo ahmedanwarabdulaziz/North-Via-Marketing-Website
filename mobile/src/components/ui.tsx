@@ -74,7 +74,19 @@ export function Screen({
   );
 }
 
-export function Card({ children, style, onPress, tone }: { children: ReactNode; style?: ViewStyle; onPress?: () => void; tone?: Tone }) {
+export function Card({
+  children,
+  style,
+  onPress,
+  onLongPress,
+  tone,
+}: {
+  children: ReactNode;
+  style?: ViewStyle;
+  onPress?: () => void;
+  onLongPress?: () => void;
+  tone?: Tone;
+}) {
   const p = usePalette();
   const border = tone ? toneColors(p, tone).fg : p.border;
   const base: ViewStyle = {
@@ -87,7 +99,7 @@ export function Card({ children, style, onPress, tone }: { children: ReactNode; 
   };
   if (!onPress) return <View style={[base, style]}>{children}</View>;
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [base, style, pressed && { opacity: 0.7 }]}>
+    <Pressable onPress={onPress} onLongPress={onLongPress} delayLongPress={350} style={({ pressed }) => [base, style, pressed && { opacity: 0.7 }]}>
       {children}
     </Pressable>
   );
