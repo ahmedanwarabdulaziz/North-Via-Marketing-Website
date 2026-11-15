@@ -1,8 +1,9 @@
 import { listClientProfiles } from './admin-ops';
 import { formatWhen, isOverdue, type Task } from './tasks';
+import { reviewShortRef } from './review-engine';
 import { whatsAppShareLink } from './whatsapp-share';
 import { isNoReply, type EmailAccount, type EmailItem } from './email/inbox';
-import type { ClientProfile, Website } from '@/types/database';
+import type { ClientProfile, GbpStoredReview, Website } from '@/types/database';
 
 // What the Anwarz mobile app receives: plain JSON shapes built from the same data the
 // Telegram bot uses. Secrets (refresh tokens, API tokens) never leave the server.
@@ -89,5 +90,27 @@ export function appClient(client: ClientProfile) {
       tiktok: client.tiktokLink || null,
       google: client.googleLink || null,
     },
+  };
+}
+
+/** A Google review with its AI draft. The WhatsApp link shares it with the client (same as Telegram). */
+export function appReview(review: GbpStoredReview & { id: string }, names: ClientNames) {
+  const ref = review.shortRef || reviewShortRef(review.id);
+  return {
+    id: review.id,
+    clientId: review.clientId,
+    clientName: names.get(review.clientId) || null,
+    location: review.locationTitle,
+    reviewer: review.reviewerName || 'Anonymous',
+    rating: review.rating,
+    comment: review.comment || '',
+    createdAt: review.createTime,
+    status: review.status,
+    waiting: review.status === 'draft_ready' || review.status === 'needs_draft',
+    draft: review.draft || null,
+    draftError: review.draftError || null,
+    reply: review.postedReply || review.existingReply || null,
+    postedAt: review.postedAt || null,
+    whatsappUrl: whatsAppShareLink('r', ref),
   };
 }

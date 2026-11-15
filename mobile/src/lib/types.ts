@@ -76,6 +76,7 @@ export interface HomeData {
     today: AppTask[];
   };
   emails: { waiting: number; urgent: number; drafts: number; latest: AppEmail[] };
+  reviews: { waiting: number; bad: number } | null;
   websites: { total: number; down: AppWebsite[]; sslSoon: AppWebsite[] } | null;
 }
 
@@ -119,4 +120,22 @@ export interface AddTaskResult {
 export interface Audio {
   data: string; // base64
   mimeType: string;
+}
+
+export interface AppReview {
+  id: string;
+  clientId: string;
+  clientName: string | null;
+  location: string;
+  reviewer: string;
+  rating: number;
+  comment: string;
+  createdAt: string;
+  status: 'draft_ready' | 'needs_draft' | 'posted' | 'replied' | 'skipped';
+  waiting: boolean;
+  draft: string | null;
+  draftError: string | null;
+  reply: string | null;
+  postedAt: string | null;
+  whatsappUrl: string;
 }

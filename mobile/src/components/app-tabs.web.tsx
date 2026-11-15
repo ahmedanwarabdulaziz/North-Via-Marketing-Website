@@ -8,8 +8,8 @@ const TABS = [
   { name: 'index', href: '/', label: 'Home' },
   { name: 'tasks', href: '/tasks', label: 'Tasks' },
   { name: 'inbox', href: '/inbox', label: 'Inbox' },
+  { name: 'reviews', href: '/reviews', label: 'Reviews' },
   { name: 'clients', href: '/clients', label: 'Clients' },
-  { name: 'more', href: '/more', label: 'More' },
 ] as const;
 
 function TabButton({ children, isFocused, ...props }: TabTriggerSlotProps) {

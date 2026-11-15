@@ -19,13 +19,13 @@ export default function AppTabs() {
         <NativeTabs.Trigger.Label>Inbox</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon sf="envelope.fill" md="mail" />
       </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="reviews">
+        <NativeTabs.Trigger.Label>Reviews</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon sf="star.fill" md="star" />
+      </NativeTabs.Trigger>
       <NativeTabs.Trigger name="clients">
         <NativeTabs.Trigger.Label>Clients</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon sf="person.2.fill" md="groups" />
-      </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="more">
-        <NativeTabs.Trigger.Label>More</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon sf="ellipsis.circle" md="menu" />
       </NativeTabs.Trigger>
     </NativeTabs>
   );

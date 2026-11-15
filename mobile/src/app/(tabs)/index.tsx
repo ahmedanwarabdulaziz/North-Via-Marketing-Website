@@ -23,7 +23,12 @@ export default function Home() {
       subtitle="Here’s what needs you today"
       refreshing={refreshing}
       onRefresh={refresh}
-      right={<Button title="＋ Task" small onPress={() => router.push('/task/new')} />}>
+      right={
+        <Row>
+          <Button title="＋ Task" small onPress={() => router.push('/task/new')} />
+          <Button title="⚙️" small kind="soft" onPress={() => router.push('/more')} />
+        </Row>
+      }>
       {loading && !data ? <Loading /> : null}
       {error && !data ? <ErrorBox message={error} onRetry={refresh} /> : null}
       {data ? (
@@ -32,6 +37,12 @@ export default function Home() {
             <Stat label="Overdue" value={data.tasks.counts.overdue} tone={data.tasks.counts.overdue ? 'danger' : 'ok'} onPress={() => router.push('/tasks')} />
             <Stat label="Due today" value={data.tasks.counts.today} onPress={() => router.push('/tasks')} />
             <Stat label="Emails waiting" value={data.emails.waiting} tone={data.emails.urgent ? 'warn' : 'brand'} onPress={() => router.push('/inbox')} />
+            <Stat
+              label="Reviews waiting"
+              value={data.reviews ? data.reviews.waiting : '–'}
+              tone={data.reviews?.bad ? 'danger' : 'brand'}
+              onPress={() => router.push('/reviews')}
+            />
             <Stat
               label="Sites down"
               value={data.websites ? data.websites.down.length : '–'}

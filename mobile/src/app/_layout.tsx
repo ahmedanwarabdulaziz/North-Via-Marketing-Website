@@ -31,6 +31,7 @@ function RootStack() {
         <Stack.Screen name="task/new" options={{ title: 'New task', presentation: 'modal' }} />
         <Stack.Screen name="email/[id]" options={{ title: 'Email' }} />
         <Stack.Screen name="client/[id]" options={{ title: 'Client' }} />
+        <Stack.Screen name="more" options={{ title: 'More' }} />
       </Stack.Protected>
       <Stack.Protected guard={!signedIn}>
         <Stack.Screen name="login" options={{ headerShown: false }} />

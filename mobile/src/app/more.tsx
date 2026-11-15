@@ -50,7 +50,7 @@ export default function More() {
     ]);
 
   return (
-    <Screen title="More">
+    <Screen padTop={false}>
       <Section title="Admin panel">
         <T variant="small">These open the website’s admin pages. They move into the app step by step.</T>
         {PANEL_PAGES.map((page) => (
