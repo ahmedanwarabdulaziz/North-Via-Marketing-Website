@@ -19,6 +19,7 @@ const SAMPLES: Record<string, { title: string; body: string; categoryIdentifier?
   email: { title: '🚨 Email: Google Ads', body: 'Your account will be paused in 20 days unless verification is completed.' },
   review: { title: '⭐ 1 bad review to answer', body: '★☆☆☆☆ oasis grill · “The food was dry…”' },
   jl_order: { title: '🛋 New JL Comfort order · JL-1023', body: 'Jane Smith · 2 × Charlotte 20940-02 · $412.50' },
+  ads_stopped: { title: '⛔ Ads stopped: oasis grill', body: 'Google Ads · First Campaign: no spend since Nov 11 (call extension disapproved)' },
   attention: { title: '🔌 Facebook login expired: oasis grill', body: 'Reconnect it so comments and ads keep working.' },
   info: { title: '📰 Morning brief ready', body: '3 tasks today · 2 emails waiting · all sites up' },
 };

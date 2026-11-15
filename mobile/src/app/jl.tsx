@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import { JlSheet, STATUS_TONE, money, type JlKind } from '@/components/jl-sheet';
+import { JlSheet, STATUS_TONE, customerSource, money, type JlKind } from '@/components/jl-sheet';
 import { Card, Chip, ChipRow, Empty, ErrorBox, Loading, Pill, Row, Screen, Segmented, T } from '@/components/ui';
 import { ago } from '@/lib/format';
 import { usePalette } from '@/lib/theme';
@@ -100,6 +100,7 @@ export default function JlComfort() {
                 <Row wrap>
                   <Pill text={o.statusLabel} tone={STATUS_TONE[o.status] ?? 'muted'} />
                   <T style={{ fontWeight: '700' }}>{money(o.totalCents, o.currency)}</T>
+                  <Pill text={customerSource(o).label} tone={customerSource(o).tone} />
                   {o.isTest ? <Pill text="TEST" tone="muted" /> : null}
                   {o.status === 'paid' && !o.supplierEmailedAt ? <Pill text="Not sent to Charlotte" tone="danger" /> : null}
                   {o.status === 'sent_to_supplier' ? <T variant="small" color={p.muted}>Waiting for tracking</T> : null}
@@ -117,6 +118,7 @@ export default function JlComfort() {
                 </T>
                 <Row wrap>
                   <Pill text={s.statusLabel} tone={STATUS_TONE[s.status] ?? 'muted'} />
+                  {s.confirmedAt ? <Pill text="✅ Confirmed · emailed" tone="ok" /> : null}
                   <T variant="small">{`${s.address.city}, ${s.address.state}`}</T>
                 </Row>
               </Card>

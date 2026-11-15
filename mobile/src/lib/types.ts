@@ -77,6 +77,7 @@ export interface HomeData {
   };
   emails: { waiting: number; urgent: number; drafts: number; latest: AppEmail[] };
   reviews: { waiting: number; bad: number } | null;
+  adsStopped?: StoppedAd[];
   websites: { total: number; down: AppWebsite[]; sslSoon: AppWebsite[] } | null;
 }
 
@@ -224,6 +225,10 @@ export interface JlOrder {
   itemCount: number;
   items: JlOrderItem[];
   events?: JlEvent[];
+  /** Sample requests by the same customer (email or postal code) before this order. */
+  samplesBefore?: { requestNumber: string; createdAt: string; matchedBy: 'email' | 'postal code' }[];
+  /** Emails from this customer in Anwarz's inboxes before the order. */
+  emailedBefore?: { count: number; firstAt: string; inboxes: string[] } | null;
 }
 
 export interface JlSample {
@@ -245,6 +250,8 @@ export interface JlSample {
   shippedAt: string | null;
   createdAt: string;
   events?: JlEvent[];
+  /** When "Charlotte confirmed" last emailed the customer. */
+  confirmedAt?: string | null;
 }
 
 export interface JlOverview {
@@ -254,4 +261,89 @@ export interface JlOverview {
   carriers: { id: string; name: string }[];
   orderStatuses: Record<string, string>;
   sampleStatuses: Record<string, string>;
+}
+
+// Marketing: ads, followers and competitors (/api/app/marketing/*).
+export type AdsState = 'running' | 'limited' | 'stopped' | 'idle' | 'error';
+export interface AdsHealth {
+  state: AdsState;
+  reason: string;
+  since: string;
+  checkedAt: string;
+}
+export interface GoogleAdsCard {
+  currency?: string;
+  spend?: number;
+  impressions?: number;
+  clicks?: number;
+  conversions?: number;
+  ctr?: number | null;
+  costPerConversion?: number | null;
+  prev?: { spend: number; impressions: number; clicks: number; conversions: number } | null;
+  health: AdsHealth | null;
+  error: string | null;
+}
+export interface MetaAdsCard {
+  currency?: string;
+  spend?: number;
+  reach?: number;
+  impressions?: number;
+  clicks?: number;
+  linkClicks?: number;
+  ctr?: number | null;
+  prev?: { spend: number; reach: number; clicks: number; linkClicks: number } | null;
+  health: AdsHealth | null;
+  error: string | null;
+}
+export interface StoppedAd {
+  clientId: string;
+  clientName: string;
+  platform: 'google' | 'meta';
+  reason: string;
+  since: string;
+}
+export interface AdsOverview {
+  days: number;
+  clients: { clientId: string; clientName: string; google: GoogleAdsCard | null; meta: MetaAdsCard | null }[];
+  stopped: StoppedAd[];
+  checkedAt: string | null;
+}
+export interface FollowerStat {
+  followers?: number;
+  day?: number;
+  week?: number;
+}
+export interface SocialClient {
+  clientId: string;
+  clientName: string;
+  pages: { name: string; instagram: string | null; error: string | null }[];
+  facebook: FollowerStat | null;
+  instagram: FollowerStat | null;
+  waitingComments: number;
+}
+export interface CompetitorRow {
+  id: string;
+  name: string;
+  website: string | null;
+  instagram: string | null;
+  notes: string | null;
+  status: {
+    ig: { checkedAt: string; followers?: number; error?: string } | null;
+    web: { checkedAt: string; error?: string } | null;
+    google: { checkedAt: string; rating?: number; count?: number; error?: string } | null;
+  };
+  instagramGrowth: { followers: number; gained7: number | null } | null;
+  googleGrowth: { rating?: number; count?: number; gained7: number | null } | null;
+  adsUrl: string;
+}
+export interface CompetitorFinding {
+  id: string;
+  at: string;
+  competitorName: string;
+  source: 'instagram' | 'website' | 'google';
+  kind: string;
+  title: string;
+  detail: string;
+  idea: string | null;
+  url: string | null;
 }

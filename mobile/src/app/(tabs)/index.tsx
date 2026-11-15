@@ -2,6 +2,7 @@ import { router } from 'expo-router';
 import { Pressable, Text, View } from 'react-native';
 
 import { EmailCard } from '@/components/email-card';
+import { StoppedAdsBanner } from '@/components/marketing';
 import { WebsiteRow } from '@/components/rows';
 import { TaskCard } from '@/components/task-card';
 import { Button, Card, Chip, ChipRow, Empty, ErrorBox, Loading, Row, Screen, Section, Stat, T } from '@/components/ui';
@@ -27,12 +28,13 @@ export default function Home() {
       subtitle="Here’s what needs you today"
       refreshing={refreshing}
       onRefresh={refresh}>
-      {/* Pages that aren't in the bottom bar. */}
-      <Row style={{ justifyContent: 'space-between' }}>
+      {/* Pages that aren't in the bottom bar: two rows of three. */}
+      <Row wrap style={{ rowGap: 14 }}>
         <Shortcut icon="＋" label="Task" primary onPress={() => router.push('/task/new')} />
+        <Shortcut icon="📈" label="Marketing" onPress={() => router.push('/marketing')} />
+        <Shortcut icon="🛋" label="JL Comfort" onPress={() => router.push('/jl')} />
         <Shortcut icon="👥" label="Clients" onPress={() => router.push('/clients')} />
         <Shortcut icon="🔗" label="Links" onPress={() => router.push('/links')} />
-        <Shortcut icon="🛋" label="JL Comfort" onPress={() => router.push('/jl')} />
         <Shortcut icon="⚙️" label="More" onPress={() => router.push('/more')} />
       </Row>
       {pinned.length ? (
@@ -46,6 +48,7 @@ export default function Home() {
       {error && !data ? <ErrorBox message={error} onRetry={refresh} /> : null}
       {data ? (
         <>
+          <StoppedAdsBanner stopped={data.adsStopped ?? []} onPress={() => router.push('/marketing')} />
           <Row wrap gap={10}>
             <Stat label="Overdue" value={data.tasks.counts.overdue} tone={data.tasks.counts.overdue ? 'danger' : 'ok'} onPress={() => router.push('/tasks')} />
             <Stat label="Due today" value={data.tasks.counts.today} onPress={() => router.push('/tasks')} />
@@ -111,7 +114,7 @@ export default function Home() {
 function Shortcut({ icon, label, onPress, primary }: { icon: string; label: string; onPress: () => void; primary?: boolean }) {
   const p = usePalette();
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => ({ alignItems: 'center', gap: 6, flex: 1, opacity: pressed ? 0.6 : 1 })}>
+    <Pressable onPress={onPress} style={({ pressed }) => ({ alignItems: 'center', gap: 6, width: '33.33%', opacity: pressed ? 0.6 : 1 })}>
       <View
         style={{
           width: 56,

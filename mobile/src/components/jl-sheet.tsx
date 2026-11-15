@@ -150,6 +150,13 @@ export function JlSheet({
         </Row>
         <T>{name}</T>
         <T variant="small">{`${dateTime(record.createdAt)}${order?.isTest ? ' · TEST order' : ''}`}</T>
+        {order ? (
+          <Row wrap>
+            <Pill text={customerSource(order).label} tone={customerSource(order).tone} />
+          </Row>
+        ) : null}
+        {order ? <T variant="small">{customerSource(order).detail}</T> : null}
+        {sample?.confirmedAt ? <Pill text={`✅ Confirmed · customer emailed ${dateTime(sample.confirmedAt)}`} tone="ok" /> : null}
       </View>
 
       {note ? <Note text={note.text} tone={note.tone} /> : null}
@@ -238,12 +245,20 @@ export function JlSheet({
           {sample && !closed ? (
             <Tile
               icon="✅"
-              label="Charlotte confirmed (email the customer)"
+              label={sample.confirmedAt ? `Confirmed · emailed ${dateTime(sample.confirmedAt)} (send again?)` : 'Charlotte confirmed (email the customer)'}
               tone="ok"
               wide
               busy={busy === 'confirmed'}
               onPress={() =>
-                confirmSend('confirmed', 'Charlotte confirmed?', `${name} gets the “your samples are confirmed” email.`, { action: 'supplier_confirmed' }, '✅ Customer emailed: samples confirmed')
+                sample.confirmedAt
+                  ? confirmSend(
+                      'confirmed',
+                      'Already sent',
+                      `${name} already got the “your samples are confirmed” email on ${dateTime(sample.confirmedAt)}. Send it again?`,
+                      { action: 'supplier_confirmed' },
+                      '✅ Sent again'
+                    )
+                  : confirmSend('confirmed', 'Charlotte confirmed?', `${name} gets the “your samples are confirmed” email.`, { action: 'supplier_confirmed' }, '✅ Customer emailed: samples confirmed')
               }
             />
           ) : null}
@@ -340,4 +355,18 @@ export function JlSheet({
       ) : null}
     </BottomSheet>
   );
+}
+
+/** Where an order's customer came from: samples first, emailed first, both, or neither. */
+export function customerSource(order: JlOrder): { label: string; tone: 'ok' | 'brand' | 'muted'; detail: string } {
+  const samples = order.samplesBefore ?? [];
+  const emailed = order.emailedBefore;
+  const sampleText = samples.length
+    ? `Requested samples first: ${samples.map((s) => s.requestNumber).join(', ')} (matched by ${samples[0].matchedBy})`
+    : '';
+  const emailText = emailed ? `Emailed first: ${emailed.count} email${emailed.count === 1 ? '' : 's'} since ${dateTime(emailed.firstAt)} (${emailed.inboxes.join(', ')})` : '';
+  if (samples.length && emailed) return { label: '🧵✉️ Samples + emailed first', tone: 'ok', detail: `${sampleText}\n${emailText}` };
+  if (samples.length) return { label: '🧵 Samples first', tone: 'ok', detail: sampleText };
+  if (emailed) return { label: '✉️ Emailed first', tone: 'brand', detail: emailText };
+  return { label: '🆕 Direct', tone: 'muted', detail: 'No sample request or email from this customer before the order.' };
 }

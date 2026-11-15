@@ -15,7 +15,7 @@ const APP_NAME = 'anwarz-push';
  * The app's notification channels (mobile/src/lib/notifications.ts CHANNELS): each has its own sound,
  * pop-up and vibration on the phone, changeable there per channel.
  */
-export type PushChannel = 'site_down' | 'task' | 'email' | 'review' | 'jl_order' | 'attention' | 'info';
+export type PushChannel = 'site_down' | 'task' | 'email' | 'review' | 'jl_order' | 'ads_stopped' | 'attention' | 'info';
 
 export interface PushMessage {
   title: string;

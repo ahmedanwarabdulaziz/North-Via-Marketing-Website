@@ -30,6 +30,7 @@ export const CHANNELS: AlertChannel[] = [
   { id: 'email', name: '🚨 Urgent email', description: 'An email the AI marked urgent.', sound: 'ding.wav', soundName: 'Double ding', importance: AndroidImportance.HIGH, vibration: [0, 200, 100, 200] },
   { id: 'review', name: '⭐ Bad reviews', description: 'A new 1★ or 2★ Google review to answer.', sound: 'alert.wav', soundName: 'Alert', importance: AndroidImportance.HIGH, vibration: [0, 400, 150, 400] },
   { id: 'jl_order', name: '🛋 JL Comfort orders', description: 'A new JL Comfort order or sample request.', sound: 'coins.wav', soundName: 'Coins', importance: AndroidImportance.HIGH, vibration: [0, 150, 80, 150, 80, 150] },
+  { id: 'ads_stopped', name: '📉 Ads stopped', description: 'A client’s Google or Meta ads stopped (paused, rejected, billing, no spend).', sound: 'drop.wav', soundName: 'Drop', importance: AndroidImportance.MAX, vibration: [0, 500, 150, 300, 150, 150] },
   { id: 'attention', name: '🔌 Needs attention', description: 'Logins to reconnect, AI quota, ads dropping.', sound: 'knock.wav', soundName: 'Knock', importance: AndroidImportance.HIGH, vibration: [0, 200] },
   { id: 'info', name: '📰 Info', description: 'Digests and good news: in the notification panel, no pop-up or sound.', sound: null, soundName: 'Silent', importance: AndroidImportance.LOW, vibration: [0] },
 ];
@@ -43,7 +44,7 @@ Notifications.setNotificationHandler({
 
 /** The data the website puts in `body`: what the alert is about. */
 interface AlertData {
-  type?: string; // task | email | review | site | jl_order | jl_sample | test
+  type?: string; // task | email | review | site | jl_order | jl_sample | ads | test
   id?: string;
 }
 
@@ -86,6 +87,8 @@ export function openAlert(data: AlertData) {
     case 'jl_order':
     case 'jl_sample':
       return router.push('/jl');
+    case 'ads':
+      return router.push('/marketing');
     default:
       return router.push('/');
   }

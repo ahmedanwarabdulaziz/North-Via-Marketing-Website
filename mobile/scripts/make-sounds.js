@@ -91,3 +91,6 @@ writeWav('coins.wav', mix([[0, tone(1975.5, 0.35, { decay: 9, vol: 0.45 })], [0.
 
 // 🔌 Needs attention: soft low double knock.
 writeWav('knock.wav', mix([[0, tone(330, 0.25, { decay: 18, harmonics: [1, 0.6, 0.3, 0.2], vol: 0.8 })], [0.16, tone(330, 0.3, { decay: 16, harmonics: [1, 0.6, 0.3, 0.2], vol: 0.8 })], [0.45, silence(0.05)]]));
+
+// 📉 Ads stopped: falling three-note "drop" (something went down), distinct from the site siren.
+writeWav('drop.wav', mix([[0, tone(1318.5, 0.5, { decay: 4, harmonics: [1, 0.45, 0.2] })], [0.2, tone(987.8, 0.5, { decay: 4, harmonics: [1, 0.45, 0.2] })], [0.4, tone(659.3, 1.1, { decay: 2.6, harmonics: [1, 0.45, 0.2] })]]));

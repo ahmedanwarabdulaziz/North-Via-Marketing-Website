@@ -206,3 +206,48 @@ export async function fetchClientMetaAds(clientId: string, start: string, end: s
 
 /** "ACTIVE" → "Active", "CAMPAIGN_PAUSED" → "Campaign paused". */
 export const adStatusLabel = (status: string) => (status ? status.charAt(0) + status.slice(1).toLowerCase().replace(/_/g, ' ') : '');
+
+// ---------- Health (the hourly stopped-ads watch, lib/ads-watch.ts) ----------
+
+/** Meta's ad account_status codes that mean ads can't run, with a readable reason. */
+const ACCOUNT_PROBLEMS: Record<number, string> = {
+  2: 'ad account disabled',
+  3: 'unpaid balance (account unsettled)',
+  7: 'account under risk review',
+  8: 'payment pending settlement',
+  9: 'payment grace period',
+  100: 'account closing',
+  101: 'account closed',
+};
+
+export interface MetaAccountHealth {
+  accountId: string;
+  accountName: string;
+  problem: string | null; // set when the whole account can't run ads
+  /** Ads that spent in the last 7 days, with their status now. */
+  ads: { id: string; name: string; status: string; spend7: number }[];
+}
+
+/** Each of a client's ad accounts: account status and the ads that spent this past week. */
+export async function clientMetaAdsHealth(clientId: string): Promise<MetaAccountHealth[]> {
+  const accounts = await clientMetaAdAccounts(clientId);
+  const result: MetaAccountHealth[] = [];
+  for (const a of accounts) {
+    const token = await tokenFor(a.connectionId);
+    const [account, insights, ads] = await Promise.all([
+      graph<{ account_status?: number }>(`act_${a.id}`, { token, params: { fields: 'account_status' } }),
+      graph<{ data?: InsightRow[] }>(`act_${a.id}/insights`, { token, params: { level: 'ad', fields: 'ad_id,ad_name,spend', date_preset: 'last_7d', limit: 200 } }),
+      graph<{ data?: Array<{ id: string; effective_status?: string }> }>(`act_${a.id}/ads`, { token, params: { fields: 'effective_status', limit: 300 } }).catch(() => ({ data: [] as Array<{ id: string; effective_status?: string }> })),
+    ]);
+    const status = new Map((ads.data || []).map((x) => [x.id, x.effective_status || '']));
+    result.push({
+      accountId: a.id,
+      accountName: a.name,
+      problem: account.account_status !== undefined ? ACCOUNT_PROBLEMS[account.account_status] || null : null,
+      ads: (insights.data || [])
+        .filter((r) => num(r.spend) > 0)
+        .map((r) => ({ id: r.ad_id || '', name: r.ad_name || 'Ad', status: status.get(r.ad_id || '') || 'UNKNOWN', spend7: num(r.spend) })),
+    });
+  }
+  return result;
+}

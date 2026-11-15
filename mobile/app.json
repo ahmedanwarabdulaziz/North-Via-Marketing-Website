@@ -70,7 +70,8 @@
             "./assets/sounds/ding.wav",
             "./assets/sounds/alert.wav",
             "./assets/sounds/coins.wav",
-            "./assets/sounds/knock.wav"
+            "./assets/sounds/knock.wav",
+            "./assets/sounds/drop.wav"
           ]
         }
       ]

@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase';
 import { listDocs } from '@/lib/data/store';
 import { GBP_REVIEWS } from '@/lib/review-engine';
 import type { GbpStoredReview } from '@/types/database';
+import { stoppedAds } from '@/lib/ads-watch';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
@@ -29,6 +30,7 @@ export const GET = appRoute(async () => {
   const reviews = await listDocs<GbpStoredReview>(GBP_REVIEWS, { where: { status: ['draft_ready', 'needs_draft'] } })
     .then((rows) => rows.filter((r) => r.backlog !== 'waiting' && r.backlog !== 'dismissed'))
     .catch(() => null);
+  const ads = await stoppedAds().catch(() => null);
   if (emails.error) throw new Error(emails.error.message);
   const groups = groupTasks(open, now);
   const byAccount = new Map(accounts.map((a) => [a.id, a]));
@@ -53,6 +55,8 @@ export const GET = appRoute(async () => {
       drafts: waiting.filter((e) => e.status === 'draft').length,
       latest: waiting.slice(0, 5).map((e) => appEmail(e, byAccount.get(e.account_id))),
     },
+    // Stopped Google / Meta ads (hourly watch): the red banner on Home.
+    adsStopped: ads?.stopped ?? [],
     reviews: reviews ? { waiting: reviews.length, bad: reviews.filter((r) => r.rating > 0 && r.rating <= 2).length } : null,
     websites: sites
       ? {

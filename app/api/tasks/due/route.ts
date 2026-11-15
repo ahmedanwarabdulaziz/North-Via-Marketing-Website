@@ -5,6 +5,7 @@ import { runCriticalChecks } from '@/lib/critical-alerts';
 import { checkInboxes } from '@/lib/email/inbox';
 import { summarizeFinishedChats } from '@/lib/chat-history';
 import { runCompetitorWatch, sendWeeklyCompetitorReports } from '@/lib/competitor-telegram';
+import { runAdsWatch } from '@/lib/ads-watch';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -18,7 +19,7 @@ export const maxDuration = 60;
 async function run(request: Request) {
   if (!isAutomationRequest(request)) return unauthorized();
   const now = new Date();
-  const [reminders, digest, weekly, websites, critical, email, chats, competitors] = await Promise.all([
+  const [reminders, digest, weekly, websites, critical, email, chats, competitors, ads] = await Promise.all([
     sendDueReminders(now).catch((error) => {
       console.error('Task reminders failed:', error);
       return { error: error instanceof Error ? error.message : 'Task reminders failed' };
@@ -54,9 +55,14 @@ async function run(request: Request) {
       console.error('Competitor watch failed:', error);
       return { error: error instanceof Error ? error.message : 'Competitor watch failed' };
     }),
+    // Stopped Google / Meta ads: checked hourly, alerts (ring + app push) only on a change.
+    runAdsWatch().catch((error) => {
+      console.error('Ads watch failed:', error);
+      return { error: error instanceof Error ? error.message : 'Ads watch failed' };
+    }),
   ]);
   const failed = 'error' in reminders && 'error' in digest;
-  return Response.json({ reminders, digest, weekly, websites, critical, email, chats, competitors }, { status: failed ? 500 : 200 });
+  return Response.json({ reminders, digest, weekly, websites, critical, email, chats, competitors, ads }, { status: failed ? 500 : 200 });
 }
 
 export const POST = run;
