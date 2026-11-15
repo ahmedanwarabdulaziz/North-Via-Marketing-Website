@@ -57,6 +57,7 @@ export function ReviewCard({ review: initial }: { review: AppReview }) {
             Rating only, no written review
           </T>
         )}
+        {review.draft || review.reply ? <ReplyPreview text={(review.waiting ? review.draft : review.reply) || ''} label={review.waiting ? 'AI reply' : 'Reply'} /> : null}
         <Row wrap>
           {review.clientName ? <Pill text={review.clientName} /> : null}
           <Pill text={s.text} tone={s.tone} />
@@ -64,6 +65,21 @@ export function ReviewCard({ review: initial }: { review: AppReview }) {
       </Card>
       <ReviewSheet review={review} visible={open} onClose={() => setOpen(false)} onChange={setReview} />
     </>
+  );
+}
+
+/** The reply under the review, in a soft box with a line on the side, like a chat answer. */
+function ReplyPreview({ text, label }: { text: string; label: string }) {
+  const p = usePalette();
+  return (
+    <View style={{ backgroundColor: p.brandSoft, borderRadius: 10, borderLeftWidth: 3, borderLeftColor: p.brand, paddingVertical: 8, paddingHorizontal: 10, gap: 2 }}>
+      <T variant="label" color={p.brand}>
+        {`↳ ${label}`}
+      </T>
+      <T variant="small" color={p.text} numberOfLines={4}>
+        {text}
+      </T>
+    </View>
   );
 }
 
