@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { Alert, Switch } from 'react-native';
 
 import { AlertSwitches } from '@/components/alert-switches';
+import { UrgentSettings } from '@/components/urgent-popup';
 import { Button, Card, Row, Screen, Section, T } from '@/components/ui';
 import { API_URL, api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -87,6 +88,7 @@ export default function More() {
       </Section>
 
       <Section title="Alerts">
+        <UrgentSettings />
         <AlertSwitches />
       </Section>
 

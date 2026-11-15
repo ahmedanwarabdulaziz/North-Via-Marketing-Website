@@ -66,14 +66,21 @@ export async function sendPush(message: PushMessage): Promise<number> {
     // A data-only message: the app (expo-notifications) shows it itself, so it gets the channel's
     // sound, the buttons and tap-to-open. These keys are the ones expo-notifications reads.
     const channel = message.channel || 'attention';
+    // Kept in app_alerts; the kinds Ahmed marked urgent stay pinned and pop up in the app until Seen.
+    const { logAlert } = await import('./urgent-alerts');
+    const logged = await logAlert({ kind: channel, title: message.title, body: message.body, data: message.data }).catch(() => ({ id: null, urgent: false }));
+    const payload = { ...(message.data || {}), ...(logged.id ? { alertId: logged.id } : {}), ...(logged.urgent ? { urgent: '1' } : {}) };
+    // Urgent ones without their own buttons get ✅ Seen / Open.
+    const category = message.category || (logged.urgent ? 'urgent' : undefined);
     const result = await getMessaging(app).sendEachForMulticast({
       tokens: devices.map((d) => d.push_token),
       data: {
         title: message.title.slice(0, 200),
         message: message.body.slice(0, 1000),
-        body: JSON.stringify(message.data || {}),
+        body: JSON.stringify(payload),
         channelId: channel,
-        ...(message.category ? { categoryId: message.category } : {}),
+        ...(category ? { categoryId: category } : {}),
+        ...(logged.urgent ? { sticky: 'true' } : {}),
         threadIdentifier: channel, // groups alerts of one kind (also on the watch)
         color: '#274290',
       },

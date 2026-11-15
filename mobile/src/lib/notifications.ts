@@ -53,12 +53,18 @@ interface AlertData {
   type?: string; // task | email | review | site | jl_order | jl_sample | ads | skipped | home | chat | connections | test
   id?: string;
   actionId?: string; // a chat card to confirm or send from the watch
+  alertId?: string; // set on every pushed alert; urgent ones stay pinned until Seen
 }
 
 function dataOf(notification: Notifications.Notification): AlertData {
   const raw = notification.request.content.data as Record<string, unknown> | undefined;
   const str = (v: unknown) => (typeof v === 'string' ? v : undefined);
-  return { type: str(raw?.type), id: str(raw?.id), actionId: str(raw?.actionId) };
+  return { type: str(raw?.type), id: str(raw?.id), actionId: str(raw?.actionId), alertId: str(raw?.alertId) };
+}
+
+/** Tells the website an urgent alert was seen, so it leaves the pop-up. */
+export async function markSeen(alertId: string) {
+  if (await ensureSession()) await api('/alerts/urgent', { body: { seen: [alertId] } }).catch(() => undefined);
 }
 
 /** A notification shown by the app itself (answers and drafts for the watch). */
@@ -91,7 +97,11 @@ async function showAnswer(answer: ChatAnswer) {
 async function runButton(action: string, data: AlertData, text?: string) {
   if (!(await ensureSession())) return;
   const said = text?.trim();
+  // Any button on an urgent alert counts as seen (it also leaves the pop-up in the app).
+  if (data.alertId) void markSeen(data.alertId);
   switch (action) {
+    case 'seen':
+      return;
     // Tasks
     case 'done':
       if (data.type === 'task' && data.id) await api(`/tasks/${data.id}`, { body: { action: 'done' } });
@@ -228,6 +238,10 @@ export async function setUpNotifications() {
     { identifier: 'snooze', buttonTitle: '💤 1 hour', options: quiet },
     { identifier: 'tomorrow', buttonTitle: '📅 Tomorrow', options: quiet },
   ]);
+  await Notifications.setNotificationCategoryAsync('urgent', [
+    { identifier: 'seen', buttonTitle: '✅ Seen', options: quiet },
+    { identifier: 'open', buttonTitle: 'Open', options: { opensAppToForeground: true } },
+  ]);
   await Notifications.setNotificationCategoryAsync('ask', [voice('ask', '🎙 Ask Anwarz', 'Ask or tell me what to do…')]);
   await Notifications.setNotificationCategoryAsync('chat_confirm', [
     { identifier: 'chat_confirm', buttonTitle: '✅ Confirm', options: quiet },
@@ -274,7 +288,11 @@ export async function registerForPush(): Promise<'on' | 'denied' | 'unavailable'
 export function listenForTaps() {
   const sub = Notifications.addNotificationResponseReceivedListener((response) => {
     const data = dataOf(response.notification);
-    if (response.actionIdentifier === Notifications.DEFAULT_ACTION_IDENTIFIER) openAlert(data);
+    if (response.actionIdentifier === Notifications.DEFAULT_ACTION_IDENTIFIER || response.actionIdentifier === 'open') {
+      if (data.alertId) void markSeen(data.alertId);
+      void Notifications.dismissNotificationAsync(response.notification.request.identifier).catch(() => undefined);
+      openAlert(data);
+    }
     else void runButton(response.actionIdentifier, data, response.userText).catch(() => undefined);
   });
   return () => sub.remove();
