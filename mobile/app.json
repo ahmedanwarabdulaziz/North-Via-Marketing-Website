@@ -2,7 +2,7 @@
   "expo": {
     "name": "Anwarz",
     "slug": "anwarz",
-    "version": "0.3.0",
+    "version": "0.4.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "anwarz",
@@ -91,6 +91,14 @@
         "projectId": "4bfec8f3-e7f0-4ba4-8e29-28e634ca7451"
       }
     },
-    "owner": "ahmedahmedanwar"
+    "owner": "ahmedahmedanwar",
+    "runtimeVersion": {
+      "policy": "fingerprint"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/4bfec8f3-e7f0-4ba4-8e29-28e634ca7451",
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
+    }
   }
 }
