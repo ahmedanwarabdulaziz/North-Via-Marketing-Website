@@ -104,8 +104,13 @@ interface ChatEmail {
 const EMAIL_COLUMNS = 'id, subject, from_name, from_email, received_at, summary, snippet, status, email_accounts(label, email)';
 
 /** Recent important emails from every inbox, plus any (even unimportant) matching words in the question. */
-async function chatEmails(question: string): Promise<ChatEmail[]> {
-  const recent = await supabase.from('email_items').select(EMAIL_COLUMNS).neq('status', 'skipped').order('received_at', { ascending: false }).limit(12);
+async function chatEmails(question: string, withSkipped = false): Promise<ChatEmail[]> {
+  const [recent, skipped] = await Promise.all([
+    supabase.from('email_items').select(EMAIL_COLUMNS).neq('status', 'skipped').order('received_at', { ascending: false }).limit(12),
+    withSkipped
+      ? supabase.from('email_items').select(EMAIL_COLUMNS).eq('status', 'skipped').order('received_at', { ascending: false }).limit(8)
+      : Promise.resolve({ data: [] }),
+  ]);
   const words = [...new Set(question.replace(/[^\w؀-ۿ@.\s]/g, ' ').split(/\s+/).filter((w) => w.length >= 3))]
     .filter((w) => !/^(email|emails|mail|ايميل|إيميل|الايميل|الإيميل|ايميلات|جالي|اخر|آخر|عايز|عاوز|the|from|last|show|what|ابعت|شوف)$/i.test(w))
     .slice(0, 4);
@@ -117,8 +122,12 @@ async function chatEmails(question: string): Promise<ChatEmail[]> {
         .order('received_at', { ascending: false })
         .limit(8)
     : { data: [] };
-  const all = [...((matching.data || []) as unknown as ChatEmail[]), ...((recent.data || []) as unknown as ChatEmail[])];
-  return all.filter((e, i) => all.findIndex((x) => x.id === e.id) === i).slice(0, 16);
+  const all = [
+    ...((matching.data || []) as unknown as ChatEmail[]),
+    ...((recent.data || []) as unknown as ChatEmail[]),
+    ...((skipped.data || []) as unknown as ChatEmail[]),
+  ];
+  return all.filter((e, i) => all.findIndex((x) => x.id === e.id) === i).slice(0, withSkipped ? 24 : 16);
 }
 
 function emailLine(e: ChatEmail) {
@@ -152,7 +161,7 @@ function taskLine(t: Task, clientName: (id: string | null) => string | null) {
 }
 
 /** What the model gets each turn: matching library items, open tasks, clients. Kept small for Groq's 8K tokens a minute. */
-async function buildContext(question: string, history: ChatMessage[]): Promise<ChatContext> {
+async function buildContext(question: string, history: ChatMessage[], withSkipped = false): Promise<ChatContext> {
   const recentUser = history.filter((m) => m.role === 'user').slice(-2).map((m) => m.content);
   const [items, tasks, profiles, categories, memory, emails] = await Promise.all([
     searchKnowledge([...recentUser, question].join(' ').slice(-500), 6).catch(() => [] as KnowledgeItem[]),
@@ -160,7 +169,7 @@ async function buildContext(question: string, history: ChatMessage[]): Promise<C
     listClientProfiles(),
     listCategories().catch(() => []),
     getMemory(),
-    chatEmails([...recentUser, question].join(' ')).catch(() => [] as ChatEmail[]),
+    chatEmails([...recentUser, question].join(' '), withSkipped).catch(() => [] as ChatEmail[]),
   ]);
   const clients = profiles.filter((c) => c.id && c.brandName);
   const clientName = (id: string | null) => (id ? clients.find((c) => c.id === id)?.brandName || null : null);
@@ -241,6 +250,21 @@ Changes — be honest:
 - If the owner asked for a change but PLANNED CHANGES is "none", say what's missing (e.g. the client name) or that it can't be done from the chat (ads, reviews, invoices, deleting things are in the admin panel).
 - NEVER say something is done, saved, added or updated ("done", "تم", "سجلت", "ضفت", "خلاص") unless the conversation shows a line starting with [DONE by the bot]. Lines starting with [DONE by the bot] or [FAILED] are what really happened; trust them.`;
 
+/** The same assistant inside the Anwarz phone app: it also sees reviews, ads, social, websites and JL Comfort. */
+function systemPromptFor(surface: ChatSurface) {
+  if (surface === 'telegram') return SYSTEM_PROMPT;
+  return SYSTEM_PROMPT.replace('inside his private Telegram bot.', 'inside his Anwarz phone app (his control center while he is away from the office).')
+    .replace(
+      'his open tasks, his client list and the items in his knowledge library that match the conversation (screenshots, links, notes).',
+      'his open tasks, his client list, the items in his knowledge library that match the conversation (screenshots, links, notes), and BUSINESS NOW: Google reviews waiting, stopped ads, websites down, Facebook/Instagram followers, and JL Comfort orders and samples. EMAILS also include recent skipped ones (marked "not important").'
+    )
+    .replace('Formatting: plain text for Telegram;', 'Formatting: plain text for a phone screen;')
+    .replace(
+      "or that it can't be done from the chat (ads, reviews, invoices, deleting things are in the admin panel).",
+      "or that it can't be done from the chat. From this chat you CAN prepare: tasks, library notes, remembering facts, adding/updating clients and website checks, marking tasks done, bringing a skipped email back as important, marking an email done, and posting ready 5★ review replies. Replying to an email or a 1–4★ review is done from the Inbox or Reviews tab; invoices and ads changes are in the admin panel."
+    );
+}
+
 // ---------- Changes the bot can make (after a confirm tap) ----------
 
 export const CLIENT_FIELDS = {
@@ -265,7 +289,17 @@ export type AssistantAction =
   /** explicit = he clearly asked to remember it: saved right away (with Undo), no confirm tap. */
   | { type: 'remember'; text: string; explicit?: boolean }
   | { type: 'forget'; factId: string; text: string }
-  | { type: 'update_profile'; change: string };
+  | { type: 'update_profile'; change: string }
+  // Anwarz app only (lib/app-chat.ts runs them):
+  | { type: 'library_note'; text: string }
+  | { type: 'email_important'; emailId: string; subject: string }
+  | { type: 'email_done'; emailId: string; subject: string }
+  | { type: 'approve_five_star'; clientId: string | null; clientName: string | null };
+
+export type ChatSurface = 'telegram' | 'app';
+export const APP_ONLY_ACTIONS = ['library_note', 'email_important', 'email_done', 'approve_five_star'] as const;
+export type AppOnlyAction = Extract<AssistantAction, { type: (typeof APP_ONLY_ACTIONS)[number] }>;
+export const isAppOnlyAction = (a: AssistantAction): a is AppOnlyAction => (APP_ONLY_ACTIONS as readonly string[]).includes(a.type);
 
 interface PlannerClient {
   id: string;
@@ -280,8 +314,18 @@ interface PlannerClient {
   googleLink?: string;
 }
 
-function plannerPrompt(clients: PlannerClient[], tasks: Task[], facts: MemoryFact[]) {
-  return `You prepare changes a marketing agency owner asks their Telegram bot for. You only PREPARE them; the owner confirms each one with a button.
+const APP_PLANNER_ACTIONS = `
+{"type":"library_note","text":"<what to save to his knowledge library: an idea, note, link or reference, in his words, with the link if any>"}
+  (when he says save / add to the library / احفظ في المكتبة / خلي عندك الفكرة دي — ideas and references, not tasks with a date and not facts about how he works (those are remember))
+{"type":"email_important","email_id":"<id from EMAILS>"}
+  (a skipped email he wants back in his inbox: "this is important", "رجعه", "خليه مهم")
+{"type":"email_done","email_id":"<id from EMAILS>"}
+  (an email he says is handled / no reply needed)
+{"type":"approve_five_star","client_id":"<client id, or null for all clients>"}
+  (post every ready 5★ Google review reply — of one client or all — only when he asks to approve/post them)`;
+
+function plannerPrompt(clients: PlannerClient[], tasks: Task[], facts: MemoryFact[], app?: { emails: ChatEmail[] }) {
+  return `You prepare changes a marketing agency owner asks their ${app ? 'phone app (Anwarz)' : 'Telegram bot'} for. You only PREPARE them; the owner confirms each one with a button.
 Read the LATEST message (earlier lines are context: a "yes / do it / go ahead" confirms what was discussed just before).
 Return ONLY JSON: {"actions": [ ... ]} with at most 3 actions, or {"actions": []} when the latest message asks for no change (a question, chit-chat, or details are missing).
 
@@ -297,7 +341,7 @@ Action types:
 {"type":"remember","text":"<one short lasting fact, in the owner's language, e.g. 'Bloom prefers WhatsApp over email' or 'الDBA defence is in March 2027'>","asked":true}
   (when he says remember / احفظ / خلي بالك / سجل عندك / افتكر إن, or shares a lasting fact about himself, his companies, clients or how he likes things done. NOT for things with a date to act on — those are tasks. One fact per action. Skip if it's already in MEMORY.
    "asked": true only when he explicitly asked you to remember/save it; false when you're suggesting it yourself.)
-{"type":"forget","memory_id":"<id from MEMORY>"}
+{"type":"forget","memory_id":"<id from MEMORY>"}${app ? APP_PLANNER_ACTIONS : ''}
 {"type":"update_profile","change":"<what to add or change in Ahmed's MASTER PROFILE, in his words: a new role, venture, degree, certificate, achievement, or a correction>"}
   (only facts about Ahmed himself and his career/ventures; facts about a client are NOT profile changes)
   (when he asks to forget/remove a remembered fact; to correct one, forget the old one and remember the new one)
@@ -314,7 +358,14 @@ OPEN TASKS (id | title | when):
 ${tasks.slice(0, 40).map((t) => `${t.id} | ${t.title} | ${formatWhen(t)}`).join('\n') || '(none)'}
 
 MEMORY (id | fact):
-${facts.slice(-60).map((f) => `${f.id} | ${f.text}`).join('\n') || '(none)'}`;
+${facts.slice(-60).map((f) => `${f.id} | ${f.text}`).join('\n') || '(none)'}${
+    app
+      ? `
+
+EMAILS (id | from | subject | status):
+${app.emails.map((e) => `${e.id} | ${e.from_name || e.from_email || ''} | ${e.subject || ''} | ${e.status}`).join('\n') || '(none)'}`
+      : ''
+  }`;
 }
 
 function cleanUrl(value: unknown) {
@@ -344,7 +395,7 @@ function cleanFields(source: Record<string, unknown>) {
 }
 
 /** Checks the planner's JSON against the real clients and tasks; anything that doesn't match is dropped. */
-export function toActions(raw: Record<string, unknown>, clients: PlannerClient[], tasks: Task[], facts: MemoryFact[] = []): AssistantAction[] {
+export function toActions(raw: Record<string, unknown>, clients: PlannerClient[], tasks: Task[], facts: MemoryFact[] = [], emails: ChatEmail[] | null = null): AssistantAction[] {
   const list = Array.isArray(raw.actions) ? (raw.actions as Record<string, unknown>[]) : [];
   const actions: AssistantAction[] = [];
   for (const a of list.slice(0, 3)) {
@@ -381,6 +432,15 @@ export function toActions(raw: Record<string, unknown>, clients: PlannerClient[]
     } else if (a.type === 'forget') {
       const fact = facts.find((f) => f.id === a.memory_id);
       if (fact) actions.push({ type: 'forget', factId: fact.id, text: fact.text });
+    } else if (emails && a.type === 'library_note') {
+      const text = cleanText(a.text, 2000);
+      if (text) actions.push({ type: 'library_note', text });
+    } else if (emails && (a.type === 'email_important' || a.type === 'email_done')) {
+      const email = emails.find((e) => e.id === a.email_id);
+      if (email) actions.push({ type: a.type, emailId: email.id, subject: email.subject || '(no subject)' });
+    } else if (emails && a.type === 'approve_five_star') {
+      const client = clients.find((c) => c.id === a.client_id);
+      actions.push({ type: 'approve_five_star', clientId: client?.id || null, clientName: client?.brandName || null });
     }
   }
   // A new client's main website is checked by add_client already.
@@ -399,6 +459,10 @@ export function actionSummary(a: AssistantAction) {
   if (a.type === 'remember') return a.explicit ? `Remember (saved right away, no tap needed): ${a.text.slice(0, 150)}` : `Remember (needs his ✅ tap): ${a.text.slice(0, 150)}`;
   if (a.type === 'forget') return `Forget: ${a.text.slice(0, 150)}`;
   if (a.type === 'update_profile') return `Update master profile: ${a.change.slice(0, 150)}`;
+  if (a.type === 'library_note') return `Save to the library: ${a.text.slice(0, 150)}`;
+  if (a.type === 'email_important') return `Move the email "${a.subject}" back to the inbox as important`;
+  if (a.type === 'email_done') return `Mark the email "${a.subject}" done`;
+  if (a.type === 'approve_five_star') return `Post every ready 5★ review reply${a.clientName ? ` for ${a.clientName}` : ' for all clients'}`;
   return `Mark task done: ${a.title}`;
 }
 
@@ -413,7 +477,8 @@ function stripThinking(text: string) {
   return text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
 }
 
-async function callModel(m: ChatModel, context: string, history: ChatMessage[], question: string) {
+async function callModel(m: ChatModel, context: string, history: ChatMessage[], question: string, surface: ChatSurface = 'telegram') {
+  const SYSTEM_PROMPT = systemPromptFor(surface);
   const turns = history.slice(-6).map((h) => ({ role: h.role, content: h.content.slice(0, 1200) }));
   if (m.provider === 'openrouter') {
     return stripThinking(
@@ -465,16 +530,16 @@ async function callModel(m: ChatModel, context: string, history: ChatMessage[], 
  * Gemini as fallback) in strict JSON, whatever model the owner chats with, so a light chat model
  * can't break them. A failure means no changes, never a wrong one.
  */
-async function planActions(question: string, history: ChatMessage[], clients: PlannerClient[], tasks: Task[], facts: MemoryFact[]) {
+async function planActions(question: string, history: ChatMessage[], clients: PlannerClient[], tasks: Task[], facts: MemoryFact[], emails: ChatEmail[] | null = null) {
   const recent = history.slice(-4).map((m) => `${m.role === 'user' ? 'OWNER' : 'BOT'}: ${m.content.slice(0, 500)}`);
   try {
     const raw = await aiJson({
-      system: plannerPrompt(clients, tasks, facts),
+      system: plannerPrompt(clients, tasks, facts, emails ? { emails } : undefined),
       user: [...recent, `LATEST (OWNER): ${question.slice(0, 2000)}`].join('\n'),
       feature: 'assistant',
       timeBudgetMs: 20_000,
     });
-    return toActions(raw, clients, tasks, facts);
+    return toActions(raw, clients, tasks, facts, emails);
   } catch (error) {
     console.error('Action planner failed:', error instanceof Error ? error.message.slice(0, 200) : error);
     return [];
@@ -495,17 +560,36 @@ export interface AssistantReply {
  * Plans the changes, then answers with the chosen model; if it fails (busy, out of quota), the
  * next available model answers and the reply says so.
  */
-export async function askAssistant(chosen: ChatModel, question: string, history: ChatMessage[]): Promise<AssistantReply> {
-  const [context, available, profiles] = await Promise.all([buildContext(question, history), availableChatModels(), listClientProfiles()]);
+export async function askAssistant(
+  chosen: ChatModel,
+  question: string,
+  history: ChatMessage[],
+  opts: { surface?: ChatSurface; extraContext?: () => Promise<string>; runsAtOnce?: (a: AssistantAction) => boolean } = {}
+): Promise<AssistantReply> {
+  const surface = opts.surface || 'telegram';
+  const [context, available, profiles, extra] = await Promise.all([
+    buildContext(question, history, surface === 'app'),
+    availableChatModels(),
+    listClientProfiles(),
+    opts.extraContext
+      ? opts.extraContext().catch((error) => {
+          console.error('Chat extra context failed:', error);
+          return '';
+        })
+      : Promise.resolve(''),
+  ]);
+  if (extra) context.text += `\n\n${extra}`;
   const clients = profiles.filter((c) => c.id && c.brandName) as PlannerClient[];
-  const actions = await planActions(question, history, clients, context.tasks, context.memory.facts);
+  const actions = await planActions(question, history, clients, context.tasks, context.memory.facts, surface === 'app' ? context.emails : null);
   const order = [chosen, ...available.filter((m) => m.key !== chosen.key)].slice(0, 3);
-  const planned = `\n\n(PLANNED CHANGES for this message: ${actions.length ? actions.map(actionSummary).join('; ') : 'none'})`;
+  const note = (a: AssistantAction) =>
+    opts.runsAtOnce?.(a) ? `${actionSummary(a)} [the app does this right away, with an Undo button: say it's done, no Confirm needed]` : actionSummary(a);
+  const planned = `\n\n(PLANNED CHANGES for this message: ${actions.length ? actions.map(note).join('; ') : 'none'})`;
 
   let lastError: unknown;
   for (const m of order) {
     try {
-      const raw = await callModel(m, context.text, history, question + planned);
+      const raw = await callModel(m, context.text, history, question + planned, surface);
       if (!raw) throw new Error('Empty answer.');
       const ids = (prefix: string) => [...new Set([...raw.matchAll(new RegExp(`\\[${prefix}:([A-Za-z0-9_-]{8})\\]`, 'g'))].map((x) => x[1]))];
       const text = raw

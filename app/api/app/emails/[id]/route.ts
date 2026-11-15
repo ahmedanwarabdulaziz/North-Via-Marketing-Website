@@ -2,6 +2,10 @@ import { AppError, appRoute, jsonBody } from '@/lib/app-auth';
 import { appEmail } from '@/lib/app-api';
 import {
   addIgnoreRule,
+  addImportantSender,
+  listIgnoreRules,
+  removeIgnoreRule,
+  skipCause,
   conversationWith,
   draftEmailReply,
   getEmailAccount,
@@ -67,10 +71,12 @@ export const GET = appRoute<Ctx>(async (_request, _device, { params }) => {
  *   cancel                                                drop the draft
  *   done | ignore                                         ignore = this sender is skipped in this inbox from now on
  *   ignore_similar                                        emails like this one (same sender + subject, or same kind) are skipped from now on
+ *   important { always? }                                 a skipped email back to "Needs me"; undoes the sender ignore or rule that skipped it;
+ *                                                         always = this sender is never skipped in this inbox again
  */
 export const POST = appRoute<Ctx>(async (request, _device, { params }) => {
   const { item, account } = await load(params);
-  const body = await jsonBody<{ action?: unknown; text?: unknown; audio?: { data?: unknown; mimeType?: unknown }; draft?: unknown; auto?: unknown }>(request);
+  const body = await jsonBody<{ action?: unknown; text?: unknown; audio?: { data?: unknown; mimeType?: unknown }; draft?: unknown; auto?: unknown; always?: unknown }>(request);
   const reply = (updated: typeof item, extra: Record<string, unknown> = {}) => ({ email: appEmail(updated, account, true), ...extra });
 
   switch (body.action) {
@@ -128,6 +134,23 @@ export const POST = appRoute<Ctx>(async (request, _device, { params }) => {
         await updateEmailAccount(account.id, { ignored_senders: [...account.ignored_senders, item.from_email] });
       }
       return reply(await updateEmailItem(item.id, { status: 'ignored' }));
+    }
+    case 'important': {
+      if (item.status !== 'skipped' && item.status !== 'ignored') throw new AppError('This email is already in your inbox.', 409);
+      const cause = skipCause({ ...item, status: 'skipped' }, account, await listIgnoreRules());
+      if (cause?.kind === 'sender' && item.from_email) {
+        await updateEmailAccount(account.id, { ignored_senders: account.ignored_senders.filter((s) => s !== item.from_email) });
+      }
+      if (cause?.kind === 'rule' && cause.ruleId) await removeIgnoreRule(cause.ruleId);
+      if (body.always === true && item.from_email) await addImportantSender(account.id, item.from_email);
+      return reply(
+        await updateEmailItem(item.id, {
+          status: 'new',
+          summary: item.summary || item.snippet?.slice(0, 300) || null,
+          reason: body.always === true ? 'Always important sender' : 'You marked it important',
+        }),
+        { undone: cause?.kind === 'sender' ? 'sender' : cause?.kind === 'rule' ? 'rule' : null }
+      );
     }
     default:
       throw new AppError('Unknown action.');

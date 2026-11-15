@@ -165,9 +165,58 @@ export async function removeIgnoreRule(id: string) {
   await setSetting(IGNORE_RULES, (await listIgnoreRules()).filter((r) => r.id !== id));
 }
 
-function matchesIgnoreRule(rules: IgnoreRule[], accountId: string, mail: Pick<MailMessage, 'fromEmail' | 'subject'>) {
+/** The ignore rule an email matches, if any. */
+export function matchingIgnoreRule(rules: IgnoreRule[], accountId: string, mail: Pick<MailMessage, 'fromEmail' | 'subject'>) {
   const key = subjectKey(mail.subject);
-  return Boolean(key) && rules.some((r) => r.accountId === accountId && (!r.fromEmail || r.fromEmail === mail.fromEmail) && r.subjectKey === key);
+  if (!key) return null;
+  return rules.find((r) => r.accountId === accountId && (!r.fromEmail || r.fromEmail === mail.fromEmail) && r.subjectKey === key) || null;
+}
+
+function matchesIgnoreRule(rules: IgnoreRule[], accountId: string, mail: Pick<MailMessage, 'fromEmail' | 'subject'>) {
+  return Boolean(matchingIgnoreRule(rules, accountId, mail));
+}
+
+// ---------- "Always important" senders (the app's Skipped tab) ----------
+// Emails from these senders (in that inbox) are never skipped: the AI still writes the summary.
+
+const IMPORTANT_SENDERS = 'email_important_senders';
+
+export interface ImportantSender {
+  accountId: string;
+  fromEmail: string;
+  createdAt: string;
+}
+
+export async function listImportantSenders(): Promise<ImportantSender[]> {
+  return ((await getSetting<ImportantSender[]>(IMPORTANT_SENDERS).catch(() => null)) || []) as ImportantSender[];
+}
+
+export async function addImportantSender(accountId: string, fromEmail: string) {
+  const list = await listImportantSenders();
+  const email = fromEmail.toLowerCase();
+  if (list.some((s) => s.accountId === accountId && s.fromEmail === email)) return list;
+  const next = [...list, { accountId, fromEmail: email, createdAt: new Date().toISOString() }].slice(-300);
+  await setSetting(IMPORTANT_SENDERS, next);
+  return next;
+}
+
+export async function removeImportantSender(accountId: string, fromEmail: string) {
+  const email = fromEmail.toLowerCase();
+  await setSetting(IMPORTANT_SENDERS, (await listImportantSenders()).filter((s) => !(s.accountId === accountId && s.fromEmail === email)));
+}
+
+function isImportantSender(list: ImportantSender[], accountId: string, fromEmail: string | null | undefined) {
+  const email = (fromEmail || '').toLowerCase();
+  return Boolean(email) && list.some((s) => s.accountId === accountId && s.fromEmail === email);
+}
+
+/** Why a skipped email was skipped: the sender is ignored, it matches an ignore rule, or the AI judged it. */
+export function skipCause(item: EmailItem, account: Pick<EmailAccount, 'id' | 'ignored_senders'> | undefined, rules: IgnoreRule[]) {
+  if (item.status !== 'skipped') return null;
+  if (account && item.from_email && account.ignored_senders.includes(item.from_email)) return { kind: 'sender' as const, text: 'You ignored this sender' };
+  const rule = matchingIgnoreRule(rules, item.account_id, { fromEmail: item.from_email || '', subject: item.subject || '' });
+  if (rule) return { kind: 'rule' as const, ruleId: rule.id, text: `Your rule: ignore “${rule.subject}”${rule.fromEmail ? ` from ${rule.fromEmail}` : ''}` };
+  return { kind: 'ai' as const, text: item.reason ? `AI: ${item.reason}` : 'AI: not important' };
 }
 
 function ignoreRulesText(rules: IgnoreRule[], accountId: string) {
@@ -357,7 +406,7 @@ export async function checkInboxes(now = new Date()) {
   if (!accounts.length) return { accounts: 0, new: 0, important: 0 };
   let fresh = 0;
   let important = 0;
-  const rules = await listIgnoreRules();
+  const [rules, importantSenders] = await Promise.all([listIgnoreRules(), listImportantSenders()]);
 
   for (const account of accounts) {
     if (Date.now() > deadline) break;
@@ -392,7 +441,8 @@ export async function checkInboxes(now = new Date()) {
         const mail = await read();
         if (mail.fromEmail === account.email || mail.labels.includes('SENT')) continue;
         fresh++;
-        const ignored = account.ignored_senders.includes(mail.fromEmail) || matchesIgnoreRule(rules, account.id, mail);
+        const alwaysImportant = isImportantSender(importantSenders, account.id, mail.fromEmail);
+        const ignored = !alwaysImportant && (account.ignored_senders.includes(mail.fromEmail) || matchesIgnoreRule(rules, account.id, mail));
         const item: EmailItem = {
           id: newEmailId(),
           account_id: account.id,
@@ -425,6 +475,7 @@ export async function checkInboxes(now = new Date()) {
             console.error('Email triage failed:', error instanceof Error ? error.message.slice(0, 150) : error);
             return { important: true, urgent: false, summary: mail.snippet.slice(0, 300), reason: 'AI busy: not sorted' };
           });
+          if (alwaysImportant && !verdict.important) verdict = { ...verdict, important: true, reason: 'Always important sender' };
         }
         Object.assign(item, {
           summary: verdict.summary || null,

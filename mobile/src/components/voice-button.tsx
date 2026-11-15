@@ -11,7 +11,7 @@ import { Button } from './ui';
  * Tap to record, tap again to stop: hands the voice note (base64 m4a) to onDone.
  * The website's AI (Groq Whisper / Gemini) turns it into text.
  */
-export function VoiceButton({ onDone, disabled, label = '🎙 Voice note' }: { onDone: (audio: Audio) => void; disabled?: boolean; label?: string }) {
+export function VoiceButton({ onDone, disabled, label = '🎙 Voice note', compact }: { onDone: (audio: Audio) => void; disabled?: boolean; label?: string; compact?: boolean }) {
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const state = useAudioRecorderState(recorder);
   const [busy, setBusy] = useState(false);
@@ -47,7 +47,7 @@ export function VoiceButton({ onDone, disabled, label = '🎙 Voice note' }: { o
   const seconds = Math.floor((state.durationMillis || 0) / 1000);
   return (
     <Button
-      title={state.isRecording ? `⏹ Stop (${seconds}s)` : label}
+      title={state.isRecording ? (compact ? `⏹ ${seconds}s` : `⏹ Stop (${seconds}s)`) : label}
       tone={state.isRecording ? 'danger' : 'brand'}
       kind={state.isRecording ? 'primary' : 'soft'}
       busy={busy}

@@ -23,7 +23,7 @@ type Pending = Record<string, { text: string; label: FactLabel; file: FileKey; r
 /** The Undo / delete button data for a fact: "m:mem:del:<fact id>[:<client id>]". */
 export const deleteData = (fact: MemoryFact, file: FileKey) => `m:mem:del:${fact.id}${clientIdOf(file) ? `:${clientIdOf(file)}` : ''}`;
 
-async function placeFact(text: string, clients: { id: string; brandName: string }[]) {
+export async function placeFact(text: string, clients: { id: string; brandName: string }[]) {
   // Step 1: which file. Step 2 (below): compare with that file only.
   try {
     const raw = await aiJson({

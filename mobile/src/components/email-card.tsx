@@ -54,6 +54,7 @@ export function EmailCard({
   const changed = useRef(false);
   const s = STATUS[email.status];
   const handled = ['sent', 'done', 'ignored'].includes(email.status);
+  const skippedView = initial.status === 'skipped';
 
   const update = (e: AppEmail) => {
     changed.current = true;
@@ -67,7 +68,8 @@ export function EmailCard({
     }
   };
 
-  if (hideWhenHandled && handled && !open) return null;
+  // In the Skipped list, an email made important leaves it; in "Needs me", a handled one does.
+  if (hideWhenHandled && !open && (skippedView ? email.status !== 'skipped' : handled)) return null;
 
   return (
     <>
@@ -86,9 +88,14 @@ export function EmailCard({
         <T numberOfLines={1} style={{ fontWeight: '600' }}>
           {email.subject || '(no subject)'}
         </T>
-        {email.summary ? (
+        {email.summary || (email.status === 'skipped' && email.snippet) ? (
           <T variant="small" numberOfLines={2}>
-            {email.summary}
+            {email.summary || email.snippet}
+          </T>
+        ) : null}
+        {email.status === 'skipped' && email.skippedBy ? (
+          <T variant="small" color={p.muted} numberOfLines={1}>
+            {`${email.skippedBy.kind === 'ai' ? '🤖' : '🔕'} ${email.skippedBy.text}`}
           </T>
         ) : null}
         <Row wrap>
@@ -160,6 +167,22 @@ export function EmailSheet({ email, visible, onClose, onChange }: { email: AppEm
     if (result) close();
   };
 
+  const makeImportant = async (always: boolean) => {
+    const result = await act(always ? 'always' : 'important', { action: 'important', always });
+    if (!result) return;
+    const undone = (result as { undone?: string | null }).undone;
+    Alert.alert(
+      '⭐ Moved to “Needs me”',
+      [
+        always ? `Emails from ${email.fromEmail} will always show from now on.` : '',
+        undone === 'sender' ? 'This sender is no longer ignored.' : undone === 'rule' ? 'The ignore rule that hid it was removed.' : '',
+      ]
+        .filter(Boolean)
+        .join('\n') ||'You’ll find it in Needs me.'
+    );
+    close();
+  };
+
   const send = () => {
     const text = (draft ?? email.draft ?? '').trim();
     if (text.length < 2) return;
@@ -193,7 +216,32 @@ export function EmailSheet({ email, visible, onClose, onChange }: { email: AppEm
 
       {note ? <Note text={note} /> : null}
 
-      {panel === 'actions' ? (
+      {panel === 'actions' && email.status === 'skipped' ? (
+        <>
+          <Card>
+            <T variant="label">Why it was skipped</T>
+            <T>{email.skippedBy?.text || (email.reason ? `AI: ${email.reason}` : 'AI: not important')}</T>
+            {email.summary ? <T variant="small">{email.summary}</T> : null}
+          </Card>
+          <Row>
+            <Tile icon="⭐" label="Make important" tone="brand" busy={busy === 'important'} onPress={() => makeImportant(false)} />
+            <Tile icon="🌟" label="Always show this sender" tone="ok" busy={busy === 'always'} onPress={() => makeImportant(true)} />
+          </Row>
+          <Row>
+            <Tile
+              icon="📄"
+              label="Full email"
+              onPress={() => {
+                close();
+                router.push(`/email/${email.id}`);
+              }}
+            />
+            <Tile icon="📲" label="WhatsApp" tone="ok" onPress={() => void openWhatsApp(emailWhatsAppText(email))} />
+          </Row>
+        </>
+      ) : null}
+
+      {panel === 'actions' && email.status !== 'skipped' ? (
         <>
           {email.summary ? (
             <Card>

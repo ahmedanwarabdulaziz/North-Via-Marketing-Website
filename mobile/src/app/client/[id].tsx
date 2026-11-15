@@ -1,6 +1,7 @@
 import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { Linking } from 'react-native';
 
+import { ClientRulesView, type ClientRules } from '@/components/client-rules';
 import { EmailCard } from '@/components/email-card';
 import { WebsiteRow } from '@/components/rows';
 import { TaskCard } from '@/components/task-card';
@@ -13,6 +14,7 @@ interface ClientData {
   tasks: AppTask[];
   websites: AppWebsite[];
   emails: AppEmail[];
+  rules?: ClientRules;
 }
 
 const digits = (phone: string) => phone.replace(/[^\d]/g, '');
@@ -49,6 +51,12 @@ export default function ClientScreen() {
           </Row>
         ) : null}
       </Card>
+
+      {data.rules ? (
+        <Section title="Rules">
+          <ClientRulesView clientId={id} rules={data.rules} onChanged={reload} />
+        </Section>
+      ) : null}
 
       <Section title={`Open tasks (${data.tasks.length})`} right={<Button title="＋ Task" small kind="soft" onPress={() => router.push('/task/new')} />}>
         {data.tasks.length ? data.tasks.map((t) => <TaskCard key={`${t.id}:${t.dueAt}:${t.status}`} task={t} onChanged={reload} />) : <Empty text="No open tasks." />}

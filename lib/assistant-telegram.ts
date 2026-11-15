@@ -3,7 +3,7 @@ import { removeFact } from './assistant-memory';
 import { proposeFact } from './memory-guard';
 import { applyProfileUpdate } from './master-profile';
 import { listClientProfiles } from './admin-ops';
-import { CHAT_MODELS, CLIENT_FIELDS, actionSummary, askAssistant, availableChatModels, claimsDone, type AssistantAction, type ChatMessage, type ChatModel, type ClientField } from './assistant';
+import { CHAT_MODELS, CLIENT_FIELDS, actionSummary, askAssistant, availableChatModels, claimsDone, isAppOnlyAction, type AssistantAction, type ChatMessage, type ChatModel, type ClientField } from './assistant';
 import { addDoc, updateDoc } from './data/store';
 import { supabase } from './supabase';
 import { completeTask, formatWhen } from './tasks';
@@ -115,7 +115,7 @@ async function modelPicker(sessionId: string, intro: string): Promise<OutgoingMe
 const AUTO_ORDER = ['orh', 'g120', 'gf', 'qw', 'glt', 'gfl', 'g20'];
 
 /** The best model that still has free quota today, or null if none has. */
-async function autoModel(): Promise<ChatModel | null> {
+export async function autoModel(): Promise<ChatModel | null> {
   const available = await availableChatModels();
   const ranked = [...available].sort((a, b) => {
     const ia = AUTO_ORDER.indexOf(a.key);
@@ -246,6 +246,8 @@ const host = (u?: string | null) => (u ? new URL(u).hostname.replace(/^www\./, '
 
 /** The confirmation card: what will change, field by field. */
 function actionCard(a: AssistantAction) {
+  if (isAppOnlyAction(a)) return `📱 <b>${h(actionSummary(a))}</b>
+<i>Do this from the Anwarz app.</i>`;
   if (a.type === 'task') return ['📝 <b>Confirm: save a task</b>', '', h(a.text), '', '<i>The task bot reads it and asks if a date or client is missing.</i>'].join('\n');
   if (a.type === 'add_client') {
     const rows = (Object.keys(CLIENT_FIELDS) as ClientField[]).filter((k) => a.fields[k]).map((k) => `• ${CLIENT_FIELDS[k]}: <b>${h(a.fields[k]!)}</b>`);
@@ -283,6 +285,7 @@ async function addSiteCheck(clientId: string, url: string, label?: string | null
 
 /** Runs one confirmed change for real; the text says exactly what happened (Telegram HTML). */
 async function runAction(chatId: number, a: AssistantAction): Promise<{ ok: boolean; message: string; card: string }> {
+  if (isAppOnlyAction(a)) return { ok: false, message: 'only the Anwarz app can do this', card: '📱 Only the Anwarz app can do this.' };
   if (a.type === 'task') {
     await startTaskFromText(chatId, a.text, 'chat');
     return { ok: true, message: `task "${truncate(a.text, 80)}" sent to the task bot`, card: `📝 <b>Sent to the task bot</b>\n${h(a.text)}\n<i>Its card is below.</i>` };

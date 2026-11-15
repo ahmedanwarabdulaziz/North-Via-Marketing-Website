@@ -28,9 +28,10 @@ export default function Home() {
       subtitle="Here’s what needs you today"
       refreshing={refreshing}
       onRefresh={refresh}>
-      {/* Pages that aren't in the bottom bar: two rows of three. */}
+      {/* Pages that aren't in the bottom bar: two rows of four. */}
       <Row wrap style={{ rowGap: 14 }}>
         <Shortcut icon="＋" label="Task" primary onPress={() => router.push('/task/new')} />
+        <Shortcut icon="📚" label="Library" onPress={() => router.push('/library')} />
         <Shortcut icon="📈" label="Marketing" onPress={() => router.push('/marketing')} />
         <Shortcut icon="🛋" label="JL Comfort" onPress={() => router.push('/jl')} />
         <Shortcut icon="👥" label="Clients" onPress={() => router.push('/clients')} />
@@ -114,7 +115,7 @@ export default function Home() {
 function Shortcut({ icon, label, onPress, primary }: { icon: string; label: string; onPress: () => void; primary?: boolean }) {
   const p = usePalette();
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => ({ alignItems: 'center', gap: 6, width: '33.33%', opacity: pressed ? 0.6 : 1 })}>
+    <Pressable onPress={onPress} style={({ pressed }) => ({ alignItems: 'center', gap: 6, width: '25%', opacity: pressed ? 0.6 : 1 })}>
       <View
         style={{
           width: 56,

@@ -1,3 +1,4 @@
+import { useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Alert } from 'react-native';
 
@@ -15,8 +16,9 @@ interface LibraryData {
 
 /** Screenshots, links and notes kept for later; search finds them by meaning or by words. */
 export default function Library() {
-  const [query, setQuery] = useState('');
-  const [search, setSearch] = useState('');
+  const { q } = useLocalSearchParams<{ q?: string }>(); // the AI chat opens an item by its title
+  const [query, setQuery] = useState(q || '');
+  const [search, setSearch] = useState(q || '');
   const [category, setCategory] = useState<string | null>(null);
   const path = search ? `/library?q=${encodeURIComponent(search)}` : `/library${category ? `?category=${encodeURIComponent(category)}` : ''}`;
   const { data, error, loading, refreshing, refresh, reload } = useApi<LibraryData>(path);

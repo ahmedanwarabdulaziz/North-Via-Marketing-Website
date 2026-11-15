@@ -9,8 +9,8 @@ import { usePalette } from '@/lib/theme';
 import type { AppEmail } from '@/lib/types';
 import { useApi } from '@/lib/use-api';
 
-type Filter = 'waiting' | 'handled' | 'all';
-type BulkAction = 'done' | 'ignore' | 'ignore_similar';
+type Filter = 'waiting' | 'handled' | 'skipped' | 'all';
+type BulkAction = 'done' | 'ignore' | 'ignore_similar' | 'important';
 interface InboxData {
   inboxes: { id: string; email: string; label: string | null; provider: string; enabled: boolean; lastError: string | null }[];
   emails: AppEmail[];
@@ -39,6 +39,7 @@ export default function Inbox() {
     const ids = [...selected];
     setWorking(action);
     const { ok, failed } = await runForEach(ids, (id) => api(`/emails/${id}`, { body: { action } }));
+    if (action === 'important' && !failed.length) Alert.alert('⭐ Moved to “Needs me”', `${ok} email${ok === 1 ? '' : 's'} back in your inbox.`);
     setWorking(null);
     setSelected(new Set());
     void reload();
@@ -47,7 +48,7 @@ export default function Inbox() {
 
   const confirm = (action: BulkAction) => {
     const n = selected.size;
-    if (action === 'done') return void run('done');
+    if (action === 'done' || action === 'important') return void run(action);
     Alert.alert(
       action === 'ignore' ? `Ignore ${n === 1 ? 'this sender' : `the senders of ${n} emails`}?` : `Ignore emails like these ${n}?`,
       action === 'ignore'
@@ -64,7 +65,9 @@ export default function Inbox() {
 
   return (
     <View style={{ flex: 1, backgroundColor: p.bg }}>
-      <Screen title="Inbox" subtitle={selecting ? `${selected.size} selected` : 'Important email the AI kept · hold one to select many'} refreshing={refreshing} onRefresh={refresh}>
+      <Screen
+        title="Inbox"
+        subtitle={selecting ? `${selected.size} selected` : view === 'skipped' ? 'Email the AI or your rules left out · ⭐ to bring one back' : 'Important email the AI kept · hold one to select many'} refreshing={refreshing} onRefresh={refresh}>
         <Segmented
           value={view}
           onChange={(v) => {
@@ -74,6 +77,7 @@ export default function Inbox() {
           options={[
             { key: 'waiting', label: 'Needs me', count: view === 'waiting' ? emails.length : null, alert: view === 'waiting' && emails.some((e) => e.urgent) },
             { key: 'handled', label: 'Handled' },
+            { key: 'skipped', label: 'Skipped' },
             { key: 'all', label: 'All' },
           ]}
         />
@@ -89,9 +93,9 @@ export default function Inbox() {
         {error && !data ? <ErrorBox message={error} onRetry={refresh} /> : null}
         {data ? (
           emails.length ? (
-            emails.map((e) => <EmailCard key={`${e.id}:${e.status}`} email={e} selecting={selecting} selected={selected.has(e.id)} onSelect={toggle} onChanged={reload} hideWhenHandled={view === 'waiting'} />)
+            emails.map((e) => <EmailCard key={`${e.id}:${e.status}`} email={e} selecting={selecting} selected={selected.has(e.id)} onSelect={toggle} onChanged={reload} hideWhenHandled={view === 'waiting' || view === 'skipped'} />)
           ) : (
-            <Empty text={view === 'waiting' ? 'Nothing waiting on you. ✅' : 'No emails here.'} />
+            <Empty text={view === 'waiting' ? 'Nothing waiting on you. ✅' : view === 'skipped' ? 'Nothing skipped lately.' : 'No emails here.'} />
           )
         ) : null}
         {selecting ? <View style={{ height: 120 }} /> : null}
@@ -105,11 +109,15 @@ export default function Inbox() {
           onCancel={() => setSelected(new Set())}
           working={working}
           onAction={(key) => confirm(key as BulkAction)}
-          actions={[
-            { key: 'done', icon: '✔️', label: 'Done', tone: 'ok' },
-            { key: 'ignore', icon: '🔕', label: 'Ignore senders' },
-            { key: 'ignore_similar', icon: '🚫', label: 'Ignore like these' },
-          ]}
+          actions={
+            view === 'skipped'
+              ? [{ key: 'important', icon: '⭐', label: 'Make important', tone: 'ok' }]
+              : [
+                  { key: 'done', icon: '✔️', label: 'Done', tone: 'ok' },
+                  { key: 'ignore', icon: '🔕', label: 'Ignore senders' },
+                  { key: 'ignore_similar', icon: '🚫', label: 'Ignore like these' },
+                ]
+          }
         />
       ) : null}
     </View>

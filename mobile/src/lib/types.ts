@@ -39,6 +39,8 @@ export interface AppEmail {
   canReply?: boolean;
   body?: string | null;
   brief?: string | null;
+  /** Skipped emails only: why it was left out (the sender is ignored, one of your rules, or the AI). */
+  skippedBy?: { kind: 'sender' | 'rule' | 'ai'; ruleId?: string; text: string } | null;
 }
 
 export interface AppWebsite {
