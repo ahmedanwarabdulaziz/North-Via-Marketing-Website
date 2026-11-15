@@ -72,20 +72,73 @@ async function clientBrandName(clientId: string) {
 
 // ---------- AI drafting ----------
 
-function buildSystemPrompt(settings: GbpReplySettings, businessName: string, rating: number, hasText: boolean) {
+// Each reply opens in a different way, picked at random, so a page of replies doesn't all read
+// "Hi <name>, thank you so much…".
+const OPENINGS_WITH_TEXT = [
+  'Begin with a short, specific reaction to one thing the reviewer mentioned.',
+  'Begin by saying how the team felt reading this review, then thank them.',
+  'Begin with the best detail of their experience, in your own words, then thank them.',
+  'Begin with a brief, warm exclamation that fits the tone and what they said.',
+  'Begin with a sentence about what the business aims to give guests, tied to what they enjoyed.',
+  'Begin with sincere thanks phrased in a fresh way (not "thank you so much").',
+];
+// Rating-only replies are short, so each style also fixes the first words; otherwise they converge
+// on "We truly appreciate your support…".
+const OPENINGS_RATING_ONLY = [
+  'Begin with a short exclamation such as "What a lovely surprise!" or "Five stars, wow!" (your own words).',
+  'Begin with the words "Your rating" or "Your five stars" and say what it means to the team.',
+  'Begin with the business name, e.g. "Everyone at <business> is smiling today…".',
+  'Begin with the first name followed by an exclamation, e.g. "Omar, this made our day!"',
+  'Begin with "It\'s always a joy…" or a similar line about serving people like them.',
+  'Begin with a warm invitation to come back, then thank them in a second short sentence.',
+];
+const OPENINGS_NEGATIVE = [
+  'Begin by acknowledging their specific concern in your own words.',
+  'Begin by thanking them for taking the time to share honest feedback, without a stock phrase.',
+  'Begin with a sincere apology that names what went wrong for them.',
+];
+
+// Styles are taken in turn (from a random start), so replies drafted in the same run never share one.
+let openingTurn = Math.floor(Math.random() * 1000);
+
+function openingStyle(rating: number, hasText: boolean) {
+  const list = rating > 0 && rating <= 3 ? OPENINGS_NEGATIVE : hasText ? OPENINGS_WITH_TEXT : OPENINGS_RATING_ONLY;
+  return `${list[openingTurn++ % list.length]} Examples show the idea only: use your own words, never copy them.`;
+}
+
+/**
+ * The language the customer wrote in, from the original text only: Google appends
+ * "(Translated by Google) …" to foreign reviews, which would otherwise look English.
+ */
+export function reviewLanguage(comment: string): 'arabic' | 'other' {
+  const original = comment.split(/\(Translated by Google\)|\(Original\)/i)[0];
+  const arabic = (original.match(/[؀-ۿ]/g) || []).length;
+  const latin = (original.match(/[A-Za-z]/g) || []).length;
+  return arabic > 0 && arabic >= latin * 0.5 ? 'arabic' : 'other';
+}
+
+function buildSystemPrompt(settings: GbpReplySettings, businessName: string, rating: number, comment: string) {
+  const hasText = Boolean(comment.trim());
   const tone = TONE_OPTIONS.find((t) => t.value === settings.tone) ?? TONE_OPTIONS[0];
   const length = hasText ? LENGTH_OPTIONS.find((l) => l.value === settings.length) ?? LENGTH_OPTIONS[1] : LENGTH_OPTIONS[0];
-  const language = LANGUAGE_OPTIONS.find((l) => l.value === settings.language) ?? LANGUAGE_OPTIONS[0];
   const negative = rating > 0 && rating <= 3;
 
   const rules = [
     `You write the public owner reply to a Google review for the business "${businessName}".`,
     `Tone: ${tone.prompt}`,
     `Length: ${length.prompt}`,
-    `Write in ${language.prompt}.`,
+    // Permanent rule (Ahmed, 2026-11-15): the review's own language; rating-only reviews in English.
+    hasText
+      ? reviewLanguage(comment) === 'arabic'
+        ? 'Language: the review is written in Arabic, so write the whole reply in Arabic (ignore any English translation Google added).'
+        : 'Language: write in the same language as the review text (English, or French etc. if the review is clearly in that language). Decide only from the words of the review, never from the reviewer\'s name; ignore any translation Google added.'
+      :'Language: this is a rating with no text, so write in English. Do not assume anything about their visit or purchase (no "drop by", favourite dishes, products or places): keep it to thanks and a warm word about the business.',
+    // Permanent rule (Ahmed, 2026-11-15): no "Hi <name>," template; every reply opens differently.
     settings.useReviewerName
-      ? 'Greet the reviewer by first name if a real name is given; otherwise use a neutral greeting.'
+      ? 'If a real name is given, use only the FIRST name, once, woven naturally into a sentence (e.g. "…, Sara!" or "It made our day, Omar."). Never open with a greeting plus the name.'
       : 'Do not use the reviewer\'s name.',
+    `Opening: ${openingStyle(rating, hasText)}`,
+    'Never start with "Hi", "Hello", "Dear", "Hey", "Thank you so much for", "أهلاً", "مرحباً", "عزيزي" or "شكراً جزيلاً على". Vary the sentence structure so replies do not look alike.',
     settings.mentionBusinessName
       ? `Mention "${businessName}" naturally once.`
       : 'Do not mention the business name.',
@@ -143,7 +196,7 @@ export async function generateReplyDraft(
 
   await paceAiCall();
   const genAI = new GoogleGenerativeAI(apiKey);
-  const systemInstruction = buildSystemPrompt(settings, businessName, review.rating, Boolean(review.comment.trim()));
+  const systemInstruction = buildSystemPrompt(settings, businessName, review.rating, review.comment || '');
   const reviewBlock = [
     `Reviewer name: ${review.reviewerName || 'Not given'}`,
     `Star rating: ${review.rating > 0 ? `${review.rating} out of 5` : 'Not given'}`,

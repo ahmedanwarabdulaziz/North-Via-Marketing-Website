@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { MessageSquare, Save, Sparkles, Check } from 'lucide-react';
 import { previewReplyStyle, saveReplyStyle } from '@/app/actions/google-business';
-import { LANGUAGE_OPTIONS, LENGTH_OPTIONS, TONE_OPTIONS } from '@/lib/review-reply-options';
+import { LENGTH_OPTIONS, TONE_OPTIONS } from '@/lib/review-reply-options';
 import type { GbpReplySettings } from '@/types/database';
 
 const inputClass =
@@ -92,23 +92,15 @@ export function ReplyStyleCard({ initial }: { initial: GbpReplySettings }) {
             <p className="text-xs text-zinc-400 mt-1">Rating-only reviews always get a short reply.</p>
           </div>
           <div>
-            <label className={labelClass} htmlFor="reply-language">Language</label>
-            <select
-              id="reply-language"
-              value={settings.language}
-              onChange={(e) => update('language', e.target.value as GbpReplySettings['language'])}
-              className={inputClass}
-            >
-              {LANGUAGE_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
+            <span className={labelClass}>Language</span>
+            {/* Fixed for every client since 2026-11-15 (lib/review-engine.ts). */}
+            <p className="text-sm text-zinc-600 mt-1">Same language as the review. Rating-only reviews get English.</p>
           </div>
         </div>
 
         <div className="grid sm:grid-cols-3 gap-3">
           {([
-            ['useReviewerName', 'Greet reviewer by name'],
+            ['useReviewerName', 'Use the reviewer’s first name'],
             ['mentionBusinessName', 'Mention business name'],
             ['allowEmojis', 'Allow an emoji'],
           ] as const).map(([key, label]) => (
