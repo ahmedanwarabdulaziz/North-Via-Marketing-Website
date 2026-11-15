@@ -4,6 +4,7 @@ import { Alert } from 'react-native';
 import {
   AdsClientCard,
   AdsClientSheet,
+  adsWhatsAppText,
   CompetitorCard,
   FindingCard,
   SocialClientCard,
@@ -31,7 +32,7 @@ interface CompetitorsData {
 export default function Marketing() {
   const [tab, setTab] = useState<Tab>('ads');
   const [days, setDays] = useState<7 | 30>(7);
-  const [openClient, setOpenClient] = useState<{ id: string; name: string } | null>(null);
+  const [openClient, setOpenClient] = useState<{ id: string; name: string; text: string } | null>(null);
   const [compClient, setCompClient] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
 
@@ -79,7 +80,7 @@ export default function Marketing() {
             </Row>
             <T variant="small">{ads.data.checkedAt ? `Ad status checked ${ago(ads.data.checkedAt)} ago (every hour). ▲▼ compare with the ${days} days before.` : 'Ad status is checked every hour.'}</T>
             {ads.data.clients.length ? (
-              ads.data.clients.map((c) => <AdsClientCard key={c.clientId} c={c} onOpen={() => setOpenClient({ id: c.clientId, name: c.clientName })} />)
+              ads.data.clients.map((c) => <AdsClientCard key={c.clientId} c={c} onOpen={() => setOpenClient({ id: c.clientId, name: c.clientName, text: adsWhatsAppText(c, days) })} />)
             ) : (
               <Empty text="No clients with Google or Meta ads linked." />
             )}
@@ -118,7 +119,7 @@ export default function Marketing() {
         ) : null}
       </Screen>
 
-      {openClient ? <AdsClientSheet clientId={openClient.id} clientName={openClient.name} days={days} onClose={() => setOpenClient(null)} /> : null}
+      {openClient ? <AdsClientSheet clientId={openClient.id} clientName={openClient.name} days={days} shareText={openClient.text} onClose={() => setOpenClient(null)} /> : null}
     </>
   );
 }

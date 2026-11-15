@@ -3,6 +3,7 @@ import { useRef, useState } from 'react';
 import { Alert, View } from 'react-native';
 
 import { api } from '@/lib/api';
+import { openWhatsApp, trimText } from '@/lib/whatsapp';
 import { ago, dateTime } from '@/lib/format';
 import { space, usePalette } from '@/lib/theme';
 import type { AppEmail, Audio } from '@/lib/types';
@@ -99,6 +100,19 @@ export function EmailCard({
       <EmailSheet email={email} visible={open} onClose={closeSheet} onChange={update} />
     </>
   );
+}
+
+/** The email as a WhatsApp message: subject, sender, AI summary and the start of the text. */
+export function emailWhatsAppText(e: AppEmail) {
+  return [
+    `📧 *${trimText(e.subject || '(no subject)', 150)}*`,
+    `From: ${[e.fromName, e.fromEmail ? `<${e.fromEmail}>` : ''].filter(Boolean).join(' ')}`,
+    e.receivedAt ? `Date: ${dateTime(e.receivedAt)}` : '',
+    e.summary ? `\n${trimText(e.summary, 600)}` : '',
+    e.body || e.snippet ? `\n—\n${trimText(e.body || e.snippet, 1500)}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
 }
 
 type Panel = 'actions' | 'notes' | 'draft';
@@ -204,6 +218,7 @@ export function EmailSheet({ email, visible, onClose, onChange }: { email: AppEm
                 router.push(`/email/${email.id}`);
               }}
             />
+            <Tile icon="📲" label="WhatsApp" tone="ok" onPress={() => void openWhatsApp(emailWhatsAppText(email))} />
             {!handled ? <Tile icon="✔️" label="Done" tone="ok" busy={busy === 'done'} onPress={() => finish('done')} /> : null}
           </Row>
           {!handled ? (

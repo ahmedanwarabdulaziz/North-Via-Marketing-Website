@@ -1,9 +1,25 @@
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, View } from 'react-native';
+import { Alert, KeyboardAvoidingView, Platform, View } from 'react-native';
 
 import { Button, Card, Input, T } from '@/components/ui';
 import { useAuth } from '@/lib/auth';
+import { biometricAvailable, biometricOffered, markBiometricOffered, setBiometricEnabled, unlockWithBiometric } from '@/lib/biometric';
 import { space, usePalette } from '@/lib/theme';
+
+/** After the first password sign-in: offer to open Anwarz with the fingerprint from now on. */
+async function offerFingerprint() {
+  if ((await biometricOffered()) || !(await biometricAvailable())) return;
+  await markBiometricOffered();
+  Alert.alert('Use your fingerprint?', 'Open Anwarz with your fingerprint instead of the password. You can change this in More.', [
+    { text: 'Not now', style: 'cancel' },
+    {
+      text: 'Use fingerprint',
+      onPress: async () => {
+        if (await unlockWithBiometric('Confirm your fingerprint')) await setBiometricEnabled(true);
+      },
+    },
+  ]);
+}
 
 export default function Login() {
   const { signIn } = useAuth();
@@ -18,6 +34,7 @@ export default function Login() {
     setError(null);
     try {
       await signIn(password);
+      await offerFingerprint();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setPassword('');
@@ -41,8 +58,11 @@ export default function Login() {
           <Input
             value={password}
             onChangeText={setPassword}
-            placeholder="Admin password"
+            placeholder="Password (numbers)"
             secureTextEntry
+            keyboardType="number-pad"
+            inputMode="numeric"
+            maxLength={12}
             autoCapitalize="none"
             autoCorrect={false}
             onSubmitEditing={submit}

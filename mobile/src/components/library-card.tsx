@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Alert, Linking, Share, View } from 'react-native';
 
 import { api } from '@/lib/api';
+import { openWhatsApp } from '@/lib/whatsapp';
 import { ago, dateTime } from '@/lib/format';
 import { radius, space, usePalette } from '@/lib/theme';
 import type { LibraryItem } from '@/lib/types';
@@ -179,6 +180,7 @@ function LibrarySheet({
       ) : null}
       <Row>
         {shown.url ? <Tile icon="🔗" label="Open link" onPress={() => Linking.openURL(shown.url!)} /> : null}
+        <Tile icon="📲" label="WhatsApp" tone="ok" onPress={() => void openWhatsApp([`📚 *${shown.title}*`, shown.summary || '', shown.url || ''].filter(Boolean).join('\n\n'))} />
         <Tile icon="📤" label="Share" onPress={share} />
         <Tile icon="🗑" label="Remove" tone="danger" busy={busy === 'remove'} onPress={remove} />
       </Row>

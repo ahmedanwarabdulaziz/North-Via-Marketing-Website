@@ -3,6 +3,7 @@ import { useRef, useState } from 'react';
 import { Alert, Linking, View } from 'react-native';
 
 import { api } from '@/lib/api';
+import { openWhatsApp } from '@/lib/whatsapp';
 import { cairoDate } from '@/lib/format';
 import { space, usePalette } from '@/lib/theme';
 import type { AppTask } from '@/lib/types';
@@ -92,6 +93,11 @@ export function TaskCard({
       <TaskSheet task={task} visible={open} onClose={closeSheet} onChange={update} />
     </>
   );
+}
+
+/** The task as a WhatsApp message (to forward to a colleague or anyone). */
+function taskWhatsAppText(t: AppTask) {
+  return [`✅ *${t.title}*`, t.when ? `🕒 ${t.when}` : '', t.clientName ? `👤 ${t.clientName}` : '', t.notes ? `\n${t.notes}` : ''].filter(Boolean).join('\n');
 }
 
 type Panel = 'actions' | 'date' | 'time';
@@ -188,6 +194,7 @@ function TaskSheet({ task, visible, onClose, onChange }: { task: AppTask; visibl
               {task.whatsappUrl ? (
                 <Tile icon="📲" label={`Message ${task.clientName || 'client'} on WhatsApp`} tone="ok" wide onPress={() => Linking.openURL(task.whatsappUrl!)} />
               ) : null}
+              <Tile icon="↗️" label="Forward on WhatsApp" wide onPress={() => void openWhatsApp(taskWhatsAppText(task))} />
             </View>
           ) : panel === 'date' ? (
             <View style={{ gap: space.sm }}>

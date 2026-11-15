@@ -54,6 +54,7 @@ export interface AppWebsite {
   sslExpiresAt: string | null;
   lastCheckedAt: string | null;
   clientName?: string | null;
+  whatsappUrl?: string | null;
 }
 
 export interface AppClient {

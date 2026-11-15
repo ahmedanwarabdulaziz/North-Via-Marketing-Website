@@ -1,12 +1,13 @@
 import Constants from 'expo-constants';
 import { router } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
-import { useState } from 'react';
-import { Alert } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Alert, Switch } from 'react-native';
 
-import { Button, Card, Screen, Section, T } from '@/components/ui';
+import { Button, Card, Row, Screen, Section, T } from '@/components/ui';
 import { API_URL, api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { biometricAvailable, biometricEnabled, setBiometricEnabled, unlockWithBiometric } from '@/lib/biometric';
 import { useApi } from '@/lib/use-api';
 
 interface DeviceInfo {
@@ -31,6 +32,27 @@ export default function More() {
   const { signOut } = useAuth();
   const device = useApi<DeviceInfo>('/device');
   const [testing, setTesting] = useState(false);
+  const [lockOn, setLockOn] = useState(false);
+  const [lockAvailable, setLockAvailable] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    void Promise.all([biometricAvailable(), biometricEnabled()]).then(([available, on]) => {
+      if (!live) return;
+      setLockAvailable(available);
+      setLockOn(on);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  // Turning it on needs the fingerprint once, so nobody else can switch it on for you.
+  const toggleLock = async (on: boolean) => {
+    if (on && !(await unlockWithBiometric('Confirm your fingerprint'))) return;
+    await setBiometricEnabled(on);
+    setLockOn(on);
+  };
 
   const testPush = async () => {
     setTesting(true);
@@ -60,6 +82,17 @@ export default function More() {
       </Section>
 
       <Section title="This phone">
+        <Card>
+          <Row>
+            <T style={{ flex: 1, fontWeight: '700' }}>🔒 Fingerprint lock</T>
+            <Switch value={lockOn} disabled={!lockAvailable} onValueChange={(v) => void toggleLock(v)} />
+          </Row>
+          <T variant="small">
+            {lockAvailable === false
+              ? 'No fingerprint is set up on this phone (Settings → Security → Fingerprints).'
+              : 'Anwarz asks for your fingerprint when it opens, and after 2 minutes in the background.'}
+          </T>
+        </Card>
         <Card>
           <T>{device.data?.name || 'Phone'}</T>
           <T variant="small">

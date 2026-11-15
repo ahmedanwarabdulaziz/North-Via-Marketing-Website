@@ -1,10 +1,10 @@
-import { View } from 'react-native';
+import { Linking, View } from 'react-native';
 
 import { ago, hostOf } from '@/lib/format';
 import { space, usePalette } from '@/lib/theme';
 import type { AppWebsite } from '@/lib/types';
 
-import { Card, Row, T } from './ui';
+import { Button, Card, Row, T } from './ui';
 
 export function WebsiteRow({ site }: { site: AppWebsite }) {
   const p = usePalette();
@@ -24,6 +24,10 @@ export function WebsiteRow({ site }: { site: AppWebsite }) {
           : `${site.status}${site.lastResponseMs ? ` · ${site.lastResponseMs} ms` : ''}${site.lastCheckedAt ? ` · checked ${ago(site.lastCheckedAt)} ago` : ''}`}
       </T>
       {site.sslExpiresAt ? <T variant="small">{`SSL until ${site.sslExpiresAt.slice(0, 10)}`}</T> : null}
+      {/* Down: "we're on it"; back up: "it's fixed" (the website writes the message). */}
+      {site.whatsappUrl ? (
+        <Button title={down ? '📲 Tell the client on WhatsApp' : '📲 Send status on WhatsApp'} small kind="soft" tone="ok" onPress={() => Linking.openURL(site.whatsappUrl!)} />
+      ) : null}
     </Card>
   );
 }

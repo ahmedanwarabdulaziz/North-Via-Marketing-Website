@@ -4,6 +4,7 @@ import * as Notifications from 'expo-notifications';
 import { useEffect } from 'react';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { LockScreen } from '@/components/lock-screen';
 import { AuthProvider, useAuth } from '@/lib/auth';
 // Imported here, at the top level, so the background task for notification buttons is defined
 // before Android delivers a button press to a closed app.
@@ -13,7 +14,7 @@ import { usePalette } from '@/lib/theme';
 SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
 function RootStack() {
-  const { ready, signedIn } = useAuth();
+  const { ready, signedIn, locked } = useAuth();
   const p = usePalette();
 
   const lastTap = Notifications.useLastNotificationResponse();
@@ -43,6 +44,7 @@ function RootStack() {
   }, [ready, signedIn, lastTap]);
 
   if (!ready) return null;
+  if (signedIn && locked) return <LockScreen />;
   return (
     <Stack
       screenOptions={{

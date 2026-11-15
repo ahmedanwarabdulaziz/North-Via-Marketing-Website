@@ -72,6 +72,8 @@ export function appWebsite(site: Website & { id?: string }) {
     downSince: site.downSince || null,
     sslExpiresAt: site.sslExpiresAt || null,
     lastCheckedAt: site.lastCheckedAt || null,
+    // Tells the client on WhatsApp (down: "we're on it"; back up: "it's fixed"), same as Telegram.
+    whatsappUrl: site.id ? whatsAppShareLink('w', site.id) : null,
   };
 }
 

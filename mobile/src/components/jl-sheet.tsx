@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { Alert, Linking, View } from 'react-native';
 
 import { api } from '@/lib/api';
+import { openWhatsApp } from '@/lib/whatsapp';
 import { dateTime } from '@/lib/format';
 import { radius, space, usePalette } from '@/lib/theme';
 import type { JlEvent, JlOrder, JlOverview, JlSample } from '@/lib/types';
@@ -204,7 +205,7 @@ export function JlSheet({
             </T>
             <Row>
               {digits ? <Tile icon="📞" label="Call" onPress={() => Linking.openURL(`tel:${digits}`)} /> : null}
-              {digits ? <Tile icon="💬" label="WhatsApp" tone="ok" onPress={() => Linking.openURL(`https://wa.me/${digits.replace(/^\+/, '')}`)} /> : null}
+              <Tile icon="💬" label={digits ? 'WhatsApp update' : 'WhatsApp (pick chat)'} tone="ok" onPress={() => void openWhatsApp(jlCustomerText(record, kind, carriers), phone)} />
               <Tile icon="✉️" label="Email" onPress={() => Linking.openURL(`mailto:${email}?subject=${encodeURIComponent(`JL Comfort ${number}`)}`)} />
             </Row>
           </Card>
@@ -372,4 +373,36 @@ export function customerSource(order: JlOrder): { label: string; tone: 'ok' | 'b
   if (samples.length) return { label: '🧵 Samples first', tone: 'ok', detail: sampleText };
   if (emailed) return { label: '✉️ Emailed first', tone: 'brand', detail: emailText };
   return { label: '🆕 Direct', tone: 'muted', detail: 'No sample request or email from this customer before the order.' };
+}
+
+/** A ready WhatsApp update for the customer: what's happening with their order or samples. */
+export function jlCustomerText(record: JlOrder | JlSample, kind: JlKind, carriers: { id: string; name: string }[]) {
+  const full = kind === 'order' ? (record as JlOrder).customerName : (record as JlSample).name;
+  const first = (full || '').trim().split(/\s+/)[0] || 'there';
+  const number = kind === 'order' ? (record as JlOrder).orderNumber : (record as JlSample).requestNumber;
+  const what = kind === 'order' ? `your JL Comfort order ${number}` : `your JL Comfort fabric samples (${number})`;
+  const carrier = carriers.find((c) => c.id === record.carrier)?.name || record.carrier || '';
+  const lines = [`Hi ${first}, this is JL Comfort about ${what}.`];
+  switch (record.status) {
+    case 'paid':
+    case 'pending':
+      lines.push(kind === 'order' ? 'We’ve received your order and are preparing it.' : 'We’ve received your request and are preparing your samples.');
+      break;
+    case 'sent_to_supplier':
+      lines.push(kind === 'order' ? 'Your fabric has been ordered from our supplier, and we’ll send you tracking as soon as it ships.' : 'Your samples are being prepared, and we’ll send you tracking as soon as they ship.');
+      break;
+    case 'shipped':
+      lines.push(`Good news: it has shipped${carrier ? ` with ${carrier}` : ''}.`);
+      if (record.trackingNumber) lines.push(`Tracking number: ${record.trackingNumber}`);
+      if (record.trackingUrl) lines.push(`Track it here: ${record.trackingUrl}`);
+      break;
+    case 'delivered':
+    case 'closed':
+      lines.push('Our records show it has been delivered. We hope you love it! Let us know if you need anything.');
+      break;
+    default:
+      lines.push('');
+  }
+  lines.push('', 'Thank you,', 'JL Comfort');
+  return lines.join('\n');
 }

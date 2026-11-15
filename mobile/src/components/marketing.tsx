@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Alert, Linking, Text, View } from 'react-native';
 
 import { api } from '@/lib/api';
+import { openWhatsApp } from '@/lib/whatsapp';
 import { ago } from '@/lib/format';
 import { radius, space, usePalette } from '@/lib/theme';
 import type { AdsHealth, AdsOverview, CompetitorFinding, CompetitorRow, GoogleAdsCard, MetaAdsCard, SocialClient, StoppedAd } from '@/lib/types';
@@ -116,7 +117,23 @@ interface ClientAdsDetail {
 }
 
 /** Campaigns (Google) and ads (Meta) of one client, with their status. */
-export function AdsClientSheet({ clientId, clientName, days, onClose }: { clientId: string; clientName: string; days: number; onClose: () => void }) {
+/** A short results message for the client (WhatsApp), from the card's numbers. */
+export function adsWhatsAppText(c: AdsOverview['clients'][number], days: number) {
+  const lines = [`📊 *${c.clientName}: ads results, last ${days} days*`];
+  const g = c.google as GoogleAdsCard | null;
+  const m = c.meta as MetaAdsCard | null;
+  if (g && g.spend !== undefined) {
+    lines.push('', '🔵 Google Ads', `• ${fmtNum(g.impressions)} impressions · ${fmtNum(g.clicks)} clicks`, `• Spend: ${fmtMoney(g.spend, g.currency)}`);
+    if (g.conversions) lines.push(`• ${Math.round(g.conversions * 10) / 10} conversions`);
+  }
+  if (m && m.spend !== undefined) {
+    lines.push('', '📘 Facebook & Instagram', `• Reached ${fmtNum(m.reach)} people · ${fmtNum(m.linkClicks)} link clicks`, `• Spend: ${fmtMoney(m.spend, m.currency)}`);
+  }
+  lines.push('', 'North Via Marketing');
+  return lines.join('\n');
+}
+
+export function AdsClientSheet({ clientId, clientName, days, onClose, shareText }: { clientId: string; clientName: string; days: number; onClose: () => void; shareText?: string }) {
   const p = usePalette();
   const [data, setData] = useState<ClientAdsDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -132,6 +149,7 @@ export function AdsClientSheet({ clientId, clientName, days, onClose }: { client
   return (
     <BottomSheet visible onClose={onClose}>
       <T variant="title">{`${clientName} · last ${days} days`}</T>
+      {shareText ? <Button title="📲 Send results to the client on WhatsApp" small kind="soft" tone="ok" onPress={() => void openWhatsApp(shareText)} /> : null}
       {error ? <Note text={error} tone="danger" /> : null}
       {!data && !error ? <T variant="small">Loading campaigns…</T> : null}
       {data?.google ? (
@@ -295,6 +313,17 @@ export function FindingCard({ f }: { f: CompetitorFinding }) {
           <T variant="small" color={p.brand} style={{ fontWeight: '700' }}>{`💡 ${f.idea}`}</T>
         </View>
       ) : null}
+      <Button
+        title="📲 Share on WhatsApp"
+        small
+        kind="soft"
+        tone="ok"
+        onPress={() =>
+          void openWhatsApp(
+            [`👀 *${f.competitorName}*: ${f.title}`, f.detail ? `\n${f.detail.slice(0, 800)}` : '', f.idea ? `\n💡 Idea: ${f.idea}` : '', f.url ? `\n${f.url}` : ''].filter(Boolean).join('\n')
+          )
+        }
+      />
     </Card>
   );
 }
