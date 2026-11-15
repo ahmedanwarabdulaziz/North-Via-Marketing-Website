@@ -7,7 +7,7 @@
 //
 // Env: NTFY_TOKEN (send-only token of the "anwarz" ntfy user). Optional NTFY_URL, NTFY_TOPIC.
 
-import { sendPush } from './push';
+import { sendPush, type PushChannel } from './push';
 
 const NTFY_URL = process.env.NTFY_URL || 'https://ntfy.northviamarketing.com';
 const NTFY_TOPIC = process.env.NTFY_TOPIC || 'ahmed-alerts';
@@ -25,6 +25,10 @@ export interface Ring {
   actions?: { label: string; url: string }[];
   /** For the Anwarz app's push notification: what a tap opens, e.g. { type: 'task', id }. */
   data?: Record<string, string>;
+  /** The app's alert kind (its own sound): site_down, task, email, review, jl_order, attention, info. */
+  channel?: PushChannel;
+  /** Buttons on the app's notification: 'task' = ☑️ Done / 💤 1 hour. */
+  category?: 'task';
 }
 
 export function ntfyConfigured() {
@@ -35,7 +39,7 @@ export function ntfyConfigured() {
 export async function ringPhone(ring: Ring): Promise<boolean> {
   const [rang] = await Promise.all([
     ringNtfy(ring),
-    sendPush({ title: ring.title, body: ring.message, urgent: (ring.priority ?? 5) === 5, data: ring.data }),
+    sendPush({ title: ring.title, body: ring.message, channel: ring.channel, category: ring.category, data: ring.data }),
   ]);
   return rang;
 }

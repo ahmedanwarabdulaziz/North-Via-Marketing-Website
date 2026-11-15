@@ -442,7 +442,7 @@ export async function checkInboxes(now = new Date()) {
           await updateEmailItem(item.id, { chat_id: String(chatId), ...(messageId ? { card_message_id: messageId } : {}) });
         }
         if (verdict.urgent && account.ring_urgent) {
-          await ringPhone({ title: `🚨 Email: ${mail.fromName || mail.fromEmail}`, message: `${mail.subject}\n${verdict.summary}`.slice(0, 500), tags: ['email'] });
+          await ringPhone({ title: `🚨 Email: ${mail.fromName || mail.fromEmail}`, message: `${mail.subject}\n${verdict.summary}`.slice(0, 500), tags: ['email'], channel: 'email', data: { type: 'email', id: item.id } });
         }
       }
       await supabase.from('email_accounts').update({ ...(finished ? { last_checked_at: startedAt } : {}), last_error: null }).eq('id', account.id);

@@ -11,12 +11,20 @@ import { supabase } from './supabase';
 
 const APP_NAME = 'anwarz-push';
 
+/**
+ * The app's notification channels (mobile/src/lib/notifications.ts CHANNELS): each has its own sound,
+ * pop-up and vibration on the phone, changeable there per channel.
+ */
+export type PushChannel = 'site_down' | 'task' | 'email' | 'review' | 'jl_order' | 'attention' | 'info';
+
 export interface PushMessage {
   title: string;
   body: string;
-  /** Urgent alerts use the app's "urgent" channel (alarm sound). */
-  urgent?: boolean;
-  /** Tap-to-open and button data for the app, e.g. { type: 'task', id: 'abc' }. Strings only. */
+  /** Which kind of alert this is (sound and pop-up on the phone). Default 'attention'. */
+  channel?: PushChannel;
+  /** Buttons on the notification (also on a Galaxy Watch): 'task' = ☑️ Done / 💤 1 hour. */
+  category?: 'task';
+  /** What a tap opens in the app, e.g. { type: 'task', id: 'abc' }. Strings only. */
   data?: Record<string, string>;
 }
 
@@ -52,14 +60,21 @@ export async function sendPush(message: PushMessage): Promise<number> {
     const devices = (data || []) as { id: string; push_token: string }[];
     if (!devices.length) return 0;
 
+    // A data-only message: the app (expo-notifications) shows it itself, so it gets the channel's
+    // sound, the buttons and tap-to-open. These keys are the ones expo-notifications reads.
+    const channel = message.channel || 'attention';
     const result = await getMessaging(app).sendEachForMulticast({
       tokens: devices.map((d) => d.push_token),
-      notification: { title: message.title.slice(0, 200), body: message.body.slice(0, 1000) },
-      data: message.data,
-      android: {
-        priority: 'high',
-        notification: { channelId: message.urgent ? 'urgent' : 'default', sound: 'default' },
+      data: {
+        title: message.title.slice(0, 200),
+        message: message.body.slice(0, 1000),
+        body: JSON.stringify(message.data || {}),
+        channelId: channel,
+        ...(message.category ? { categoryId: message.category } : {}),
+        threadIdentifier: channel, // groups alerts of one kind (also on the watch)
+        color: '#274290',
       },
+      android: { priority: 'high', ttl: 24 * 3_600_000 },
     });
 
     // Phones that uninstalled the app (or got a new token) are dropped.

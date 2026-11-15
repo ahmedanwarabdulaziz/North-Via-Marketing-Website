@@ -211,7 +211,7 @@ export async function runWebsiteChecks(options: { ids?: string[]; chatIds?: stri
       update.downSince = now;
       reportedDown = true;
       alerts.push(alertMessage(`🔴 <b>Website down</b>\n${where}\n\nReason: ${h(result.error || 'Unknown')}`, site));
-      rings.push({ title: `🔴 Website down: ${client}`, message: `${site.url}\n${result.error || 'Unknown'}`, tags: ['rotating_light'], click: site.url });
+      rings.push({ title: `🔴 Website down: ${client}`, message: `${site.url}\n${result.error || 'Unknown'}`, tags: ['rotating_light'], click: site.url, channel: 'site_down', data: { type: 'site', id: site.id } });
     } else if (result.ok && site.status === 'down') {
       alerts.push(alertMessage(`🟢 <b>Website back up</b>\n${where}\n\nIt was down for about ${site.downSince ? duration(site.downSince) : 'a while'}.`, site));
     }
@@ -236,6 +236,8 @@ export async function runWebsiteChecks(options: { ids?: string[]; chatIds?: stri
             priority: days < 0 ? 5 : 4,
             tags: ['lock'],
             click: site.url,
+            channel: 'site_down',
+            data: { type: 'site', id: site.id },
           });
         }
       } else if (threshold === undefined && site.sslAlertedDays !== undefined) {

@@ -1,4 +1,5 @@
 import Constants from 'expo-constants';
+import { router } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { useState } from 'react';
 import { Alert } from 'react-native';
@@ -35,7 +36,7 @@ export default function More() {
     setTesting(true);
     try {
       const result = await api<{ ok: boolean; sent: number }>('/device', { body: { test: true } });
-      Alert.alert('Push test', result.ok ? 'Sent. A notification should appear in a few seconds.' : 'Not sent: this phone isn’t registered for push yet (coming in the next update).');
+      Alert.alert('Push test', result.ok ? 'Sent. A notification should appear in a few seconds.' : 'Not sent: this phone isn’t registered for push yet. Open Anwarz once with notifications allowed (the new APK).');
     } catch (e) {
       Alert.alert('Push test', e instanceof Error ? e.message : String(e));
     } finally {
@@ -69,7 +70,8 @@ export default function More() {
               : 'Loading…'}
           </T>
           <T variant="small">{`App ${Constants.expoConfig?.version ?? ''} · ${API_URL.replace(/^https?:\/\//, '')}`}</T>
-          <Button title="Send a test notification" kind="soft" small busy={testing} onPress={testPush} />
+          <Button title="🔔 Notification sounds" kind="soft" small onPress={() => router.push('/sounds')} />
+          <Button title="Send a test from the website" kind="outline" small busy={testing} onPress={testPush} />
         </Card>
         <Button title="Sign out" tone="danger" kind="outline" onPress={confirmSignOut} />
       </Section>

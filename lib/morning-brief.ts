@@ -69,7 +69,7 @@ export async function morningBriefSections(today: string): Promise<BriefSections
   // Ads problems need someone to step in: ring once (the brief is sent once a day).
   const problems = [...ads, ...metaAds].filter((l) => l.includes('⚠️')).map((l) => l.replace(/<[^>]+>/g, '').replace(/^[•\s📘]+/, ''));
   if (problems.length) {
-    await ringPhone({ title: '📉 Ads need attention', message: problems.slice(0, 4).join('\n'), priority: 4, tags: ['chart_with_downwards_trend'] });
+    await ringPhone({ title: '📉 Ads need attention', message: problems.slice(0, 4).join('\n'), priority: 4, tags: ['chart_with_downwards_trend'], channel: 'attention' });
   }
 
   const lines = [reviews, websites].filter(Boolean);

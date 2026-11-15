@@ -1,9 +1,13 @@
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
+import * as Notifications from 'expo-notifications';
 import { useEffect } from 'react';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { AuthProvider, useAuth } from '@/lib/auth';
+// Imported here, at the top level, so the background task for notification buttons is defined
+// before Android delivers a button press to a closed app.
+import { listenForTaps, openAlert, registerForPush, setUpNotifications } from '@/lib/notifications';
 import { usePalette } from '@/lib/theme';
 
 SplashScreen.preventAutoHideAsync().catch(() => undefined);
@@ -12,9 +16,31 @@ function RootStack() {
   const { ready, signedIn } = useAuth();
   const p = usePalette();
 
+  const lastTap = Notifications.useLastNotificationResponse();
+
   useEffect(() => {
     if (ready) SplashScreen.hideAsync().catch(() => undefined);
   }, [ready]);
+
+  // Notification channels (sounds) exist from the first start, signed in or not.
+  useEffect(() => {
+    void setUpNotifications().catch(() => undefined);
+  }, []);
+
+  // Signed in: this phone gets alerts, and a tap opens the right screen.
+  useEffect(() => {
+    if (!ready || !signedIn) return;
+    void registerForPush().catch(() => undefined);
+    return listenForTaps();
+  }, [ready, signedIn]);
+
+  // The app was opened by tapping a notification while it was closed.
+  useEffect(() => {
+    if (!ready || !signedIn || !lastTap || lastTap.actionIdentifier !== Notifications.DEFAULT_ACTION_IDENTIFIER) return;
+    const data = lastTap.notification.request.content.data as { type?: string; id?: string } | undefined;
+    openAlert({ type: data?.type, id: data?.id });
+    Notifications.clearLastNotificationResponse();
+  }, [ready, signedIn, lastTap]);
 
   if (!ready) return null;
   return (
@@ -36,6 +62,7 @@ function RootStack() {
         <Stack.Screen name="share" options={{ title: 'Shared to Anwarz' }} />
         <Stack.Screen name="links" options={{ title: 'Quick links' }} />
         <Stack.Screen name="jl" options={{ title: 'JL Comfort' }} />
+        <Stack.Screen name="sounds" options={{ title: 'Notification sounds' }} />
       </Stack.Protected>
       <Stack.Protected guard={!signedIn}>
         <Stack.Screen name="login" options={{ headerShown: false }} />

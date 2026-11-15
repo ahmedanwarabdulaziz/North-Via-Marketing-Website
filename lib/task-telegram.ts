@@ -917,6 +917,8 @@ export async function sendDueReminders(now = new Date()) {
           priority: 4,
           // Opens the task in the Anwarz app when the push notification is tapped.
           data: { type: 'task', id: task.id },
+          channel: 'task',
+          category: 'task',
           // Buttons on the alarm itself, so it can be handled from the lock screen.
           actions: [
             { label: '☑️ Done', url: taskActionUrl(task.id, 'done') },

@@ -41,3 +41,6 @@ example
 # generated native folders
 /ios
 /android
+
+# Firebase app config: kept out of the public repo (EAS still uploads it, see .easignore)
+google-services.json

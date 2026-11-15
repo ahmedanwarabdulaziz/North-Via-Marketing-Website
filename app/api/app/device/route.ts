@@ -21,7 +21,7 @@ export const GET = appRoute(async (_request, device) => ({
 export const POST = appRoute(async (request, device) => {
   const body = await jsonBody<{ pushToken?: unknown; appVersion?: unknown; test?: unknown }>(request);
   if (body.test === true) {
-    const sent = await sendPush({ title: '✅ Anwarz', body: 'Push notifications work on this phone.', data: { type: 'test' } });
+    const sent = await sendPush({ title: '✅ Anwarz', body: 'Push notifications from the website work on this phone.', channel: 'attention', data: { type: 'test' } });
     return { ok: sent > 0, sent };
   }
   if (body.pushToken !== null && (typeof body.pushToken !== 'string' || body.pushToken.length < 20 || body.pushToken.length > 4096)) {

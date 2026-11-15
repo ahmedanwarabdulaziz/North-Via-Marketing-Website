@@ -321,6 +321,8 @@ async function ringForReviewProblems(sent: Review[], names: Map<string, string>,
       title: `⭐ ${bad.length} bad review${bad.length === 1 ? '' : 's'} to answer`,
       message: bad.slice(0, 5).map((r) => `${'★'.repeat(r.rating)} ${names.get(r.clientId) || 'Client'} · ${r.reviewerName || 'Anonymous'}`).join('\n'),
       tags: ['warning'],
+      channel: 'review',
+      data: { type: 'review' },
     });
   }
   // A broken Google login stops every review from arriving; ring at most once a day for it.
@@ -336,6 +338,7 @@ async function ringForReviewProblems(sent: Review[], names: Map<string, string>,
     priority: 4,
     tags: ['electric_plug'],
     click: PANEL_URL,
+    channel: 'attention',
   });
 }
 
