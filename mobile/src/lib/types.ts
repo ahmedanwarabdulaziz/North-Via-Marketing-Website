@@ -169,3 +169,89 @@ export interface QuickLink {
   pinned: boolean;
   uses: number;
 }
+
+// JL Comfort (jlcomfort.com) orders and sample requests, through /api/app/jl/*.
+export interface JlEvent {
+  id: string;
+  type: string;
+  message: string;
+  createdAt: string;
+}
+
+export interface JlOrderItem {
+  id: string;
+  itemType: string;
+  fulfilledBy: 'supplier' | 'workshop';
+  sku: string | null;
+  name: string;
+  description: string;
+  quantity: number;
+  unitPriceCents: number;
+  amountCents: number;
+}
+
+export interface JlOrder {
+  id: string;
+  orderNumber: string;
+  status: string;
+  statusLabel: string;
+  isTest: boolean;
+  currency: string;
+  subtotalCents: number;
+  shippingCents: number;
+  taxCents: number;
+  totalCents: number;
+  discountLabel: string | null;
+  discountCents: number;
+  customerEmail: string;
+  customerName: string;
+  customerPhone: string | null;
+  shipLine1: string;
+  shipLine2: string | null;
+  shipCity: string;
+  shipRegion: string;
+  shipPostalCode: string;
+  shipCountry: string;
+  supplierOrderNumber: string | null;
+  supplierInvoiceNumber: string | null;
+  carrier: string | null;
+  trackingNumber: string | null;
+  trackingUrl: string | null;
+  paidAt: string | null;
+  supplierEmailedAt: string | null;
+  shippedAt: string | null;
+  createdAt: string;
+  itemCount: number;
+  items: JlOrderItem[];
+  events?: JlEvent[];
+}
+
+export interface JlSample {
+  id: string;
+  requestNumber: string;
+  status: string;
+  statusLabel: string;
+  name: string;
+  email: string;
+  phone?: string;
+  address: { line1: string; line2?: string; city: string; state: string; zip: string; country: string };
+  items: { fabricId: string; name: string; sku: string; imageUrl: string }[];
+  supplierOrderNumber: string | null;
+  supplierInvoiceNumber: string | null;
+  carrier: string | null;
+  trackingNumber: string | null;
+  trackingUrl: string | null;
+  supplierEmailedAt: string | null;
+  shippedAt: string | null;
+  createdAt: string;
+  events?: JlEvent[];
+}
+
+export interface JlOverview {
+  orders: Record<string, number>;
+  testOrders: number;
+  samples: Record<string, number>;
+  carriers: { id: string; name: string }[];
+  orderStatuses: Record<string, string>;
+  sampleStatuses: Record<string, string>;
+}

@@ -32,6 +32,7 @@ export default function Home() {
         <Shortcut icon="＋" label="Task" primary onPress={() => router.push('/task/new')} />
         <Shortcut icon="👥" label="Clients" onPress={() => router.push('/clients')} />
         <Shortcut icon="🔗" label="Links" onPress={() => router.push('/links')} />
+        <Shortcut icon="🛋" label="JL Comfort" onPress={() => router.push('/jl')} />
         <Shortcut icon="⚙️" label="More" onPress={() => router.push('/more')} />
       </Row>
       {pinned.length ? (

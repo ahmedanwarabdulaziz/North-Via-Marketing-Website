@@ -35,6 +35,7 @@ function RootStack() {
         <Stack.Screen name="clients" options={{ title: 'Clients' }} />
         <Stack.Screen name="share" options={{ title: 'Shared to Anwarz' }} />
         <Stack.Screen name="links" options={{ title: 'Quick links' }} />
+        <Stack.Screen name="jl" options={{ title: 'JL Comfort' }} />
       </Stack.Protected>
       <Stack.Protected guard={!signedIn}>
         <Stack.Screen name="login" options={{ headerShown: false }} />
