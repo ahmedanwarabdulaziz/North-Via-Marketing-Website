@@ -1,14 +1,12 @@
 import type { Metadata } from 'next';
 import Image from 'next/image';
 import { notFound } from 'next/navigation';
-import { Cairo } from 'next/font/google';
 import { getClientReport, percentChange, type Compared, type PlatformStats, type ReportData, type ReportLanguage } from '@/lib/client-report';
 import { REPORT_TEXT, compactNumber, numberFormat, periodLabel } from '@/lib/report-i18n';
 import { PrintButton } from './PrintButton';
+import './cairo.css';
 
 export const dynamic = 'force-dynamic';
-
-const cairo = Cairo({ subsets: ['arabic', 'latin'], weight: ['400', '600', '700'], display: 'swap' });
 
 type T = (typeof REPORT_TEXT)[ReportLanguage];
 
@@ -412,7 +410,7 @@ export default async function SharedReportPage({ params }: { params: Promise<{ i
   const t = REPORT_TEXT[lang];
 
   return (
-    <main dir={lang === 'ar' ? 'rtl' : 'ltr'} lang={lang} className={`min-h-screen bg-zinc-50 print:bg-white ${lang === 'ar' ? cairo.className : ''}`}>
+    <main dir={lang === 'ar' ? 'rtl' : 'ltr'} lang={lang} className={`min-h-screen bg-zinc-50 print:bg-white ${lang === 'ar' ? 'font-cairo' : ''}`}>
       <header className="bg-gradient-to-br from-[#14306b] via-[#1e3a8a] to-[#b45309] text-white print:bg-none print:text-zinc-900">
         <div className="max-w-3xl mx-auto px-5 pt-8 pb-10">
           <div className="flex items-center justify-between gap-4">
