@@ -7,6 +7,7 @@
 //
 // Env: NTFY_TOKEN (send-only token of the "anwarz" ntfy user). Optional NTFY_URL, NTFY_TOPIC.
 
+import { ntfyMuted } from './alert-channels';
 import { sendPush, type PushChannel } from './push';
 
 const NTFY_URL = process.env.NTFY_URL || 'https://ntfy.northviamarketing.com';
@@ -46,7 +47,7 @@ export async function ringPhone(ring: Ring): Promise<boolean> {
 
 async function ringNtfy(ring: Ring): Promise<boolean> {
   const token = process.env.NTFY_TOKEN;
-  if (!token) return false;
+  if (!token || (await ntfyMuted())) return false; // ntfy rings turned off in the app (More → Alerts)
   try {
     const response = await fetch(NTFY_URL, {
       method: 'POST',

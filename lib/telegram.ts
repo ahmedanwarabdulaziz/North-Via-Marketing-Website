@@ -1,3 +1,5 @@
+import { telegramAlertMuted } from './alert-channels';
+
 // Minimal Telegram Bot API client for the reviews bot.
 
 export interface InlineButton {
@@ -69,6 +71,8 @@ function markup(message: OutgoingMessage) {
 }
 
 export async function sendMessage(chatId: number | string, message: OutgoingMessage) {
+  // Telegram alerts paused or off (Anwarz app → More): skip, unless this is a reply to Ahmed.
+  if (await telegramAlertMuted()) return { skipped: true };
   return telegram('sendMessage', {
     chat_id: chatId,
     text: message.text,
@@ -81,6 +85,7 @@ export async function sendMessage(chatId: number | string, message: OutgoingMess
 
 /** Sends a photo already on Telegram (by file_id) with an HTML caption (max 1024 characters). */
 export async function sendPhoto(chatId: number | string, fileId: string, message: OutgoingMessage) {
+  if (await telegramAlertMuted()) return { skipped: true };
   return telegram('sendPhoto', {
     chat_id: chatId,
     photo: fileId,

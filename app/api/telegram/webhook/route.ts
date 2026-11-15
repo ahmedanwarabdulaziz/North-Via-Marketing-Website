@@ -1,3 +1,4 @@
+import { runInteractive } from '@/lib/alert-channels';
 import crypto from 'crypto';
 import { handleCallback, handleReviewMessage } from '@/lib/review-telegram';
 import { handleMenuCallback, handleMenuCommand, sendMenu } from '@/lib/telegram-menu';
@@ -28,7 +29,12 @@ function validSecret(request: Request) {
  * Telegram delivers bot updates here. The secret header proves the request is from
  * Telegram; only chats in TELEGRAM_ALLOWED_CHAT_IDS can see reviews or press buttons.
  */
+/** Everything sent while handling an update is a reply to Ahmed, so it's sent even when alerts are paused. */
 export async function POST(request: Request) {
+  return runInteractive(() => handleUpdate(request));
+}
+
+async function handleUpdate(request: Request) {
   if (!validSecret(request)) return new Response('Forbidden', { status: 403 });
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

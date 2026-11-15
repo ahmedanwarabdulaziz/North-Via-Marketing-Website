@@ -4,6 +4,7 @@ import * as WebBrowser from 'expo-web-browser';
 import { useEffect, useState } from 'react';
 import { Alert, Switch } from 'react-native';
 
+import { AlertSwitches } from '@/components/alert-switches';
 import { Button, Card, Row, Screen, Section, T } from '@/components/ui';
 import { API_URL, api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -79,6 +80,10 @@ export default function More() {
         {PANEL_PAGES.map((page) => (
           <Button key={page.path} title={page.title} kind="outline" onPress={() => WebBrowser.openBrowserAsync(`${API_URL}${page.path}`)} />
         ))}
+      </Section>
+
+      <Section title="Alerts">
+        <AlertSwitches />
       </Section>
 
       <Section title="This phone">
