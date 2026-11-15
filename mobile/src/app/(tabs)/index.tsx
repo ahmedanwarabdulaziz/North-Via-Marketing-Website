@@ -15,7 +15,7 @@ function greeting() {
 
 export default function Home() {
   const p = usePalette();
-  const { data, error, loading, refreshing, refresh } = useApi<HomeData>('/home');
+  const { data, error, loading, refreshing, refresh, reload } = useApi<HomeData>('/home');
 
   return (
     <Screen
@@ -72,18 +72,18 @@ export default function Home() {
           {data.tasks.overdue.length ? (
             <Section title={`Overdue (${data.tasks.counts.overdue})`}>
               {data.tasks.overdue.slice(0, 5).map((t) => (
-                <TaskCard key={`${t.id}:${t.dueAt}:${t.status}`} task={t} />
+                <TaskCard key={`${t.id}:${t.dueAt}:${t.status}`} task={t} onChanged={reload} />
               ))}
               {data.tasks.counts.overdue > 5 ? <Button title="See all tasks" kind="outline" small onPress={() => router.push('/tasks')} /> : null}
             </Section>
           ) : null}
 
           <Section title={`Today (${data.tasks.counts.today})`}>
-            {data.tasks.today.length ? data.tasks.today.map((t) => <TaskCard key={`${t.id}:${t.dueAt}:${t.status}`} task={t} />) : <Empty text="Nothing due today." />}
+            {data.tasks.today.length ? data.tasks.today.map((t) => <TaskCard key={`${t.id}:${t.dueAt}:${t.status}`} task={t} onChanged={reload} />) : <Empty text="Nothing due today." />}
           </Section>
 
           <Section title={`Emails waiting (${data.emails.waiting})`} right={data.emails.urgent ? <T variant="small" color={p.danger}>{`${data.emails.urgent} urgent`}</T> : undefined}>
-            {data.emails.latest.length ? data.emails.latest.map((e) => <EmailCard key={`${e.id}:${e.status}`} email={e} />) : <Empty text="Inbox is clear." />}
+            {data.emails.latest.length ? data.emails.latest.map((e) => <EmailCard key={`${e.id}:${e.status}`} email={e} onChanged={reload} hideWhenHandled />) : <Empty text="Inbox is clear." />}
             {data.emails.waiting > data.emails.latest.length ? <Button title="Open inbox" kind="outline" small onPress={() => router.push('/inbox')} /> : null}
           </Section>
 

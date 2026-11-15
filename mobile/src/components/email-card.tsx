@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Alert, View } from 'react-native';
 
 import { api } from '@/lib/api';
@@ -7,6 +7,7 @@ import { ago, dateTime } from '@/lib/format';
 import { space, usePalette } from '@/lib/theme';
 import type { AppEmail, Audio } from '@/lib/types';
 
+import { Tick } from './selection-bar';
 import { Back, BottomSheet, Note, Tile } from './sheet';
 import { Card, Input, Pill, Row, T } from './ui';
 import { VoiceButton } from './voice-button';
@@ -28,23 +29,44 @@ const STATUS: Record<AppEmail['status'], { text: string; tone: 'brand' | 'danger
 /**
  * `selecting`: the Inbox is in multi-select mode (started by holding a card), so a tap
  * ticks the card instead of opening it.
+ * `onChanged`: the list reloads quietly when the sheet closes after a change; with `hideWhenHandled`
+ * (lists of emails waiting on Ahmed), a sent, done or ignored email disappears at once.
  */
 export function EmailCard({
   email: initial,
   selecting,
   selected,
   onSelect,
+  onChanged,
+  hideWhenHandled,
 }: {
   email: AppEmail;
   selecting?: boolean;
   selected?: boolean;
   onSelect?: (id: string) => void;
+  onChanged?: () => void;
+  hideWhenHandled?: boolean;
 }) {
   const p = usePalette();
   const [email, setEmail] = useState(initial);
   const [open, setOpen] = useState(false);
+  const changed = useRef(false);
   const s = STATUS[email.status];
   const handled = ['sent', 'done', 'ignored'].includes(email.status);
+
+  const update = (e: AppEmail) => {
+    changed.current = true;
+    setEmail(e);
+  };
+  const closeSheet = () => {
+    setOpen(false);
+    if (changed.current) {
+      changed.current = false;
+      onChanged?.();
+    }
+  };
+
+  if (hideWhenHandled && handled && !open) return null;
 
   return (
     <>
@@ -74,27 +96,8 @@ export function EmailCard({
           {email.inbox ? <Pill text={email.inbox.label || email.inbox.email} tone="muted" /> : null}
         </Row>
       </Card>
-      <EmailSheet email={email} visible={open} onClose={() => setOpen(false)} onChange={setEmail} />
+      <EmailSheet email={email} visible={open} onClose={closeSheet} onChange={update} />
     </>
-  );
-}
-
-function Tick({ on }: { on: boolean }) {
-  const p = usePalette();
-  return (
-    <View
-      style={{
-        width: 22,
-        height: 22,
-        borderRadius: 11,
-        borderWidth: 2,
-        borderColor: on ? p.brand : p.muted,
-        backgroundColor: on ? p.brand : 'transparent',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}>
-      {on ? <T color={p.onBrand} style={{ fontSize: 13, fontWeight: '900', lineHeight: 16 }}>✓</T> : null}
-    </View>
   );
 }
 

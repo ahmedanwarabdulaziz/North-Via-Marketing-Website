@@ -316,3 +316,56 @@ export function Empty({ text }: { text: string }) {
     </View>
   );
 }
+
+/** One-row segmented tabs with an optional small count badge on each. */
+export function Segmented<K extends string>({
+  options,
+  value,
+  onChange,
+}: {
+  options: { key: K; label: string; count?: number | null; alert?: boolean }[];
+  value: K;
+  onChange: (key: K) => void;
+}) {
+  const p = usePalette();
+  return (
+    <View style={{ flexDirection: 'row', backgroundColor: p.border, borderRadius: radius.md, padding: 3, gap: 3 }}>
+      {options.map((o) => {
+        const on = o.key === value;
+        return (
+          <Pressable
+            key={o.key}
+            onPress={() => onChange(o.key)}
+            style={({ pressed }) => ({
+              flex: 1,
+              alignItems: 'center',
+              justifyContent: 'center',
+              paddingVertical: 8,
+              borderRadius: radius.sm,
+              backgroundColor: on ? p.card : 'transparent',
+              opacity: pressed ? 0.7 : 1,
+              ...(on ? { shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 3, elevation: 2 } : {}),
+            })}>
+            <Text numberOfLines={1} style={{ color: on ? p.brand : p.muted, fontWeight: on ? '800' : '600', fontSize: 13 }}>
+              {o.label}
+            </Text>
+            {o.count ? (
+              <Text style={{ color: o.alert ? p.danger : on ? p.brand : p.muted, fontSize: 11, fontWeight: '700', marginTop: 1 }}>{o.count}</Text>
+            ) : (
+              <Text style={{ fontSize: 11, marginTop: 1, color: 'transparent' }}>0</Text>
+            )}
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+/** Filter chips in one row that scrolls sideways (inboxes, clients), instead of wrapping onto more lines. */
+export function ChipRow({ children }: { children: ReactNode }) {
+  return (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -space.lg }} contentContainerStyle={{ paddingHorizontal: space.lg, gap: space.sm }}>
+      {children}
+    </ScrollView>
+  );
+}

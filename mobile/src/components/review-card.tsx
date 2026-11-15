@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Alert, Linking, Text, View } from 'react-native';
 
 import { api } from '@/lib/api';
@@ -32,11 +32,27 @@ const STATUS: Record<AppReview['status'], { text: string; tone: 'brand' | 'dange
   skipped: { text: 'Skipped', tone: 'muted' },
 };
 
-export function ReviewCard({ review: initial }: { review: AppReview }) {
+/** `onChanged`: in the waiting list, a posted or skipped review disappears at once and the list reloads quietly. */
+export function ReviewCard({ review: initial, onChanged }: { review: AppReview; onChanged?: () => void }) {
   const [review, setReview] = useState(initial);
   const [open, setOpen] = useState(false);
+  const changed = useRef(false);
   const s = STATUS[review.status];
   const bad = review.rating > 0 && review.rating <= 2;
+
+  const update = (r: AppReview) => {
+    changed.current = true;
+    setReview(r);
+  };
+  const closeSheet = () => {
+    setOpen(false);
+    if (changed.current) {
+      changed.current = false;
+      onChanged?.();
+    }
+  };
+
+  if (onChanged && !review.waiting && !open) return null;
 
   return (
     <>
@@ -63,7 +79,7 @@ export function ReviewCard({ review: initial }: { review: AppReview }) {
           <Pill text={s.text} tone={s.tone} />
         </Row>
       </Card>
-      <ReviewSheet review={review} visible={open} onClose={() => setOpen(false)} onChange={setReview} />
+      <ReviewSheet review={review} visible={open} onClose={closeSheet} onChange={update} />
     </>
   );
 }

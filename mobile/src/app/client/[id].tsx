@@ -19,7 +19,7 @@ const digits = (phone: string) => phone.replace(/[^\d]/g, '');
 
 export default function ClientScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { data, error, loading, refreshing, refresh } = useApi<ClientData>(`/clients/${id}`);
+  const { data, error, loading, refreshing, refresh, reload } = useApi<ClientData>(`/clients/${id}`);
 
   if (loading && !data) return <Loading />;
   if (error && !data) return <ErrorBox message={error} onRetry={refresh} />;
@@ -51,7 +51,7 @@ export default function ClientScreen() {
       </Card>
 
       <Section title={`Open tasks (${data.tasks.length})`} right={<Button title="＋ Task" small kind="soft" onPress={() => router.push('/task/new')} />}>
-        {data.tasks.length ? data.tasks.map((t) => <TaskCard key={`${t.id}:${t.dueAt}:${t.status}`} task={t} />) : <Empty text="No open tasks." />}
+        {data.tasks.length ? data.tasks.map((t) => <TaskCard key={`${t.id}:${t.dueAt}:${t.status}`} task={t} onChanged={reload} />) : <Empty text="No open tasks." />}
       </Section>
 
       <Section title={`Websites (${data.websites.length})`}>

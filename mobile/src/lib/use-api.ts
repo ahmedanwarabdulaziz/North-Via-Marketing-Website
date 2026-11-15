@@ -44,5 +44,7 @@ export function useApi<T>(path: string | null) {
   );
 
   const refresh = useCallback(() => load('pull'), [load]);
-  return { data, setData, error, loading, refreshing, refresh };
+  /** Reloads without the pull-down spinner, e.g. after an action changed the list. */
+  const reload = useCallback(() => load('focus'), [load]);
+  return { data, setData, error, loading, refreshing, refresh, reload };
 }

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Alert, View } from 'react-native';
 
 import { ReviewCard } from '@/components/review-card';
-import { Button, Card, Chip, Empty, ErrorBox, Loading, Row, Screen, T } from '@/components/ui';
+import { Button, Card, Chip, ChipRow, Empty, ErrorBox, Loading, Row, Screen, Segmented, T } from '@/components/ui';
 import { api } from '@/lib/api';
 import { space, usePalette } from '@/lib/theme';
 import type { AppReview } from '@/lib/types';
@@ -20,7 +20,7 @@ export default function Reviews() {
   const p = usePalette();
   const [view, setView] = useState<'waiting' | 'answered'>('waiting');
   const [client, setClient] = useState<string | null>(null);
-  const { data, error, loading, refreshing, refresh } = useApi<ReviewsData>(`/reviews?view=${view}${client ? `&client=${encodeURIComponent(client)}` : ''}`);
+  const { data, error, loading, refreshing, refresh, reload } = useApi<ReviewsData>(`/reviews?view=${view}${client ? `&client=${encodeURIComponent(client)}` : ''}`);
   const [posting, setPosting] = useState<string | null>(null); // 'all' or a client id
 
   // Ready 5★ drafts per client, from the list on screen.
@@ -51,7 +51,7 @@ export default function Reviews() {
                 timeoutMs: 120_000,
               });
               Alert.alert('Done', `✅ Posted ${result.posted} on Google${result.failed.length ? `\n⚠️ ${result.failed.length} failed: ${result.failed[0]}` : ''}`);
-              void refresh();
+              void reload();
             } catch (e) {
               Alert.alert('Not posted', e instanceof Error ? e.message : String(e));
             } finally {
@@ -65,17 +65,21 @@ export default function Reviews() {
 
   return (
     <Screen title="Reviews" subtitle="Google reviews for your clients" refreshing={refreshing} onRefresh={refresh}>
-      <Row>
-        <Chip text="Waiting" selected={view === 'waiting'} onPress={() => setView('waiting')} />
-        <Chip text="Answered" selected={view === 'answered'} onPress={() => setView('answered')} />
-      </Row>
+      <Segmented
+        value={view}
+        onChange={setView}
+        options={[
+          { key: 'waiting', label: 'Waiting', count: view === 'waiting' && data ? data.reviews.length : null, alert: view === 'waiting' && Boolean(data?.reviews.some((r) => r.rating > 0 && r.rating <= 2)) },
+          { key: 'answered', label: 'Answered' },
+        ]}
+      />
       {view === 'waiting' && data && (data.clients.length > 1 || client) ? (
-        <Row wrap>
+        <ChipRow>
           <Chip text="All clients" selected={!client} onPress={() => setClient(null)} />
           {data.clients.map((c) => (
             <Chip key={c.id} text={`${c.name} (${c.count})`} selected={client === c.id} onPress={() => setClient(c.id)} />
           ))}
-        </Row>
+        </ChipRow>
       ) : null}
 
       {view === 'waiting' && fiveTotal > 0 ? (
@@ -106,7 +110,7 @@ export default function Reviews() {
       {error && !data ? <ErrorBox message={error} onRetry={refresh} /> : null}
       {data ? (
         data.reviews.length ? (
-          data.reviews.map((r) => <ReviewCard key={`${r.id}:${r.status}:${r.draft?.length ?? 0}`} review={r} />)
+          data.reviews.map((r) => <ReviewCard key={`${r.id}:${r.status}:${r.draft?.length ?? 0}`} review={r} onChanged={view === 'waiting' ? reload : undefined} />)
         ) : (
           <Empty text={view === 'waiting' ? 'No reviews waiting. ✅' : 'No answered reviews yet.'} />
         )

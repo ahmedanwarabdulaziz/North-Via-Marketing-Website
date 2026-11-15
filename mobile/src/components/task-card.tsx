@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Alert, Linking, View } from 'react-native';
 
 import { api } from '@/lib/api';
@@ -7,6 +7,7 @@ import { cairoDate } from '@/lib/format';
 import { space, usePalette } from '@/lib/theme';
 import type { AppTask } from '@/lib/types';
 
+import { Tick } from './selection-bar';
 import { Back, BottomSheet, Choice, Grid, Note, Tile } from './sheet';
 import { Card, Pill, Row, T } from './ui';
 
@@ -28,19 +29,58 @@ function timeLabel(t: string) {
   return `${h % 12 || 12} ${h < 12 ? 'AM' : 'PM'}`;
 }
 
-/** Results show on the card (like Telegram); the list itself reloads on pull-down or when coming back to it. */
-export function TaskCard({ task: initial }: { task: AppTask }) {
+/**
+ * With `onChanged` (lists of open tasks), a task that is done or removed disappears at once, and the
+ * list reloads quietly when its sheet closes after any change (it may now belong to another tab).
+ * Without it, the result stays on the card (like Telegram).
+ * With `onSelect`, holding the card starts multi-select; while `selecting`, a tap ticks it instead of opening it.
+ */
+export function TaskCard({
+  task: initial,
+  selecting,
+  selected,
+  onSelect,
+  onChanged,
+}: {
+  task: AppTask;
+  selecting?: boolean;
+  selected?: boolean;
+  onSelect?: (id: string) => void;
+  onChanged?: () => void;
+}) {
   const p = usePalette();
   const [task, setTask] = useState(initial);
   const [open, setOpen] = useState(false);
+  const changed = useRef(false);
   const active = task.status === 'open';
+
+  const update = (t: AppTask) => {
+    changed.current = true;
+    setTask(t);
+  };
+  const closeSheet = () => {
+    setOpen(false);
+    if (changed.current) {
+      changed.current = false;
+      onChanged?.();
+    }
+  };
+
+  if (onChanged && !active && !open) return null;
 
   return (
     <>
-      <Card onPress={() => setOpen(true)} tone={active && task.overdue ? 'danger' : undefined} style={{ paddingVertical: space.md }}>
-        <T variant="heading" numberOfLines={2} style={!active ? { textDecorationLine: 'line-through', color: p.muted } : undefined}>
-          {task.title}
-        </T>
+      <Card
+        onPress={() => (selecting ? onSelect?.(task.id) : setOpen(true))}
+        onLongPress={onSelect ? () => onSelect(task.id) : undefined}
+        tone={selected ? 'brand' : active && task.overdue ? 'danger' : undefined}
+        style={{ paddingVertical: space.md, ...(selected ? { backgroundColor: p.brandSoft } : {}) }}>
+        <Row>
+          {selecting ? <Tick on={Boolean(selected)} /> : null}
+          <T variant="heading" numberOfLines={2} style={{ flex: 1, ...(!active ? { textDecorationLine: 'line-through', color: p.muted } : {}) }}>
+            {task.title}
+          </T>
+        </Row>
         <Row wrap>
           {!active ? <Pill text={task.status === 'done' ? '✅ Done' : '↩️ Removed'} tone={task.status === 'done' ? 'ok' : 'muted'} /> : null}
           {task.when ? <T variant="small" color={active && task.overdue ? p.danger : p.muted}>{`${active && task.overdue ? '⚠️ ' : '🕒 '}${task.when}`}</T> : <T variant="small">No date</T>}
@@ -49,7 +89,7 @@ export function TaskCard({ task: initial }: { task: AppTask }) {
           {task.repeats ? <Pill text="Repeats" tone="muted" /> : null}
         </Row>
       </Card>
-      <TaskSheet task={task} visible={open} onClose={() => setOpen(false)} onChange={setTask} />
+      <TaskSheet task={task} visible={open} onClose={closeSheet} onChange={update} />
     </>
   );
 }
@@ -119,8 +159,8 @@ function TaskSheet({ task, visible, onClose, onChange }: { task: AppTask; visibl
             <View style={{ gap: space.sm }}>
               {task.overdue ? (
                 <Row>
-                  <Tile icon="📅" label="Move to today" busy={busy === 'today'} onPress={() => act('today', { action: 'move', day: 'today' }, (t) => `Moved to ${t.when}`)} />
-                  <Tile icon="🌅" label="Move to tomorrow" busy={busy === 'tomorrow'} onPress={() => act('tomorrow', { action: 'move', day: 'tomorrow' }, (t) => `Moved to ${t.when}`)} />
+                  <Tile icon="📅" label="Move to today" busy={busy === 'today'} onPress={() => act('today', { action: 'move', day: 'today' }, (t) => `Moved to ${t.when}`, true)} />
+                  <Tile icon="🌅" label="Move to tomorrow" busy={busy === 'tomorrow'} onPress={() => act('tomorrow', { action: 'move', day: 'tomorrow' }, (t) => `Moved to ${t.when}`, true)} />
                 </Row>
               ) : null}
               <Row>
