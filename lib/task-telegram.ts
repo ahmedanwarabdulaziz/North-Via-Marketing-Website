@@ -820,7 +820,7 @@ function clockLabel(at: Date) {
   return date === cairoToday() ? formatTime(time) : `${formatDate(date)}, ${formatTime(time)}`;
 }
 
-function snoozeUntil(task: Task, choice: string) {
+export function snoozeUntil(task: Task, choice: string) {
   // Reminders are checked every 5 minutes: snoozing means "with a later run".
   // ('15' and '60' are from cards sent before the hourly change.)
   const hours = { '1h': 1, '3h': 3, '15': 1, '60': 1 }[choice];
@@ -915,6 +915,8 @@ export async function sendDueReminders(now = new Date()) {
           // "High", not "max": max-priority alarms keep ringing (ntfy's "keep alerting") even after
           // a button is pressed; high rings once and stops when Done / Snooze is tapped.
           priority: 4,
+          // Opens the task in the Anwarz app when the push notification is tapped.
+          data: { type: 'task', id: task.id },
           // Buttons on the alarm itself, so it can be handled from the lock screen.
           actions: [
             { label: '☑️ Done', url: taskActionUrl(task.id, 'done') },

@@ -3,7 +3,11 @@
 // Used for timed task reminders and for alerts that need someone to step in.
 // It never throws: the Telegram message is the main channel, the ring is extra.
 //
+// Every ring is also sent as a push notification to the Anwarz app (lib/push.ts).
+//
 // Env: NTFY_TOKEN (send-only token of the "anwarz" ntfy user). Optional NTFY_URL, NTFY_TOPIC.
+
+import { sendPush } from './push';
 
 const NTFY_URL = process.env.NTFY_URL || 'https://ntfy.northviamarketing.com';
 const NTFY_TOPIC = process.env.NTFY_TOPIC || 'ahmed-alerts';
@@ -19,13 +23,24 @@ export interface Ring {
   click?: string;
   /** Up to 3 buttons on the notification; each calls a URL in the background (ntfy "http" action). */
   actions?: { label: string; url: string }[];
+  /** For the Anwarz app's push notification: what a tap opens, e.g. { type: 'task', id }. */
+  data?: Record<string, string>;
 }
 
 export function ntfyConfigured() {
   return Boolean(process.env.NTFY_TOKEN);
 }
 
+/** Rings through ntfy and, at the same time, sends a push notification to the Anwarz app. */
 export async function ringPhone(ring: Ring): Promise<boolean> {
+  const [rang] = await Promise.all([
+    ringNtfy(ring),
+    sendPush({ title: ring.title, body: ring.message, urgent: (ring.priority ?? 5) === 5, data: ring.data }),
+  ]);
+  return rang;
+}
+
+async function ringNtfy(ring: Ring): Promise<boolean> {
   const token = process.env.NTFY_TOKEN;
   if (!token) return false;
   try {
