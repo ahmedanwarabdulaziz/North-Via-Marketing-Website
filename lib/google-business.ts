@@ -154,6 +154,9 @@ function describeGoogleError(error: unknown) {
   const tokenError = typeof data?.error === 'string' ? data.error : undefined;
   const apiMessage = typeof data?.error === 'object' ? data.error.message : undefined;
   const message = apiMessage || data?.error_description || err.message || 'Unknown Google API error';
+  if (/unclaimed location/i.test(message)) {
+    return 'Google says this profile is not verified (unclaimed), so replies can’t be posted. Verify or re-verify it at business.google.com (it often happens after a name change), then try again.';
+  }
   if (status === 429) return `Google API quota reached (${message}). Check that Business Profile API access is approved for this project.`;
   if (tokenError === 'invalid_grant' || message.includes('invalid_grant')) {
     return `Google access was revoked or expired (${data?.error_description || 'invalid_grant'}). Ask the client to reconnect.`;

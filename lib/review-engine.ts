@@ -525,7 +525,17 @@ export async function postApprovedReply(reviewId: string, text: string) {
   if (!location) throw new Error('Location not found.');
   if (!location.linked) throw new Error('This location is not enabled for review management.');
 
-  await publishReviewReply(location, review.reviewName, reply);
+  try {
+    await publishReviewReply(location, review.reviewName, reply);
+  } catch (error) {
+    // The reviewer deleted the review (or Google removed it): nothing to reply to any more,
+    // so it leaves the waiting list instead of failing on every try.
+    if (/requested entity was not found|not_found/i.test(error instanceof Error ? error.message : String(error))) {
+      await updateDoc(GBP_REVIEWS, reviewId, { status: 'skipped', draftError: 'Removed from Google', updatedAt: new Date().toISOString() });
+      throw new Error('This review no longer exists on Google (the reviewer deleted it or Google removed it). It has been taken off the list.');
+    }
+    throw error;
+  }
   await updateDoc(GBP_REVIEWS, reviewId, {
     status: 'posted',
     postedReply: reply,
