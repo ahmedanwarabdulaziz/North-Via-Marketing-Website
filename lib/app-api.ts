@@ -1,7 +1,7 @@
 import { listClientProfiles } from './admin-ops';
 import { formatWhen, isOverdue, type Task } from './tasks';
 import { whatsAppShareLink } from './whatsapp-share';
-import type { EmailAccount, EmailItem } from './email/inbox';
+import { isNoReply, type EmailAccount, type EmailItem } from './email/inbox';
 import type { ClientProfile, Website } from '@/types/database';
 
 // What the Anwarz mobile app receives: plain JSON shapes built from the same data the
@@ -53,6 +53,7 @@ export function appEmail(item: EmailItem, account: Pick<EmailAccount, 'id' | 'em
     snippet: item.snippet,
     draft: item.draft,
     sentAt: item.sent_at,
+    canReply: item.status !== 'sent' && !isNoReply(item.from_email),
     ...(full ? { body: item.body, brief: item.brief } : {}),
   };
 }

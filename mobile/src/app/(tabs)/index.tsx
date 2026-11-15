@@ -1,6 +1,7 @@
 import { router } from 'expo-router';
 
-import { EmailRow, WebsiteRow } from '@/components/rows';
+import { EmailCard } from '@/components/email-card';
+import { WebsiteRow } from '@/components/rows';
 import { TaskCard } from '@/components/task-card';
 import { Button, Card, Empty, ErrorBox, Loading, Row, Screen, Section, Stat, T } from '@/components/ui';
 import { usePalette } from '@/lib/theme';
@@ -71,7 +72,7 @@ export default function Home() {
           </Section>
 
           <Section title={`Emails waiting (${data.emails.waiting})`} right={data.emails.urgent ? <T variant="small" color={p.danger}>{`${data.emails.urgent} urgent`}</T> : undefined}>
-            {data.emails.latest.length ? data.emails.latest.map((e) => <EmailRow key={e.id} email={e} />) : <Empty text="Inbox is clear." />}
+            {data.emails.latest.length ? data.emails.latest.map((e) => <EmailCard key={`${e.id}:${e.status}`} email={e} />) : <Empty text="Inbox is clear." />}
             {data.emails.waiting > data.emails.latest.length ? <Button title="Open inbox" kind="outline" small onPress={() => router.push('/inbox')} /> : null}
           </Section>
 

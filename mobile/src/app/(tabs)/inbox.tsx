@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import { EmailRow } from '@/components/rows';
+import { EmailCard } from '@/components/email-card';
 import { Chip, Empty, ErrorBox, Loading, Row, Screen } from '@/components/ui';
 import type { AppEmail } from '@/lib/types';
 import { useApi } from '@/lib/use-api';
@@ -33,7 +33,7 @@ export default function Inbox() {
       ) : null}
       {loading && !data ? <Loading /> : null}
       {error && !data ? <ErrorBox message={error} onRetry={refresh} /> : null}
-      {data ? data.emails.length ? data.emails.map((e) => <EmailRow key={e.id} email={e} />) : <Empty text={view === 'waiting' ? 'Nothing waiting on you. ✅' : 'No emails here.'} /> : null}
+      {data ? data.emails.length ? data.emails.map((e) => <EmailCard key={`${e.id}:${e.status}`} email={e} />) : <Empty text={view === 'waiting' ? 'Nothing waiting on you. ✅' : 'No emails here.'} /> : null}
     </Screen>
   );
 }

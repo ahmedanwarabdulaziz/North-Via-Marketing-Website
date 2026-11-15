@@ -1,7 +1,8 @@
 import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { Linking } from 'react-native';
 
-import { EmailRow, WebsiteRow } from '@/components/rows';
+import { EmailCard } from '@/components/email-card';
+import { WebsiteRow } from '@/components/rows';
 import { TaskCard } from '@/components/task-card';
 import { Button, Card, Empty, ErrorBox, Loading, Row, Screen, Section, T } from '@/components/ui';
 import type { AppClient, AppEmail, AppTask, AppWebsite } from '@/lib/types';
@@ -60,7 +61,7 @@ export default function ClientScreen() {
       {data.emails.length ? (
         <Section title="Recent email">
           {data.emails.map((e) => (
-            <EmailRow key={e.id} email={e} />
+            <EmailCard key={`${e.id}:${e.status}`} email={e} />
           ))}
         </Section>
       ) : null}

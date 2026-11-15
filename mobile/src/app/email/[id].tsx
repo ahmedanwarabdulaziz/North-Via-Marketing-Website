@@ -2,7 +2,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Alert } from 'react-native';
 
-import { EmailRow } from '@/components/rows';
+import { EmailCard } from '@/components/email-card';
 import { VoiceButton } from '@/components/voice-button';
 import { Button, Card, ErrorBox, Input, Loading, Pill, Row, Screen, Section, T } from '@/components/ui';
 import { api } from '@/lib/api';
@@ -38,7 +38,7 @@ export default function EmailScreen() {
       if (action === 'draft') setNote('');
       if (action === 'draft' || action === 'edit' || action === 'cancel') setDraft(null);
       if (action === 'send') Alert.alert('Sent ✅', `Reply sent to ${result.email.fromEmail || ''}`);
-      if (action === 'done' || action === 'ignore') router.back();
+      if (action === 'done' || action === 'ignore' || action === 'ignore_similar') router.back();
       return result;
     } catch (e) {
       Alert.alert(action === 'send' ? 'Not sent' : 'Something went wrong', e instanceof Error ? e.message : String(e));
@@ -115,6 +115,8 @@ export default function EmailScreen() {
 
       {data.canReply && !handled ? (
         <Section title={hasDraft ? 'Change the reply' : 'Reply'}>
+          <Button title={hasDraft ? '✨ New AI version' : '✨ AI reply: write it for me'} kind="soft" busy={busy === 'draft'} onPress={() => act('draft', { auto: true })} />
+          <T variant="small">Or tell the AI what to say:</T>
           <Input value={note} onChangeText={setNote} placeholder={hasDraft ? 'What should change?' : 'What should the reply say?'} multiline />
           <Button title={hasDraft ? '✍️ Rewrite' : '✍️ Write the reply'} busy={busy === 'draft'} disabled={!note.trim()} onPress={() => act('draft', { text: note.trim() })} />
           <VoiceButton disabled={busy !== null} onDone={(audio: Audio) => act('draft', { audio })} />
@@ -139,13 +141,26 @@ export default function EmailScreen() {
               ])
             }
           />
+          <Button
+            title="🚫 Ignore like this"
+            kind="soft"
+            tone="muted"
+            style={{ flex: 1 }}
+            busy={busy === 'ignore_similar'}
+            onPress={() =>
+              Alert.alert('Ignore emails like this?', 'Emails with the same kind of content will be skipped from now on. Other emails from this sender still show.', [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Ignore these', style: 'destructive', onPress: () => void act('ignore_similar') },
+              ])
+            }
+          />
         </Row>
       ) : null}
 
       {data.history.length ? (
         <Section title="Earlier with this person">
           {data.history.map((h) => (
-            <EmailRow key={h.id} email={h} />
+            <EmailCard key={`${h.id}:${h.status}`} email={h} />
           ))}
         </Section>
       ) : null}

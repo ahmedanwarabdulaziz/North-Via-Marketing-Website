@@ -110,6 +110,75 @@ export async function setInboxBusiness(accountId: string, clientId: string | nul
   await setSetting(INBOX_LINKS, links);
 }
 
+// ---------- "Ignore emails like this" (the app's 🚫 button) ----------
+// A rule remembers one unwanted email: the same sender with the same subject (numbers, dates and
+// ids ignored) is skipped without asking the AI, and the AI also sees the list, so similar
+// emails from other addresses are judged not important too.
+
+const IGNORE_RULES = 'email_ignore_rules';
+const MAX_RULES = 200;
+
+export interface IgnoreRule {
+  id: string;
+  accountId: string;
+  fromEmail: string | null;
+  subjectKey: string;
+  subject: string;
+  summary: string | null;
+  createdAt: string;
+}
+
+/** The subject without Re:/Fwd:, numbers, dates, ids and spacing, so "Run #123 failed" matches "Run #456 failed". */
+export function subjectKey(subject: string | null | undefined) {
+  return (subject || '')
+    .toLowerCase()
+    .replace(/^((re|fwd?|fw)\s*:\s*)+/i, '')
+    .replace(/[0-9a-f]{8,}/g, '#')
+    .replace(/\d+/g, '#')
+    .replace(/[^a-zÀ-ɏ؀-ۿ#]+/g, ' ')
+    .trim();
+}
+
+export async function listIgnoreRules(): Promise<IgnoreRule[]> {
+  return ((await getSetting<IgnoreRule[]>(IGNORE_RULES).catch(() => null)) || []) as IgnoreRule[];
+}
+
+export async function addIgnoreRule(item: EmailItem) {
+  const rules = await listIgnoreRules();
+  const key = subjectKey(item.subject);
+  if (rules.some((r) => r.accountId === item.account_id && r.fromEmail === (item.from_email || null) && r.subjectKey === key)) return rules;
+  const rule: IgnoreRule = {
+    id: newEmailId(),
+    accountId: item.account_id,
+    fromEmail: item.from_email || null,
+    subjectKey: key,
+    subject: (item.subject || '').slice(0, 200),
+    summary: item.summary?.slice(0, 300) || null,
+    createdAt: new Date().toISOString(),
+  };
+  const next = [...rules, rule].slice(-MAX_RULES);
+  await setSetting(IGNORE_RULES, next);
+  return next;
+}
+
+export async function removeIgnoreRule(id: string) {
+  await setSetting(IGNORE_RULES, (await listIgnoreRules()).filter((r) => r.id !== id));
+}
+
+function matchesIgnoreRule(rules: IgnoreRule[], accountId: string, mail: Pick<MailMessage, 'fromEmail' | 'subject'>) {
+  const key = subjectKey(mail.subject);
+  return Boolean(key) && rules.some((r) => r.accountId === accountId && (!r.fromEmail || r.fromEmail === mail.fromEmail) && r.subjectKey === key);
+}
+
+function ignoreRulesText(rules: IgnoreRule[], accountId: string) {
+  const mine = rules.filter((r) => r.accountId === accountId).slice(-30);
+  if (!mine.length) return '';
+  return [
+    'AHMED MARKED THESE EMAILS AS UNWANTED: emails like them (same kind of content, even from another address) are NOT important:',
+    ...mine.map((r) => `- From ${r.fromEmail || 'anyone'}: "${r.subject}"${r.summary ? ` (${r.summary})` : ''}`),
+  ].join('\n');
+}
+
 // ---------- Items ----------
 
 export async function getEmailItem(id: string) {
@@ -211,7 +280,7 @@ interface Triage {
   reason: string;
 }
 
-async function triage(account: EmailAccount, mail: MailMessage, history: EmailItem[], memory: string): Promise<Triage> {
+async function triage(account: EmailAccount, mail: MailMessage, history: EmailItem[], memory: string, unwanted = ''): Promise<Triage> {
   const raw = await aiJson({
     system: `You sort Ahmed Anwar's email. Decide if this email needs Ahmed's attention.
 IMPORTANT: from a real person or business about his work, clients, money (invoices, payments, bank), contracts, meetings, legal or government matters, a real account problem that needs action (account suspended or restricted, payment failed, policy violation, domain or hosting expiring), or anything his instructions or this inbox's focus say to watch for. A reply in a conversation he already had is usually important.
@@ -224,7 +293,9 @@ Return ONLY JSON: {"important": true|false, "urgent": true|false, "summary": "..
 ${memory}
 
 THIS INBOX: ${account.label || account.email} (${account.email})
-FOCUS FOR THIS INBOX: ${account.focus || '(none set: use general judgement)'}`,
+FOCUS FOR THIS INBOX: ${account.focus || '(none set: use general judgement)'}${unwanted ? `
+
+${unwanted}` : ''}`,
     user: [
       `EARLIER EMAILS WITH THIS PERSON:\n${conversationText(history)}`,
       '',
@@ -286,6 +357,7 @@ export async function checkInboxes(now = new Date()) {
   if (!accounts.length) return { accounts: 0, new: 0, important: 0 };
   let fresh = 0;
   let important = 0;
+  const rules = await listIgnoreRules();
 
   for (const account of accounts) {
     if (Date.now() > deadline) break;
@@ -320,7 +392,7 @@ export async function checkInboxes(now = new Date()) {
         const mail = await read();
         if (mail.fromEmail === account.email || mail.labels.includes('SENT')) continue;
         fresh++;
-        const ignored = account.ignored_senders.includes(mail.fromEmail);
+        const ignored = account.ignored_senders.includes(mail.fromEmail) || matchesIgnoreRule(rules, account.id, mail);
         const item: EmailItem = {
           id: newEmailId(),
           account_id: account.id,
@@ -348,7 +420,7 @@ export async function checkInboxes(now = new Date()) {
         let verdict: Triage = { important: false, urgent: false, summary: '', reason: '' };
         if (!ignored) {
           const history = await conversationWith({ id: item.id, account_id: account.id, from_email: mail.fromEmail, thread_id: mail.threadId });
-          verdict = await triage(account, mail, history, await memoryText([account.email, mail.fromEmail], account.id)).catch((error) => {
+          verdict = await triage(account, mail, history, await memoryText([account.email, mail.fromEmail], account.id), ignoreRulesText(rules, account.id)).catch((error) => {
             // If the AI is down, err on the side of showing it.
             console.error('Email triage failed:', error instanceof Error ? error.message.slice(0, 150) : error);
             return { important: true, urgent: false, summary: mail.snippet.slice(0, 300), reason: 'AI busy: not sorted' };

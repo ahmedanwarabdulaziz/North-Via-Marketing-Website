@@ -36,6 +36,7 @@ export interface AppEmail {
   snippet: string | null;
   draft: string | null;
   sentAt: string | null;
+  canReply?: boolean;
   body?: string | null;
   brief?: string | null;
 }
