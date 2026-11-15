@@ -226,9 +226,9 @@ export interface JlOrder {
   items: JlOrderItem[];
   events?: JlEvent[];
   /** Sample requests by the same customer (email or postal code) before this order. */
-  samplesBefore?: { requestNumber: string; createdAt: string; matchedBy: 'email' | 'postal code' }[];
+  samplesBefore?: { requestNumber: string; createdAt: string; matchedBy: 'email' | 'name' | 'phone' | 'postal code' }[];
   /** Emails from this customer in Anwarz's inboxes before the order. */
-  emailedBefore?: { count: number; firstAt: string; inboxes: string[] } | null;
+  emailedBefore?: { count: number; firstAt: string; inboxes: string[]; matchedBy?: string[]; subjects?: string[] } | null;
 }
 
 export interface JlSample {

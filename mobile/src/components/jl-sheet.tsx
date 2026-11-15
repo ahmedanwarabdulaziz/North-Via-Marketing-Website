@@ -362,9 +362,12 @@ export function customerSource(order: JlOrder): { label: string; tone: 'ok' | 'b
   const samples = order.samplesBefore ?? [];
   const emailed = order.emailedBefore;
   const sampleText = samples.length
-    ? `Requested samples first: ${samples.map((s) => s.requestNumber).join(', ')} (matched by ${samples[0].matchedBy})`
+    ? `Requested samples first: ${samples.map((s) => `${s.requestNumber} (same ${s.matchedBy})`).join(', ')}`
     : '';
-  const emailText = emailed ? `Emailed first: ${emailed.count} email${emailed.count === 1 ? '' : 's'} since ${dateTime(emailed.firstAt)} (${emailed.inboxes.join(', ')})` : '';
+  const how: Record<string, string> = { email: 'same email', name: 'same name, another address', mentioned: 'their email in the message' };
+  const emailText = emailed
+    ? `Emailed first: ${emailed.count} email${emailed.count === 1 ? '' : 's'} since ${dateTime(emailed.firstAt)} (${emailed.inboxes.join(', ')}; ${(emailed.matchedBy || ['email']).map((m) => how[m] || m).join(', ')})${emailed.subjects?.length ? `: “${emailed.subjects.join('”, “')}”` : ''}`
+    : '';
   if (samples.length && emailed) return { label: '🧵✉️ Samples + emailed first', tone: 'ok', detail: `${sampleText}\n${emailText}` };
   if (samples.length) return { label: '🧵 Samples first', tone: 'ok', detail: sampleText };
   if (emailed) return { label: '✉️ Emailed first', tone: 'brand', detail: emailText };

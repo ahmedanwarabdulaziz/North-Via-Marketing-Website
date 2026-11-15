@@ -57,29 +57,85 @@ async function relay(request: Request, { params }: Ctx) {
 
 interface JlOrderLike {
   customerEmail?: string;
+  customerName?: string;
   createdAt?: string;
-  emailedBefore?: { count: number; firstAt: string; inboxes: string[] } | null;
+  emailedBefore?: { count: number; firstAt: string; inboxes: string[]; matchedBy: string[]; subjects: string[] } | null;
 }
 
-/** Emails from the order's customer received before the order, in the inboxes Anwarz reads. */
+/** "Isabelle  Bilodeau", "isabelle bilodeau", "Isabèlle Bilodeau" → "isabelle bilodeau". */
+const normName = (v: string | null | undefined) =>
+  (v || '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z؀-ۿ ]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+// Our own systems mention customers too (order and sample notifications, Charlotte's replies);
+// those aren't the customer writing to us.
+const SYSTEM_SENDERS = /@(jlcomfort\.com|jlupholstery\.com|charlottefabrics\.com|northviamarketing\.com)$|no-?reply|notifications?@/i;
+
+/** Safe inside a PostgREST or() filter: no commas, parentheses or wildcards from customer data. */
+const filterValue = (v: string) => v.replace(/[,()*%\\"]/g, ' ').trim();
+
+/**
+ * Emails from the order's customer received before the order, in the inboxes Anwarz reads. People
+ * often write from another address, so an email counts when it is from their address, from their
+ * name (2+ words, ignoring case and accents), or mentions their email address (contact forms).
+ */
 async function addEmailedBefore(orders: JlOrderLike[]) {
-  const emails = [...new Set(orders.map((o) => (o.customerEmail || '').trim().toLowerCase()).filter(Boolean))];
-  if (!emails.length) return;
-  const [{ data, error }, accounts] = await Promise.all([
-    supabase.from('email_items').select('from_email, received_at, account_id').in('from_email', [...new Set([...emails, ...orders.map((o) => (o.customerEmail || '').trim()).filter(Boolean)])]).order('received_at').limit(2000),
-    listEmailAccounts(),
-  ]);
-  if (error) throw new Error(error.message);
+  if (!orders.length) return;
+  const accounts = await listEmailAccounts();
   const label = new Map(accounts.map((a) => [a.id, a.label || a.email]));
-  for (const order of orders) {
-    const email = (order.customerEmail || '').trim().toLowerCase();
-    const before = (data || []).filter(
-      (e) => (e.from_email || '').toLowerCase() === email && e.received_at && order.createdAt && Date.parse(e.received_at) < Date.parse(order.createdAt)
-    );
-    order.emailedBefore = before.length
-      ? { count: before.length, firstAt: before[0].received_at!, inboxes: [...new Set(before.map((e) => label.get(e.account_id) || 'Inbox'))] }
-      : null;
-  }
+  const own = new Set(accounts.map((a) => a.email.toLowerCase()));
+  await Promise.all(
+    orders.map(async (order) => {
+      const email = (order.customerEmail || '').trim().toLowerCase();
+      const name = normName(order.customerName);
+      const lastName = filterValue(name.split(' ').pop() || '');
+      const conditions = [
+        email ? `from_email.ilike.${filterValue(email)}` : '',
+        email ? `body.ilike.*${filterValue(email)}*` : '',
+        name.includes(' ') && lastName.length >= 3 ? `from_name.ilike.*${lastName}*` : '',
+      ].filter(Boolean);
+      if (!conditions.length || !order.createdAt) {
+        order.emailedBefore = null;
+        return;
+      }
+      const { data, error } = await supabase
+        .from('email_items')
+        .select('from_name, from_email, subject, received_at, account_id, body')
+        .or(conditions.join(','))
+        .lt('received_at', order.createdAt)
+        .order('received_at')
+        .limit(200);
+      if (error) throw new Error(error.message);
+      const hits: { at: string; inbox: string; how: string; subject: string }[] = [];
+      for (const e of data || []) {
+        const from = (e.from_email || '').toLowerCase();
+        if (!e.received_at || own.has(from) || SYSTEM_SENDERS.test(from)) continue;
+        const how =
+          email && from === email
+            ? 'email'
+            : name.includes(' ') && normName(e.from_name) === name
+              ? 'name'
+              : email && (e.body || '').toLowerCase().includes(email)
+                ? 'mentioned'
+                : '';
+        if (how) hits.push({ at: e.received_at, inbox: label.get(e.account_id) || 'Inbox', how, subject: (e.subject || '').slice(0, 80) });
+      }
+      order.emailedBefore = hits.length
+        ? {
+            count: hits.length,
+            firstAt: hits[0].at,
+            inboxes: [...new Set(hits.map((h) => h.inbox))],
+            matchedBy: [...new Set(hits.map((h) => h.how))],
+            subjects: [...new Set(hits.map((h) => h.subject).filter(Boolean))].slice(0, 3),
+          }
+        : null;
+    })
+  );
 }
 
 export const GET = appRoute<Ctx>((request, _device, context) => relay(request, context));
