@@ -1,5 +1,5 @@
 import Constants, { ExecutionEnvironment } from 'expo-constants';
-import { Linking, Platform } from 'react-native';
+import { Linking, Platform, TurboModuleRegistry } from 'react-native';
 
 import { api, ensureSession } from './api';
 
@@ -15,6 +15,9 @@ let kit: NotifyKit | null | undefined;
 function notifyKit(): NotifyKit | null {
   if (kit !== undefined) return kit;
   if (Platform.OS !== 'android' || Constants.executionEnvironment === ExecutionEnvironment.StoreClient) return (kit = null);
+  // Only when the native part is really in this build (it isn't in Expo Go): asking without "enforcing"
+  // returns null instead of throwing.
+  if (!TurboModuleRegistry.get('NotifeeApiModule')) return (kit = null);
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     kit = require('react-native-notify-kit') as NotifyKit;
@@ -97,9 +100,14 @@ export function registerAlarmEvents(openAlert: (data: { type?: string; id?: stri
   const k = notifyKit();
   if (!k) return () => undefined;
   const { default: notifee, EventType } = k;
-  notifee.onBackgroundEvent(async ({ type, detail }) => {
-    if (type === EventType.ACTION_PRESS || type === EventType.PRESS) await handled(detail.notification as Parameters<typeof handled>[0]);
-  });
+  try {
+    notifee.onBackgroundEvent(async ({ type, detail }) => {
+      if (type === EventType.ACTION_PRESS || type === EventType.PRESS) await handled(detail.notification as Parameters<typeof handled>[0]);
+    });
+  } catch (e) {
+    console.warn('Alarm events unavailable', e);
+    return () => undefined;
+  }
   return notifee.onForegroundEvent(({ type, detail }) => {
     if (type !== EventType.ACTION_PRESS && type !== EventType.PRESS) return;
     const data = (detail.notification?.data || {}) as Record<string, string>;

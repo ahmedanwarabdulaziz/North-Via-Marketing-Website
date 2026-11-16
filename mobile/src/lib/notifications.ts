@@ -320,4 +320,8 @@ export function listenForTaps() {
 }
 
 // Taps and ✅ Seen on a full-screen alarm (also while the app is closed).
-registerAlarmEvents((data) => openAlert(data));
+try {
+  registerAlarmEvents((data) => openAlert(data));
+} catch (e) {
+  console.warn('Alarm events unavailable', e); // never let alarms stop the app from opening
+}

@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { useEffect, useRef, useState, type ComponentRef } from 'react';
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button, ErrorBox, Input, Loading, Row, T } from '@/components/ui';
@@ -8,6 +8,7 @@ import { VoiceButton } from '@/components/voice-button';
 import { api } from '@/lib/api';
 import { radius, space, usePalette } from '@/lib/theme';
 import type { Audio } from '@/lib/types';
+import { useKeyboardSpace } from '@/lib/use-keyboard-space';
 import { useApi } from '@/lib/use-api';
 
 // The AI chat: the same assistant as the Telegram bot, seeing tasks, emails (skipped ones too),
@@ -264,12 +265,14 @@ export default function Chat() {
   const [text, setText] = useState('');
   const [pending, setPending] = useState<ChatMessage | null>(null); // the question while the AI thinks
   const scroll = useRef<ComponentRef<typeof ScrollView>>(null);
+  const screen = useRef<ComponentRef<typeof View>>(null);
+  const keyboardSpace = useKeyboardSpace(screen);
   const messages = data?.messages ?? [];
 
   useEffect(() => {
     const t = setTimeout(() => scroll.current?.scrollToEnd({ animated: true }), 80);
     return () => clearTimeout(t);
-  }, [messages.length, pending]);
+  }, [messages.length, pending, keyboardSpace]);
 
   const ask = async (body: { text?: string; audio?: Audio }) => {
     setPending({ role: 'user', content: body.text ?? '🎙 …', at: new Date().toISOString(), heard: Boolean(body.audio) });
@@ -308,7 +311,7 @@ export default function Chat() {
     );
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: p.bg }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <View ref={screen} style={{ flex: 1, backgroundColor: p.bg, paddingBottom: keyboardSpace }}>
       <View style={{ paddingTop: insets.top + space.md, paddingHorizontal: space.lg, paddingBottom: space.sm, flexDirection: 'row', alignItems: 'center' }}>
         <View style={{ flex: 1 }}>
           <Text style={{ fontSize: 28, fontWeight: '800', color: p.text }}>Chat</Text>
@@ -370,6 +373,6 @@ export default function Chat() {
           <VoiceButton label="🎙" compact disabled={Boolean(pending)} onDone={(audio) => void ask({ audio })} />
         )}
       </View>
-    </KeyboardAvoidingView>
+    </View>
   );
 }

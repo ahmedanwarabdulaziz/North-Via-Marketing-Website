@@ -5,11 +5,11 @@ import { useEffect, useState } from 'react';
 import { Alert, Switch } from 'react-native';
 
 import { AlertSwitches } from '@/components/alert-switches';
-import { UrgentSettings } from '@/components/urgent-popup';
 import { Button, Card, Row, Screen, Section, T } from '@/components/ui';
 import { API_URL, api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { biometricAvailable, biometricEnabled, setBiometricEnabled, unlockWithBiometric } from '@/lib/biometric';
+import { usePalette } from '@/lib/theme';
 import { useApi } from '@/lib/use-api';
 
 interface DeviceInfo {
@@ -32,6 +32,7 @@ const PANEL_PAGES = [
 
 export default function More() {
   const { signOut } = useAuth();
+  const p = usePalette();
   const device = useApi<DeviceInfo>('/device');
   const [testing, setTesting] = useState(false);
   const [lockOn, setLockOn] = useState(false);
@@ -88,7 +89,13 @@ export default function More() {
       </Section>
 
       <Section title="Alerts">
-        <UrgentSettings />
+        <Card onPress={() => router.push('/sounds')}>
+          <Row>
+            <T style={{ flex: 1, fontWeight: '700' }}>🔔 Notifications</T>
+            <T color={p.brand} style={{ fontWeight: '700' }}>Open ›</T>
+          </Row>
+          <T variant="small">Sound, urgent pop-up and full-screen alarm for each kind of alert.</T>
+        </Card>
         <AlertSwitches />
       </Section>
 
@@ -114,7 +121,6 @@ export default function More() {
               : 'Loading…'}
           </T>
           <T variant="small">{`App ${Constants.expoConfig?.version ?? ''} · ${API_URL.replace(/^https?:\/\//, '')}`}</T>
-          <Button title="🔔 Notification sounds" kind="soft" small onPress={() => router.push('/sounds')} />
           <Button title="Send a test from the website" kind="outline" small busy={testing} onPress={testPush} />
         </Card>
         <Button title="Sign out" tone="danger" kind="outline" onPress={confirmSignOut} />
