@@ -5,6 +5,7 @@ import { useEffect } from 'react';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { LockScreen } from '@/components/lock-screen';
+import { UpdateBar } from '@/components/update-bar';
 import { UrgentPopup } from '@/components/urgent-popup';
 import { AuthProvider, useAuth } from '@/lib/auth';
 // Imported here, at the top level, so the background task for notification buttons is defined
@@ -77,6 +78,7 @@ function RootStack() {
           <Stack.Screen name="login" options={{ headerShown: false }} />
         </Stack.Protected>
       </Stack>
+      <UpdateBar />
     </>
   );
 }

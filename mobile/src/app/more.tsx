@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { Alert, Switch } from 'react-native';
 
 import { AlertSwitches } from '@/components/alert-switches';
+import { UpdateCard } from '@/components/update-bar';
 import { Button, Card, Row, Screen, Section, T } from '@/components/ui';
 import { API_URL, api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -123,6 +124,7 @@ export default function More() {
           <T variant="small">{`App ${Constants.expoConfig?.version ?? ''} · ${API_URL.replace(/^https?:\/\//, '')}`}</T>
           <Button title="Send a test from the website" kind="outline" small busy={testing} onPress={testPush} />
         </Card>
+        <UpdateCard />
         <Button title="Sign out" tone="danger" kind="outline" onPress={confirmSignOut} />
       </Section>
     </Screen>
