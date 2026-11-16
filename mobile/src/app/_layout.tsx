@@ -70,6 +70,7 @@ function RootStack() {
           <Stack.Screen name="links" options={{ title: 'Quick links' }} />
           <Stack.Screen name="jl" options={{ title: 'JL Comfort' }} />
           <Stack.Screen name="sounds" options={{ title: 'Notifications' }} />
+          <Stack.Screen name="writing" options={{ title: 'Writing modes' }} />
           <Stack.Screen name="marketing" options={{ title: 'Marketing' }} />
           <Stack.Screen name="library" options={{ headerShown: false }} />
           <Stack.Screen name="connections" options={{ title: 'Connections' }} />

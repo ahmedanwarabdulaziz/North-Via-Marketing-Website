@@ -100,6 +100,16 @@ export default function More() {
         <AlertSwitches />
       </Section>
 
+      <Section title="Writing">
+        <Card onPress={() => router.push('/writing')}>
+          <Row>
+            <T style={{ flex: 1, fontWeight: '700' }}>✍️ Writing modes</T>
+            <T color={p.brand} style={{ fontWeight: '700' }}>Open ›</T>
+          </Row>
+          <T variant="small">Select text in any app → “Anwarz ✓ Correct” or “Anwarz ✨ Rephrase”. Add your own rephrase modes here.</T>
+        </Card>
+      </Section>
+
       <Section title="This phone">
         <Card>
           <Row>

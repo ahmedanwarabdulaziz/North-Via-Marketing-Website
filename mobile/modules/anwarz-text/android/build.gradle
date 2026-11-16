@@ -1,0 +1,21 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+// "Improve with Anwarz": the Correct / Rephrase entries in Android's text-selection menu.
+group = 'com.northviamarketing.anwarz'
+version = '0.1.0'
+
+android {
+  namespace "expo.modules.anwarztext"
+  defaultConfig {
+    versionCode 1
+    versionName '0.1.0'
+  }
+}
+
+dependencies {
+  implementation 'com.facebook.react:react-android'
+  implementation 'androidx.appcompat:appcompat:1.7.1'
+}

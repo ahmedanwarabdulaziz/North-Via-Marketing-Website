@@ -1,0 +1,38 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <application>
+    <!-- A see-through panel over the app where text was selected (JS component "ProcessText"). -->
+    <activity
+      android:name="expo.modules.anwarztext.ProcessTextActivity"
+      android:exported="false"
+      android:theme="@style/AnwarzTextPanel"
+      android:excludeFromRecents="true"
+      android:taskAffinity=""
+      android:launchMode="standard"
+      android:windowSoftInputMode="adjustResize"
+      android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|uiMode|smallestScreenSize" />
+
+    <!-- The two entries in every app's text-selection menu (Copy · Paste · …). -->
+    <activity-alias
+      android:name="expo.modules.anwarztext.CorrectText"
+      android:targetActivity="expo.modules.anwarztext.ProcessTextActivity"
+      android:label="Anwarz ✓ Correct"
+      android:exported="true">
+      <intent-filter>
+        <action android:name="android.intent.action.PROCESS_TEXT" />
+        <category android:name="android.intent.category.DEFAULT" />
+        <data android:mimeType="text/plain" />
+      </intent-filter>
+    </activity-alias>
+    <activity-alias
+      android:name="expo.modules.anwarztext.RephraseText"
+      android:targetActivity="expo.modules.anwarztext.ProcessTextActivity"
+      android:label="Anwarz ✨ Rephrase"
+      android:exported="true">
+      <intent-filter>
+        <action android:name="android.intent.action.PROCESS_TEXT" />
+        <category android:name="android.intent.category.DEFAULT" />
+        <data android:mimeType="text/plain" />
+      </intent-filter>
+    </activity-alias>
+  </application>
+</manifest>

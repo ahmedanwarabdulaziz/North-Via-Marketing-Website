@@ -1,0 +1,10 @@
+<resources>
+  <!-- See-through, no title: the app underneath stays visible behind Anwarz's panel. -->
+  <style name="AnwarzTextPanel" parent="Theme.AppCompat.DayNight.NoActionBar">
+    <item name="android:windowIsTranslucent">true</item>
+    <item name="android:windowBackground">@android:color/transparent</item>
+    <item name="android:windowNoTitle">true</item>
+    <item name="android:backgroundDimEnabled">false</item>
+    <item name="android:windowAnimationStyle">@android:style/Animation.Translucent</item>
+  </style>
+</resources>
