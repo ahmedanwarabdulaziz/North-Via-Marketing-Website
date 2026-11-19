@@ -1,5 +1,5 @@
 import { AppError, appRoute, jsonBody } from '@/lib/app-auth';
-import { appChatSession, askFromApp, newAppChat, rateAnswer } from '@/lib/app-chat';
+import { appChatSession, askFromApp, newAppChat, rateAnswer, setChatEngine } from '@/lib/app-chat';
 import { transcribeAudio } from '@/lib/task-ai';
 
 export const dynamic = 'force-dynamic';
@@ -37,6 +37,19 @@ export const POST = appRoute(async (request) => {
     if (!text) throw new AppError('I couldn’t hear anything in that voice note.');
   }
   if (!text) throw new AppError('Type or say something.');
+  // "/tools" or "/classic": switch which engine answers (to compare them).
+  if (/^\/(tools|classic)$/i.test(text)) {
+    const engine = text.toLowerCase() === '/tools' ? 'agent' : 'classic';
+    await setChatEngine(engine);
+    const session = await appChatSession();
+    const at = new Date().toISOString();
+    const note = {
+      role: 'assistant' as const,
+      at,
+      content: engine === 'agent' ? '🛠 Tools chat is on: one assistant that looks things up before acting. Send /classic to compare.' : '💬 Classic chat is on. Send /tools to switch back.',
+    };
+    return { messages: [...(session?.messages || []), { role: 'user' as const, content: text, at }, note], answer: note, heard: null };
+  }
   try {
     const { session, answer } = await askFromApp(text, heard);
     return { messages: session.messages, answer, heard: heard ? text : null };

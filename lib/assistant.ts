@@ -82,7 +82,7 @@ export interface ChatMessage {
   actions?: Array<AssistantAction & { id?: string; done?: boolean; cancelled?: boolean }>; // proposed in this reply; done once the owner confirmed
 }
 
-interface ChatContext {
+export interface ChatContext {
   text: string;
   items: KnowledgeItem[];
   tasks: Task[];
@@ -90,7 +90,7 @@ interface ChatContext {
   emails: ChatEmail[];
 }
 
-interface ChatEmail {
+export interface ChatEmail {
   id: string;
   subject: string | null;
   from_name: string | null;
@@ -103,6 +103,39 @@ interface ChatEmail {
 }
 
 const EMAIL_COLUMNS = 'id, subject, from_name, from_email, received_at, summary, snippet, status, email_accounts(label, email)';
+
+/** Emails by id, in the same shape the chat sees them. */
+export async function emailsByIds(ids: string[]): Promise<ChatEmail[]> {
+  if (!ids.length) return [];
+  const { data, error } = await supabase.from('email_items').select(EMAIL_COLUMNS).in('id', ids);
+  if (error) throw new Error(error.message);
+  return (data || []) as unknown as ChatEmail[];
+}
+
+/** The best matches for a search across every saved email (any age or status), best first. */
+export async function searchEmails(query: string, limit = 10): Promise<ChatEmail[]> {
+  const words = emailSearchWords(query).map(filterWord).filter(Boolean);
+  if (!words.length) return [];
+  const { data, error } = await supabase
+    .from('email_items')
+    .select(EMAIL_COLUMNS)
+    .or(words.flatMap((w) => [`from_name.ilike.*${w}*`, `from_email.ilike.*${w}*`, `subject.ilike.*${w}*`, `summary.ilike.*${w}*`]).join(','))
+    .order('received_at', { ascending: false })
+    .limit(80);
+  if (error) throw new Error(error.message);
+  const score = (e: ChatEmail) => {
+    const hay = `${e.from_name || ''} ${e.from_email || ''} ${e.subject || ''}`.toLowerCase();
+    const summary = (e.summary || '').toLowerCase();
+    return words.reduce((n, w) => n + (hay.includes(w.toLowerCase()) ? 2 : summary.includes(w.toLowerCase()) ? 1 : 0), 0);
+  };
+  return ((data || []) as unknown as ChatEmail[])
+    .map((e) => ({ e, s: score(e) }))
+    .sort((a, b) => b.s - a.s)
+    .slice(0, limit)
+    .map((x) => x.e);
+}
+
+export { emailLine };
 
 // Words that say what to DO with an email, not which one: they'd match half the inbox.
 const EMAIL_FILLER = new Set(
@@ -196,7 +229,7 @@ function taskLine(t: Task, clientName: (id: string | null) => string | null) {
 }
 
 /** What the model gets each turn: matching library items, open tasks, clients. Kept small for Groq's 8K tokens a minute. */
-async function buildContext(question: string, history: ChatMessage[], withSkipped = false): Promise<ChatContext> {
+export async function buildContext(question: string, history: ChatMessage[], withSkipped = false): Promise<ChatContext> {
   const recentUser = history.filter((m) => m.role === 'user').slice(-2).map((m) => m.content);
   const [items, tasks, profiles, categories, memory, emails] = await Promise.all([
     searchKnowledge([...recentUser, question].join(' ').slice(-500), 6).catch(() => [] as KnowledgeItem[]),
@@ -286,7 +319,7 @@ Changes — be honest:
 - NEVER say something is done, saved, added or updated ("done", "تم", "سجلت", "ضفت", "خلاص") unless the conversation shows a line starting with [DONE by the bot]. Lines starting with [DONE by the bot] or [FAILED] are what really happened; trust them.`;
 
 /** The same assistant inside the Anwarz phone app: it also sees reviews, ads, social, websites and JL Comfort. */
-function systemPromptFor(surface: ChatSurface) {
+export function systemPromptFor(surface: ChatSurface) {
   if (surface === 'telegram') return SYSTEM_PROMPT;
   return SYSTEM_PROMPT.replace('inside his private Telegram bot.', 'inside his Anwarz phone app (his control center while he is away from the office).')
     .replace(
@@ -398,7 +431,7 @@ export interface PlannerApp {
 export type AppOnlyAction = Extract<AssistantAction, { type: (typeof APP_ONLY_ACTIONS)[number] }>;
 export const isAppOnlyAction = (a: AssistantAction): a is AppOnlyAction => (APP_ONLY_ACTIONS as readonly string[]).includes(a.type);
 
-interface PlannerClient {
+export interface PlannerClient {
   id: string;
   brandName: string;
   ownerName?: string;

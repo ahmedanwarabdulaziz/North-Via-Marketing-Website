@@ -40,6 +40,8 @@ import { understandTaskMessage } from './task-ai';
 import { completeTask, createTask, formatWhen, listDoneSince, missingFields, setTaskStatus, type TaskFields } from './tasks';
 import { addWebsite, runWebsiteChecks, websiteOverview } from './website-monitor';
 import { jlApi, jlKey, jlRecords, type JlRecord } from './jl-comfort';
+import { runChatAgent } from './chat-agent';
+import { OPENROUTER_MODEL } from './openrouter';
 import type { GbpStoredReview } from '@/types/database';
 
 // The Anwarz app's AI chat (Chat tab). Same assistant as the Telegram bot (lib/assistant.ts), plus a
@@ -78,6 +80,8 @@ export interface AppChatMessage {
   links?: { type: 'task' | 'email' | 'library'; id: string; title: string }[];
   /** Changes he asked for that couldn't be prepared, and why. */
   dropped?: string[];
+  /** The tool calls the assistant made (tools engine), for the failure log. */
+  steps?: string[];
   /** His 👎 / 👍 on this answer. */
   feedback?: 'bad' | 'good' | null;
 }
@@ -557,20 +561,85 @@ function toHistory(messages: AppChatMessage[]): ChatMessage[] {
   }));
 }
 
+// ---------- Which engine answers ----------
+// 'agent' (default): one Claude Haiku 5.5 assistant with tools (lib/chat-agent.ts). 'classic': the
+// planner + answer pair in lib/assistant.ts. The agent falls back to classic on any failure.
+const ENGINE = 'app_chat_engine';
+
+export async function chatEngine(): Promise<'agent' | 'classic'> {
+  const s = await getSetting<{ engine?: string }>(ENGINE).catch(() => null);
+  return s?.engine === 'classic' ? 'classic' : 'agent';
+}
+
+export async function setChatEngine(engine: 'agent' | 'classic') {
+  await setSetting(ENGINE, { engine, updatedAt: new Date().toISOString() });
+}
+
+interface TurnReply {
+  text: string;
+  actions: AssistantAction[];
+  dropped: string[];
+  links: NonNullable<AppChatMessage['links']>;
+  modelLabel: string;
+  model: string | null;
+  provider: string | null;
+  steps?: string[];
+}
+
+async function agentTurn(question: string, history: ChatMessage[], topic: string): Promise<TurnReply> {
+  const reply = await runChatAgent(
+    question,
+    history,
+    { businessNow: (t) => businessNow(t), campaigns: () => allCampaigns(), comments: () => waitingComments() },
+    runsAtOnce,
+    () => businessNow(topic)
+  );
+  return {
+    text: reply.text,
+    actions: reply.actions,
+    dropped: reply.dropped,
+    links: [
+      ...reply.tasks.slice(0, 4).map((t) => ({ type: 'task' as const, id: t.id, title: t.title })),
+      ...reply.emails.slice(0, 4).map((e) => ({ type: 'email' as const, id: e.id, title: e.subject })),
+    ],
+    modelLabel: 'Claude Haiku 5.5 · tools',
+    model: OPENROUTER_MODEL,
+    provider: 'openrouter',
+    steps: reply.steps,
+  };
+}
+
 export async function askFromApp(question: string, heard: boolean) {
   let session = await openSession();
-  // Every message starts with the best model that has quota (Claude Haiku when OpenRouter is on), so a
-  // conversation doesn't stay on a fallback after one busy moment; askAssistant falls back if it fails.
-  const chosen = (await autoModel()) || CHAT_MODELS.find((m) => m.model === session.model) || null;
-  if (!chosen) throw new Error('No AI model has free quota left right now. Try again later.');
-
+  const history = toHistory(session.messages || []);
   const recentAsks = (session.messages || []).filter((m) => m.role === 'user').slice(-2).map((m) => m.content);
   const topic = [...recentAsks, question].join(' ');
+  let reply: TurnReply | null = null;
+  let agentError: string | null = null;
+  if ((await chatEngine()) === 'agent') {
+    try {
+      reply = await agentTurn(question, history, topic);
+    } catch (error) {
+      agentError = error instanceof Error ? error.message.slice(0, 300) : String(error);
+      console.error('Chat agent failed, using the classic chat:', agentError);
+    }
+  }
+  if (!reply) reply = await classicTurn(question, history, topic, session.model);
+  if (agentError) reply.modelLabel += ' (tools unavailable)';
+  return saveTurn(session, question, heard, reply, agentError);
+}
+
+async function classicTurn(question: string, history: ChatMessage[], topic: string, lastModel: string | null): Promise<TurnReply> {
+  // Every message starts with the best model that has quota (Claude Haiku when OpenRouter is on), so a
+  // conversation doesn't stay on a fallback after one busy moment; askAssistant falls back if it fails.
+  const chosen = (await autoModel()) || CHAT_MODELS.find((m) => m.model === lastModel) || null;
+  if (!chosen) throw new Error('No AI model has free quota left right now. Try again later.');
+
   const comments = SOCIAL_WORDS.test(topic) || COMMENT_WORDS.test(topic) || BROAD_WORDS.test(topic) ? await settle(waitingComments(), [] as PlannerComment[]) : [];
   const campaigns = PAUSE_WORDS.test(question) ? await settle(allCampaigns(), [] as PlannerCampaign[], 15_000) : [];
   // JL Comfort orders and samples the planner can act on, when the talk is about them (or names one).
   const jl = JL_WORDS.test(topic) || JL_NUMBER.test(topic) ? await settle(jlRecords(), { records: [] as JlRecord[], carriers: [] }, 12_000) : { records: [], carriers: [] };
-  const reply = await askAssistant(chosen, question, toHistory(session.messages || []), {
+  const reply = await askAssistant(chosen, question, history, {
     surface: 'app',
     extraContext: async () =>
       [
@@ -590,6 +659,23 @@ export async function askFromApp(question: string, heard: boolean) {
     jl: jl.records,
     carriers: jl.carriers,
   });
+  return {
+    text: reply.text,
+    actions: reply.actions,
+    dropped: [...reply.dropped, ...(reply.plannerError ? [`Planner error: ${reply.plannerError}`] : [])],
+    links: [
+      ...reply.tasks.slice(0, 4).map((t) => ({ type: 'task' as const, id: t.id, title: t.title })),
+      ...reply.emails.slice(0, 4).map((e) => ({ type: 'email' as const, id: e.id, title: e.subject })),
+      ...reply.items.slice(0, 4).map((k) => ({ type: 'library' as const, id: k.id, title: k.title })),
+    ],
+    modelLabel: reply.fellBackFrom ? `${reply.usedModel.label} (${reply.fellBackFrom.label} was busy)` : reply.usedModel.label,
+    model: reply.usedModel.model,
+    provider: reply.usedModel.provider,
+  };
+}
+
+/** Runs the quick actions, saves both messages, and logs anything that went wrong. */
+async function saveTurn(session: Session, question: string, heard: boolean, reply: TurnReply, agentError: string | null) {
   const actions: AppChatAction[] = [];
   for (const a of reply.actions) {
     const action: AppChatAction = { ...a, id: crypto.randomBytes(4).toString('base64url'), state: 'proposed' };
@@ -602,20 +688,17 @@ export async function askFromApp(question: string, heard: boolean) {
   const answer: AppChatMessage = {
     role: 'assistant',
     content: (reply.text || (actions.length ? 'Here’s what I prepared:' : '…')) + warning,
-    dropped: [...reply.dropped, ...(reply.plannerError ? [`Planner error: ${reply.plannerError}`] : [])],
+    dropped: reply.dropped,
     at: now,
-    model: reply.fellBackFrom ? `${reply.usedModel.label} (${reply.fellBackFrom.label} was busy)` : reply.usedModel.label,
+    model: reply.modelLabel,
     actions,
-    links: [
-      ...reply.tasks.slice(0, 4).map((t) => ({ type: 'task' as const, id: t.id, title: t.title })),
-      ...reply.emails.slice(0, 4).map((e) => ({ type: 'email' as const, id: e.id, title: e.subject })),
-      ...reply.items.slice(0, 4).map((k) => ({ type: 'library' as const, id: k.id, title: k.title })),
-    ],
+    links: reply.links,
+    ...(reply.steps?.length ? { steps: reply.steps } : {}),
   };
   const messages = [...(session.messages || []), { role: 'user' as const, content: question, at: now, heard }, answer].slice(-KEEP_MESSAGES);
-  session = await saveSession(session.id, { messages, model: reply.usedModel.model, provider: reply.usedModel.provider });
+  session = await saveSession(session.id, { messages, model: reply.model, provider: reply.provider });
   // Something went wrong without him having to say so: log it for review.
-  const problems = [...(answer.dropped || []), ...actions.filter((a) => a.state === 'failed').map((a) => `Failed: ${actionSummary(a)}: ${a.result || ''}`), warning ? 'Claimed a change that wasn’t made' : ''].filter(Boolean);
+  const problems = [...(answer.dropped || []), ...(agentError ? [`Tools chat failed, classic chat answered: ${agentError}`] : []), ...actions.filter((a) => a.state === 'failed').map((a) => `Failed: ${actionSummary(a)}: ${a.result || ''}`), warning ? 'Claimed a change that wasn’t made' : ''].filter(Boolean);
   if (problems.length) await logChatFailure('auto', question, answer, problems).catch((error) => console.error('Chat failure log:', error));
   return { session, answer };
 }
@@ -649,7 +732,7 @@ async function logChatFailure(kind: ChatFailure['kind'], question: string, answe
     answer: answer.content.slice(0, 2000),
     model: answer.model || null,
     actions: (answer.actions || []).map((a) => `${a.state}: ${actionSummary(a)}${a.result ? ` → ${a.result}` : ''}`.slice(0, 400)),
-    problems: problems.map((p) => p.slice(0, 400)),
+    problems: [...problems, ...(answer.steps?.length ? [`Tool calls: ${answer.steps.join(' → ')}`] : [])].map((p) => p.slice(0, 600)),
     note: note?.slice(0, 1000) || null,
   };
   await setSetting(FAILURES, { items: [...saved, entry].slice(-KEEP_FAILURES), updatedAt: entry.loggedAt });
