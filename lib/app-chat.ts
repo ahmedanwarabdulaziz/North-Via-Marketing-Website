@@ -9,7 +9,7 @@ import { actionSummary, askAssistant, claimsDone, CHAT_MODELS, type AssistantAct
 import { clientCampaigns, setCampaignStatus } from './ads-control';
 import { clientIdsWithMetaAds as metaAdClients } from './meta-ads';
 import { autoModel } from './assistant-telegram';
-import { addDoc, listDocs, updateDoc } from './data/store';
+import { addDoc, getSetting, listDocs, setSetting, updateDoc } from './data/store';
 import {
   draftEmailReply,
   draftNewEmail,
@@ -39,6 +39,7 @@ import { supabase } from './supabase';
 import { understandTaskMessage } from './task-ai';
 import { completeTask, createTask, formatWhen, listDoneSince, missingFields, setTaskStatus, type TaskFields } from './tasks';
 import { addWebsite, runWebsiteChecks, websiteOverview } from './website-monitor';
+import { jlApi, jlKey, jlRecords, type JlRecord } from './jl-comfort';
 import type { GbpStoredReview } from '@/types/database';
 
 // The Anwarz app's AI chat (Chat tab). Same assistant as the Telegram bot (lib/assistant.ts), plus a
@@ -62,6 +63,8 @@ export type AppChatAction = AssistantAction & {
   prevStatus?: string; // the email's status before the draft, put back on Drop
   draftSubject?: string; // a new email's subject
   undo?: { kind: 'task' | 'library' | 'fact'; id: string; file?: FileKey } | null;
+  /** What the card says (set by the server, so a new kind of action shows without an app update). */
+  card?: string;
   link?: { type: 'task' | 'email' | 'library'; id: string } | null;
 };
 
@@ -73,6 +76,10 @@ export interface AppChatMessage {
   model?: string;
   actions?: AppChatAction[];
   links?: { type: 'task' | 'email' | 'library'; id: string; title: string }[];
+  /** Changes he asked for that couldn't be prepared, and why. */
+  dropped?: string[];
+  /** His 👎 / 👍 on this answer. */
+  feedback?: 'bad' | 'good' | null;
 }
 
 interface Session {
@@ -122,14 +129,8 @@ const settle = <T,>(p: Promise<T>, fallback: T, ms = 8_000) =>
   Promise.race([p.catch(() => fallback), new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms))]);
 
 async function jlSnapshot(detail: boolean) {
-  const key = process.env.JLCOMFORT_API_KEY?.trim();
-  if (!key) return '';
-  const base = (process.env.JLCOMFORT_URL || 'https://www.jlcomfort.com').replace(/\/+$/, '');
-  const get = async (path: string) => {
-    const r = await fetch(`${base}/api/anwarz/${path}`, { headers: { Authorization: `Bearer ${key}` }, cache: 'no-store', signal: AbortSignal.timeout(7_000) });
-    if (!r.ok) throw new Error(`JL ${path} ${r.status}`);
-    return r.json() as Promise<Record<string, unknown>>;
-  };
+  if (!jlKey()) return '';
+  const get = (path: string) => jlApi(path, undefined, 7_000);
   const [overview, orders, samples] = await Promise.all([
     get('overview'),
     detail ? get('orders').catch(() => null) : Promise.resolve(null),
@@ -158,6 +159,7 @@ async function jlSnapshot(detail: boolean) {
 // small enough for the free models (Groq allows ~8K tokens a minute); a one-line count is always there.
 const REVIEW_WORDS = /\breviews?\b|ريفيو|تقييم|مراجع|جوجل ماب/i;
 const SOCIAL_WORDS = /\b(followers?|facebook|instagram|insta|fb|ig|social|posts?|comments?|page)\b|فولو|متابع|فيسبوك|فيس|انستا|إنستا|سوشيال|بوست|كومنت|تعليق/i;
+const JL_NUMBER = /\b(JL|S)-?\d{3,5}\b/i;
 const JL_WORDS = /\b(jl|comfort|orders?|samples?|shop|store|sales?)\b|اوردر|أوردر|طلبات|عينات|عينة|المتجر|مبيعات/i;
 const COMPETITOR_WORDS = /\b(competitors?|competition|rivals?)\b|منافس|المنافسين|منافسين|المنافسة/i;
 const COMMENT_WORDS = /\b(comments?|replies|reply to .* (comment|post)|dm)\b|كومنت|تعليق|تعليقات|الردود/i;
@@ -504,6 +506,32 @@ async function runAction(a: AppChatAction): Promise<AppChatAction> {
         await runWebsiteChecks({ ids: [site.id] }).catch(() => undefined);
         return { ...a, state: 'done', result: `🌐 ${a.url} is checked every hour for ${client.brandName}` };
       }
+      // JL Comfort: the same actions as its admin panel (the order / sample sheet in the app).
+      case 'jl_status':
+      case 'jl_ship':
+      case 'jl_confirmed':
+      case 'jl_resend': {
+        const body =
+          a.type === 'jl_status'
+            ? { action: 'set_status', status: a.status, note: a.note || 'Changed from the Anwarz chat' }
+            : a.type === 'jl_ship'
+              ? { action: 'ship', carrier: a.carrier || 'other', trackingNumber: a.trackingNumber, trackingUrl: a.trackingUrl || undefined }
+              : a.type === 'jl_confirmed'
+                ? { action: 'supplier_confirmed' }
+                : { action: a.email === 'supplier' ? (a.kind === 'order' ? 'resend_supplier_po' : 'resend_supplier') : `resend_${a.email}` };
+        const r = await jlApi<{ ok?: boolean; order?: { statusLabel?: string }; sample?: { statusLabel?: string } }>(`${a.kind}s/${a.jlId}`, body, 45_000);
+        const label = r.order?.statusLabel || r.sample?.statusLabel || '';
+        const done =
+          a.type === 'jl_status'
+            ? `🏷 ${a.number} is now ${a.status === 'supplier_confirmed' ? 'Confirmed by the supplier' : label || a.status}`
+            : a.type === 'jl_ship'
+              ? `🚚 ${a.number} shipped · tracking ${a.trackingNumber} emailed to ${a.customer}`
+              : a.type === 'jl_confirmed'
+                ? `✅ ${a.number} confirmed by the supplier · ${a.customer} emailed`
+                : `✉️ ${a.number}: ${a.email === 'supplier' ? 'sent to the supplier' : `${a.email} email sent to ${a.customer}`} again`;
+        if (r.ok === false) return { ...a, state: 'failed', result: `${done.replace(/^\S+ /, '')}, but an email failed to send. See the history in JL Comfort.` };
+        return { ...a, state: 'done', result: done };
+      }
     }
   } catch (error) {
     return { ...a, state: 'failed', result: (error instanceof Error ? error.message : String(error)).slice(0, 300) };
@@ -540,6 +568,8 @@ export async function askFromApp(question: string, heard: boolean) {
   const topic = [...recentAsks, question].join(' ');
   const comments = SOCIAL_WORDS.test(topic) || COMMENT_WORDS.test(topic) || BROAD_WORDS.test(topic) ? await settle(waitingComments(), [] as PlannerComment[]) : [];
   const campaigns = PAUSE_WORDS.test(question) ? await settle(allCampaigns(), [] as PlannerCampaign[], 15_000) : [];
+  // JL Comfort orders and samples the planner can act on, when the talk is about them (or names one).
+  const jl = JL_WORDS.test(topic) || JL_NUMBER.test(topic) ? await settle(jlRecords(), { records: [] as JlRecord[], carriers: [] }, 12_000) : { records: [], carriers: [] };
   const reply = await askAssistant(chosen, question, toHistory(session.messages || []), {
     surface: 'app',
     extraContext: async () =>
@@ -557,6 +587,8 @@ export async function askFromApp(question: string, heard: boolean) {
     comments,
     inboxes: (await listEmailAccounts().catch(() => [])).filter((x) => x.enabled).map((x) => x.email.toLowerCase()),
     campaigns,
+    jl: jl.records,
+    carriers: jl.carriers,
   });
   const actions: AppChatAction[] = [];
   for (const a of reply.actions) {
@@ -566,9 +598,11 @@ export async function askFromApp(question: string, heard: boolean) {
   const now = new Date().toISOString();
   const warning =
     !actions.some((a) => a.state === 'done') && claimsDone(reply.text) && !actions.length ? '\n\n⚠️ Nothing was changed: changes only happen through the cards.' : '';
+  for (const a of actions) a.card = cardText(a);
   const answer: AppChatMessage = {
     role: 'assistant',
     content: (reply.text || (actions.length ? 'Here’s what I prepared:' : '…')) + warning,
+    dropped: [...reply.dropped, ...(reply.plannerError ? [`Planner error: ${reply.plannerError}`] : [])],
     at: now,
     model: reply.fellBackFrom ? `${reply.usedModel.label} (${reply.fellBackFrom.label} was busy)` : reply.usedModel.label,
     actions,
@@ -580,8 +614,88 @@ export async function askFromApp(question: string, heard: boolean) {
   };
   const messages = [...(session.messages || []), { role: 'user' as const, content: question, at: now, heard }, answer].slice(-KEEP_MESSAGES);
   session = await saveSession(session.id, { messages, model: reply.usedModel.model, provider: reply.usedModel.provider });
+  // Something went wrong without him having to say so: log it for review.
+  const problems = [...(answer.dropped || []), ...actions.filter((a) => a.state === 'failed').map((a) => `Failed: ${actionSummary(a)}: ${a.result || ''}`), warning ? 'Claimed a change that wasn’t made' : ''].filter(Boolean);
+  if (problems.length) await logChatFailure('auto', question, answer, problems).catch((error) => console.error('Chat failure log:', error));
   return { session, answer };
 }
+
+// ---------- Failure log ----------
+// Every turn that went wrong (a change it couldn't prepare, a failed action, a 👎) is kept in the
+// app_chat_failures setting (newest last, at most 300): the test set for improving the chat.
+
+const FAILURES = 'app_chat_failures';
+const KEEP_FAILURES = 300;
+
+export interface ChatFailure {
+  at: string; // the answer's time
+  loggedAt: string;
+  kind: 'auto' | 'thumbs_down' | 'action_failed';
+  question: string;
+  answer: string;
+  model: string | null;
+  actions: string[];
+  problems: string[];
+  note: string | null;
+}
+
+async function logChatFailure(kind: ChatFailure['kind'], question: string, answer: AppChatMessage, problems: string[], note: string | null = null) {
+  const saved = (await getSetting<{ items?: ChatFailure[] }>(FAILURES).catch(() => null))?.items || [];
+  const entry: ChatFailure = {
+    at: answer.at,
+    loggedAt: new Date().toISOString(),
+    kind,
+    question: question.slice(0, 2000),
+    answer: answer.content.slice(0, 2000),
+    model: answer.model || null,
+    actions: (answer.actions || []).map((a) => `${a.state}: ${actionSummary(a)}${a.result ? ` → ${a.result}` : ''}`.slice(0, 400)),
+    problems: problems.map((p) => p.slice(0, 400)),
+    note: note?.slice(0, 1000) || null,
+  };
+  await setSetting(FAILURES, { items: [...saved, entry].slice(-KEEP_FAILURES), updatedAt: entry.loggedAt });
+}
+
+export async function listChatFailures() {
+  return (await getSetting<{ items?: ChatFailure[] }>(FAILURES))?.items || [];
+}
+
+/** 👎 / 👍 on an answer (by its time); a 👎 goes to the failure log with his note. */
+export async function rateAnswer(at: string, rating: 'bad' | 'good' | null, note: string | null = null) {
+  const session = await appChatSession();
+  if (!session) throw new Error('This chat has ended.');
+  const messages = session.messages || [];
+  const index = messages.findIndex((m) => m.role === 'assistant' && m.at === at);
+  if (index < 0) throw new Error('That answer is no longer in this chat.');
+  const answer = messages[index];
+  answer.feedback = rating;
+  await saveSession(session.id, { messages });
+  if (rating === 'bad') {
+    const question = [...messages.slice(0, index)].reverse().find((m) => m.role === 'user')?.content || '';
+    await logChatFailure('thumbs_down', question, answer, answer.dropped || [], note);
+  }
+  return answer;
+}
+
+/** The text on an action's card (the app shows it for kinds it has no wording of its own for). */
+function cardText(a: AppChatAction) {
+  switch (a.type) {
+    case 'jl_status':
+      return `🏷 ${a.number} · ${a.customer}
+${statusName(a.from)} → ${statusName(a.status)} (no email)`;
+    case 'jl_ship':
+      return `🚚 ${a.number} · ${a.customer} shipped
+Tracking ${a.trackingNumber}${a.carrier ? ` (${a.carrier.toUpperCase()})` : ''}, emailed to the customer`;
+    case 'jl_confirmed':
+      return `✅ ${a.number} · ${a.customer}: confirmed by the supplier
+Emails the customer that their samples are confirmed`;
+    case 'jl_resend':
+      return `✉️ ${a.number} · ${a.customer}: send ${a.email === 'supplier' ? 'the request to the supplier' : `the ${a.email} email`} again`;
+    default:
+      return actionSummary(a).replace(/\s*\[[^\]]*\]\s*$/, '').replace(/\s*\(he confirms first\)/, '');
+  }
+}
+
+const statusName = (s: string) => (s === 'supplier_confirmed' ? 'Confirmed by the supplier' : s.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase()));
 
 /** ✅ Confirm, ✖️ Cancel or ↩️ Undo on an action card. */
 export async function decideAction(actionId: string, decision: 'confirm' | 'cancel' | 'undo' | 'send' | 'edit', edits: { draft?: string; subject?: string } = {}) {
@@ -637,5 +751,10 @@ export async function decideAction(actionId: string, decision: 'confirm' | 'canc
   }
   message.actions = message.actions!.map((a) => (a.id === actionId ? next : a));
   await saveSession(session.id, { messages });
+  if (next.state === 'failed') {
+    const index = messages.indexOf(message);
+    const question = [...messages.slice(0, index)].reverse().find((m) => m.role === 'user')?.content || '';
+    await logChatFailure('action_failed', question, message, [`Failed: ${actionSummary(next)}: ${next.result || ''}`]).catch(() => undefined);
+  }
   return next;
 }

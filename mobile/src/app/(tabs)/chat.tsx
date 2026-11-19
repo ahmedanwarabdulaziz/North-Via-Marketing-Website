@@ -45,6 +45,8 @@ interface ChatAction {
   // Comments:
   author?: string;
   message?: string;
+  /** The server's wording for the card: used for kinds of action this version of the app doesn't know. */
+  card?: string;
 }
 
 interface ChatMessage {
@@ -55,6 +57,7 @@ interface ChatMessage {
   model?: string;
   actions?: ChatAction[];
   links?: { type: 'task' | 'email' | 'library'; id: string; title: string }[];
+  feedback?: 'bad' | 'good' | null;
 }
 
 const SUGGESTIONS = [
@@ -64,6 +67,7 @@ const SUGGESTIONS = [
   'Reviews waiting for a reply?',
   'How are the followers this week?',
   'JL Comfort orders this week?',
+  'Mark S-1040 confirmed by the supplier',
   'What did I finish this week?',
   'Any comments waiting on Facebook or Instagram?',
   'What are the competitors doing?',
@@ -110,8 +114,13 @@ function describe(a: ChatAction) {
         .join(', ')}`;
     case 'add_website':
       return `🌐 Check ${a.url} hourly for ${a.clientName}`;
+    case 'jl_status':
+    case 'jl_ship':
+    case 'jl_confirmed':
+    case 'jl_resend':
+      return a.card ?? a.type;
     default:
-      return a.type;
+      return a.card ?? a.type;
   }
 }
 
@@ -216,7 +225,42 @@ function ActionCard({ action, onChange }: { action: ChatAction; onChange: (a: Ch
   );
 }
 
-function Bubble({ message, onActionChange }: { message: ChatMessage; onActionChange: (a: ChatAction) => void }) {
+/** 👍 / 👎 under an answer: a 👎 goes to the list of answers to fix. */
+function Rate({ message, onRated }: { message: ChatMessage; onRated: (m: ChatMessage) => void }) {
+  const p = usePalette();
+  const [busy, setBusy] = useState(false);
+  const rate = async (rating: 'bad' | 'good') => {
+    const next = message.feedback === rating ? null : rating;
+    setBusy(true);
+    try {
+      await api('/chat', { body: { action: 'rate', at: message.at, rating: next } });
+      onRated({ ...message, feedback: next });
+    } catch (e) {
+      Alert.alert('Not saved', e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const chip = (rating: 'bad' | 'good', icon: string) => (
+    <Pressable
+      key={rating}
+      disabled={busy}
+      onPress={() => void rate(rating)}
+      hitSlop={8}
+      style={({ pressed }) => ({ paddingHorizontal: 8, paddingVertical: 2, borderRadius: 999, backgroundColor: message.feedback === rating ? p.brandSoft : 'transparent', opacity: pressed || busy ? 0.5 : message.feedback && message.feedback !== rating ? 0.35 : 0.8 })}>
+      <Text style={{ fontSize: 14 }}>{icon}</Text>
+    </Pressable>
+  );
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: -4 }}>
+      {chip('good', '👍')}
+      {chip('bad', '👎')}
+      {message.feedback === 'bad' ? <Text style={{ color: p.muted, fontSize: 11 }}>Saved to fix</Text> : null}
+    </View>
+  );
+}
+
+function Bubble({ message, onActionChange, onRated }: { message: ChatMessage; onActionChange: (a: ChatAction) => void; onRated?: (m: ChatMessage) => void }) {
   const p = usePalette();
   const mine = message.role === 'user';
   return (
@@ -240,6 +284,7 @@ function Bubble({ message, onActionChange }: { message: ChatMessage; onActionCha
         {message.model ? <Text style={{ color: p.muted, fontSize: 11, marginTop: 4 }}>{`— ${message.model}`}</Text> : null}
       </View>
       {message.actions?.map((a) => <ActionCard key={a.id} action={a} onChange={onActionChange} />)}
+      {!mine && onRated ? <Rate message={message} onRated={onRated} /> : null}
       {message.links?.length ? (
         <Row wrap>
           {message.links.map((l) => (
@@ -305,6 +350,9 @@ export default function Chat() {
       },
     ]);
 
+  const updateMessage = (updated: ChatMessage) =>
+    setData((d) => (d ? { ...d, messages: d.messages.map((m) => (m.role === 'assistant' && m.at === updated.at ? updated : m)) } : d));
+
   const updateAction = (updated: ChatAction) =>
     setData((d) =>
       d ? { ...d, messages: d.messages.map((m) => (m.actions?.some((a) => a.id === updated.id) ? { ...m, actions: m.actions.map((a) => (a.id === updated.id ? updated : a)) } : m)) } : d
@@ -334,7 +382,7 @@ export default function Chat() {
           </View>
         ) : null}
         {messages.map((m, i) => (
-          <Bubble key={`${m.at}:${i}`} message={m} onActionChange={updateAction} />
+          <Bubble key={`${m.at}:${i}`} message={m} onActionChange={updateAction} onRated={updateMessage} />
         ))}
         {pending ? (
           <>

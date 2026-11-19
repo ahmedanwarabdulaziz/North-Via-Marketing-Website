@@ -1,5 +1,5 @@
 import { AppError, appRoute, jsonBody } from '@/lib/app-auth';
-import { appChatSession, askFromApp, newAppChat } from '@/lib/app-chat';
+import { appChatSession, askFromApp, newAppChat, rateAnswer } from '@/lib/app-chat';
 import { transcribeAudio } from '@/lib/task-ai';
 
 export const dynamic = 'force-dynamic';
@@ -16,10 +16,17 @@ export const GET = appRoute(async () => {
  * { action: 'new' }: start a fresh chat.
  */
 export const POST = appRoute(async (request) => {
-  const body = await jsonBody<{ text?: unknown; audio?: { data?: unknown; mimeType?: unknown }; action?: unknown }>(request);
+  const body = await jsonBody<{ text?: unknown; audio?: { data?: unknown; mimeType?: unknown }; action?: unknown; at?: unknown; rating?: unknown; note?: unknown }>(request);
   if (body.action === 'new') {
     await newAppChat();
     return { messages: [] };
+  }
+  // 👎 / 👍 on an answer: { action: 'rate', at, rating: 'bad' | 'good' | null, note? }
+  if (body.action === 'rate') {
+    if (typeof body.at !== 'string') throw new AppError('Which answer?');
+    const rating = body.rating === 'bad' || body.rating === 'good' ? body.rating : null;
+    const answer = await rateAnswer(body.at, rating, typeof body.note === 'string' ? body.note.trim() || null : null);
+    return { answer };
   }
   let text = typeof body.text === 'string' ? body.text.trim().slice(0, 4000) : '';
   let heard = false;

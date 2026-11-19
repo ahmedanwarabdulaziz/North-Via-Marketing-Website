@@ -10,6 +10,7 @@ import { openRouterChat, openRouterOn } from './openrouter';
 import { clientFileText, clientsMentioned, type ClientRef } from './memory-files';
 import { getMasterProfile, needsMasterProfile } from './master-profile';
 import { relevantPastChats } from './chat-history';
+import { JL_ORDER_STATUSES, JL_SAMPLE_STATUSES, type JlKind, type JlRecord } from './jl-comfort';
 
 // The bot's chat assistant: answers questions from the owner's library, open tasks and client
 // list, with a model the owner picks among those that still have free quota today.
@@ -103,31 +104,65 @@ interface ChatEmail {
 
 const EMAIL_COLUMNS = 'id, subject, from_name, from_email, received_at, summary, snippet, status, email_accounts(label, email)';
 
-/** Recent important emails from every inbox, plus any (even unimportant) matching words in the question. */
+// Words that say what to DO with an email, not which one: they'd match half the inbox.
+const EMAIL_FILLER = new Set(
+  (
+    'email emails mail mails message messages inbox the and for from with about that this these those last latest newest recent show what which who when ' +
+    'reply answer respond send write draft mark done important please can could you your his her their our him them me my mine get got tell give need want ' +
+    'say said asked asking ask back today yesterday week sent new old one any all just also still again into over have has had was were are been will would ' +
+    'should did does not yes okay thanks thank hello hi dear him there here then than them they some more very much ' +
+    'ايميل إيميل الايميل الإيميل ايميلات رسالة الرسالة جالي جاني اخر آخر عايز عاوز ابعت شوف رد ردي على علي من في عن ده دي اللي بتاع بتاعت كده لو ممكن خلاص تمام'
+  ).split(' ')
+);
+
+/** The words in a question that can pick out an email: names, addresses, subject words (most telling first). */
+export function emailSearchWords(text: string) {
+  const addresses = text.match(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g) || [];
+  const words = text
+    .replace(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g, ' ')
+    .replace(/[^\w؀-ۿ\s-]/g, ' ')
+    .split(/\s+/)
+    .filter((w) => w.length >= 3 && !EMAIL_FILLER.has(w.toLowerCase()) && !/^\d{1,3}$/.test(w));
+  // Capitalised words (names, companies) and long words first.
+  const ranked = [...new Set(words)].sort((a, b) => Number(/^[A-Z]/.test(b)) - Number(/^[A-Z]/.test(a)) || b.length - a.length);
+  return [...new Set([...addresses.map((a) => a.toLowerCase()), ...ranked])].slice(0, 6);
+}
+
+/** Safe inside a PostgREST or() filter. */
+const filterWord = (w: string) => w.replace(/[,()*%\\"]/g, '');
+
+/**
+ * Recent important emails from every inbox, plus the emails anywhere in the archive (any age, any
+ * status) that best match the names, addresses and subject words in the question, best match first.
+ */
 async function chatEmails(question: string, withSkipped = false): Promise<ChatEmail[]> {
-  const [recent, skipped] = await Promise.all([
+  const words = emailSearchWords(question).map(filterWord).filter(Boolean);
+  const [recent, skipped, matching] = await Promise.all([
     supabase.from('email_items').select(EMAIL_COLUMNS).neq('status', 'skipped').order('received_at', { ascending: false }).limit(12),
     withSkipped
       ? supabase.from('email_items').select(EMAIL_COLUMNS).eq('status', 'skipped').order('received_at', { ascending: false }).limit(8)
       : Promise.resolve({ data: [] }),
+    words.length
+      ? supabase
+          .from('email_items')
+          .select(EMAIL_COLUMNS)
+          .or(words.flatMap((w) => [`from_name.ilike.*${w}*`, `from_email.ilike.*${w}*`, `subject.ilike.*${w}*`]).join(','))
+          .order('received_at', { ascending: false })
+          .limit(60)
+      : Promise.resolve({ data: [] }),
   ]);
-  const words = [...new Set(question.replace(/[^\w؀-ۿ@.\s]/g, ' ').split(/\s+/).filter((w) => w.length >= 3))]
-    .filter((w) => !/^(email|emails|mail|ايميل|إيميل|الايميل|الإيميل|ايميلات|جالي|اخر|آخر|عايز|عاوز|the|from|last|show|what|ابعت|شوف)$/i.test(w))
-    .slice(0, 4);
-  const matching = words.length
-    ? await supabase
-        .from('email_items')
-        .select(EMAIL_COLUMNS)
-        .or(words.flatMap((w) => [`from_name.ilike.*${w}*`, `from_email.ilike.*${w}*`, `subject.ilike.*${w}*`]).join(','))
-        .order('received_at', { ascending: false })
-        .limit(8)
-    : { data: [] };
-  const all = [
-    ...((matching.data || []) as unknown as ChatEmail[]),
-    ...((recent.data || []) as unknown as ChatEmail[]),
-    ...((skipped.data || []) as unknown as ChatEmail[]),
-  ];
-  return all.filter((e, i) => all.findIndex((x) => x.id === e.id) === i).slice(0, withSkipped ? 24 : 16);
+  // Rank the matches: more of the question's words in the sender or subject = better; ties, newest.
+  const score = (e: ChatEmail) => {
+    const hay = `${e.from_name || ''} ${e.from_email || ''} ${e.subject || ''}`.toLowerCase();
+    return words.reduce((n, w) => n + (hay.includes(w.toLowerCase()) ? 1 : 0), 0);
+  };
+  const best = ((matching.data || []) as unknown as ChatEmail[])
+    .map((e) => ({ e, s: score(e) }))
+    .sort((a, b) => b.s - a.s)
+    .slice(0, 10)
+    .map((x) => x.e);
+  const all = [...best, ...((recent.data || []) as unknown as ChatEmail[]), ...((skipped.data || []) as unknown as ChatEmail[])];
+  return all.filter((e, i) => all.findIndex((x) => x.id === e.id) === i).slice(0, withSkipped ? 28 : 20);
 }
 
 function emailLine(e: ChatEmail) {
@@ -265,7 +300,7 @@ function systemPromptFor(surface: ChatSurface) {
     )
     .replace(
       "or that it can't be done from the chat (ads, reviews, invoices, deleting things are in the admin panel).",
-      "or that it can't be done from the chat. From this chat you CAN prepare: tasks, library notes, remembering facts, adding/updating clients and website checks, marking tasks done, bringing a skipped email back as important, marking an email done, replying to an email or writing a new one from any of his inboxes (a draft he reads and sends), posting ready 5★ review replies, replying to, hiding or skipping Facebook/Instagram comments, and pausing or resuming a client's Google / Meta ad campaigns (always confirmed). Replying to a 1–4★ review is done from the Reviews tab; invoices and ads changes are in the admin panel."
+      "or that it can't be done from the chat. From this chat you CAN prepare: tasks, library notes, remembering facts, adding/updating clients and website checks, marking tasks done, bringing a skipped email back as important, marking an email done, replying to an email or writing a new one from any of his inboxes (a draft he reads and sends), posting ready 5★ review replies, replying to, hiding or skipping Facebook/Instagram comments, pausing or resuming a client's Google / Meta ad campaigns (always confirmed), and JL Comfort orders and sample requests: change a status, mark one shipped with its tracking (emails the customer), mark a sample request confirmed by the supplier (emails the customer), or send one of their emails again. Replying to a 1–4★ review is done from the Reviews tab; invoices and ads changes are in the admin panel."
     );
 }
 
@@ -304,7 +339,12 @@ export type AssistantAction =
   | { type: 'comment_reply'; commentId: string; author: string; message: string; clientName: string | null; text: string | null }
   | { type: 'comment_hide'; commentId: string; author: string; message: string; clientName: string | null }
   | { type: 'comment_skip'; commentId: string; author: string; message: string; clientName: string | null }
-  | { type: 'ads_status'; pause: boolean; clientId: string; clientName: string; campaigns: { platform: 'google' | 'meta'; account: string; id: string; name: string }[] };
+  | { type: 'ads_status'; pause: boolean; clientId: string; clientName: string; campaigns: { platform: 'google' | 'meta'; account: string; id: string; name: string }[] }
+  // JL Comfort (jlcomfort.com) orders and sample requests, through its Anwarz API:
+  | { type: 'jl_status'; kind: JlKind; jlId: string; number: string; customer: string; status: string; from: string; note: string | null }
+  | { type: 'jl_ship'; kind: JlKind; jlId: string; number: string; customer: string; carrier: string | null; trackingNumber: string; trackingUrl: string | null }
+  | { type: 'jl_confirmed'; kind: 'sample'; jlId: string; number: string; customer: string }
+  | { type: 'jl_resend'; kind: JlKind; jlId: string; number: string; customer: string; email: 'confirmation' | 'shipped' | 'supplier' };
 
 /** A client's campaign the app chat can pause or resume (key = short id for the planner). */
 export interface PlannerCampaign {
@@ -329,7 +369,32 @@ export interface PlannerComment {
 }
 
 export type ChatSurface = 'telegram' | 'app';
-export const APP_ONLY_ACTIONS = ['library_note', 'email_important', 'email_done', 'email_reply', 'email_new', 'approve_five_star', 'comment_reply', 'comment_hide', 'comment_skip', 'ads_status'] as const;
+export const APP_ONLY_ACTIONS = [
+  'library_note',
+  'email_important',
+  'email_done',
+  'email_reply',
+  'email_new',
+  'approve_five_star',
+  'comment_reply',
+  'comment_hide',
+  'comment_skip',
+  'ads_status',
+  'jl_status',
+  'jl_ship',
+  'jl_confirmed',
+  'jl_resend',
+] as const;
+
+/** What the app chat's planner can see and act on, beyond tasks, clients and memory. */
+export interface PlannerApp {
+  emails: ChatEmail[];
+  comments: PlannerComment[];
+  inboxes: string[];
+  campaigns: PlannerCampaign[];
+  jl: JlRecord[];
+  carriers: { id: string; name: string }[];
+}
 export type AppOnlyAction = Extract<AssistantAction, { type: (typeof APP_ONLY_ACTIONS)[number] }>;
 export const isAppOnlyAction = (a: AssistantAction): a is AppOnlyAction => (APP_ONLY_ACTIONS as readonly string[]).includes(a.type);
 
@@ -366,17 +431,28 @@ const APP_PLANNER_ACTIONS = `
 {"type":"comment_skip","comment_id":"<id from COMMENTS>"}
   (no reply needed)
 {"type":"ads_status","campaigns":["<key from CAMPAIGNS>", ...],"pause":true|false}
-  (pause or resume ad campaigns when he asks: "pause Patriva's Meta ads", "وقف إعلانات", "شغل الحملة تاني". All the keys of ONE client that match what he said; pause=false to resume. He confirms first.)`;
+  (pause or resume ad campaigns when he asks: "pause Patriva's Meta ads", "وقف إعلانات", "شغل الحملة تاني". All the keys of ONE client that match what he said; pause=false to resume. He confirms first.)
+{"type":"jl_status","jl_id":"<id from JL COMFORT>","status":"<one status from the lists below>","note":null}
+  (change a JL Comfort order's or sample request's status: "mark JL-1022 delivered", "S-1040 cancelled", "خلي الأوردر ده delivered". Only changes the status, no email.
+   order statuses: paid, sent_to_supplier, shipped, delivered, closed, cancelled, problem. sample statuses: pending, sent_to_supplier, supplier_confirmed, shipped, delivered, cancelled, problem.
+   For "shipped" with a tracking number use jl_ship instead (it emails the customer the tracking).)
+{"type":"jl_ship","jl_id":"<id from JL COMFORT>","carrier":"<carrier id from CARRIERS, or null>","tracking_number":"<as he gave it>","tracking_url":null}
+  (it shipped, with tracking: marks it Shipped and emails the customer the tracking. tracking_url (https://…) only for a carrier not in CARRIERS. Needs a tracking number; without one, return no action and say it in "missing".)
+{"type":"jl_confirmed","jl_id":"<id of a SAMPLE request from JL COMFORT>"}
+  (Charlotte / the supplier confirmed a sample request: sets "Confirmed by the supplier" and emails the customer that their samples are confirmed)
+{"type":"jl_resend","jl_id":"<id from JL COMFORT>","email":"confirmation|shipped|supplier"}
+  (send an email again: the customer's confirmation, the customer's shipped/tracking email, or the order/request to the supplier (Charlotte))`;
 
 function plannerPrompt(
   clients: PlannerClient[],
   tasks: Task[],
   facts: MemoryFact[],
-  app?: { emails: ChatEmail[]; comments: PlannerComment[]; inboxes: string[]; campaigns: PlannerCampaign[] }
+  app?: PlannerApp
 ) {
   return `You prepare changes a marketing agency owner asks their ${app ? 'phone app (Anwarz)' : 'Telegram bot'} for. You only PREPARE them; the owner confirms each one with a button.
 Read the LATEST message (earlier lines are context: a "yes / do it / go ahead" confirms what was discussed just before).
-Return ONLY JSON: {"actions": [ ... ]} with at most 3 actions, or {"actions": []} when the latest message asks for no change (a question, chit-chat, or details are missing).
+Return ONLY JSON: {"actions": [ ... ], "missing": null} with at most 5 actions, or {"actions": []} when the latest message asks for no change (a question or chit-chat).
+When he DOES ask for a change but you can't prepare it (the email, task, order or client isn't in the lists below, or a detail is missing), return {"actions": [], "missing": "<what you couldn't find or what's missing, short and specific, in his language, e.g. 'No email from Isabelle in the last emails I can see' or 'Which order? JL-1021 or JL-1022'>"}. Never guess an id.
 
 Action types:
 {"type":"task","text":"<the task as the owner would say it to their task bot, with client, day and time if known>"}
@@ -422,6 +498,15 @@ ${app.campaigns.map((c) => `${c.key} | ${c.clientName} | ${c.platform === 'googl
 
 EMAILS (id | from | subject | status):
 ${app.emails.map((e) => `${e.id} | ${e.from_name || e.from_email || ''} | ${e.subject || ''} | ${e.status}`).join('\n') || '(none)'}${
+          app.jl.length
+            ? `
+
+JL COMFORT orders (JL-…) and sample requests (S-…), newest first (id | number | kind | customer | status | created):
+${app.jl.map((r) => `${r.id} | ${r.number} | ${r.kind} | ${r.customer} | ${r.status}${r.hasTracking ? ' (has tracking)' : ''} | ${r.createdAt.slice(0, 10)}`).join('\n')}
+
+CARRIERS: ${app.carriers.map((c) => `${c.id} (${c.name})`).join(', ') || '-'}`
+            : ''
+        }${
           app.comments.length
             ? `
 
@@ -459,29 +544,46 @@ function cleanFields(source: Record<string, unknown>) {
   return out;
 }
 
-/** Checks the planner's JSON against the real clients and tasks; anything that doesn't match is dropped. */
+/**
+ * Checks the planner's JSON against the real clients, tasks, emails and orders. Anything that doesn't
+ * match is dropped, and why goes into `dropped`, so the answer can tell him instead of going quiet.
+ */
 export function toActions(
   raw: Record<string, unknown>,
   clients: PlannerClient[],
   tasks: Task[],
   facts: MemoryFact[] = [],
-  emails: ChatEmail[] | null = null,
-  comments: PlannerComment[] = [],
-  inboxes: string[] = [],
-  campaigns: PlannerCampaign[] = []
+  app: PlannerApp | null = null,
+  dropped: string[] = []
 ): AssistantAction[] {
+  const emails = app?.emails ?? null;
+  const comments = app?.comments ?? [];
+  const inboxes = app?.inboxes ?? [];
+  const campaigns = app?.campaigns ?? [];
   const list = Array.isArray(raw.actions) ? (raw.actions as Record<string, unknown>[]) : [];
+  const missing = cleanText(raw.missing, 300);
+  if (missing) dropped.push(missing);
   const actions: AssistantAction[] = [];
-  for (const a of list.slice(0, 3)) {
+  const drop = (why: string) => dropped.push(why);
+  for (const a of list.slice(0, 5)) {
     if (a.type === 'task' && cleanText(a.text, 500)) actions.push({ type: 'task', text: cleanText(a.text, 500)! });
     else if (a.type === 'add_client') {
       const fields = cleanFields(a);
-      if (!fields.brandName) continue;
-      if (clients.some((c) => c.brandName.trim().toLowerCase() === fields.brandName!.toLowerCase())) continue; // already a client
+      if (!fields.brandName) {
+        drop('A new client needs a brand name.');
+        continue;
+      }
+      if (clients.some((c) => c.brandName.trim().toLowerCase() === fields.brandName!.toLowerCase())) {
+        drop(`${fields.brandName} is already a client.`);
+        continue;
+      }
       actions.push({ type: 'add_client', fields, checkWebsite: a.check_website !== false && Boolean(fields.websiteUrl) });
     } else if (a.type === 'update_client') {
       const client = clients.find((c) => c.id === a.client_id);
-      if (!client || !a.changes || typeof a.changes !== 'object') continue;
+      if (!client || !a.changes || typeof a.changes !== 'object') {
+        drop('Couldn’t tell which client to update.');
+        continue;
+      }
       const changes = cleanFields(a.changes as Record<string, unknown>);
       const before: Partial<Record<ClientField, string>> = {};
       for (const key of Object.keys(changes) as ClientField[]) {
@@ -497,6 +599,7 @@ export function toActions(
     } else if (a.type === 'complete_task') {
       const task = tasks.find((t) => t.id === a.task_id);
       if (task) actions.push({ type: 'complete_task', taskId: task.id, title: task.title });
+      else drop('Couldn’t find that task among the open tasks.');
     } else if (a.type === 'remember') {
       const text = cleanText(a.text, 300);
       if (text && !facts.some((f) => f.text.toLowerCase() === text.toLowerCase())) actions.push({ type: 'remember', text, explicit: a.asked === true });
@@ -512,8 +615,11 @@ export function toActions(
     } else if (emails && (a.type === 'email_important' || a.type === 'email_done')) {
       const email = emails.find((e) => e.id === a.email_id);
       if (email) actions.push({ type: a.type, emailId: email.id, subject: email.subject || '(no subject)' });
+      else drop('Couldn’t find that email among the ones I can see. Give me the sender’s name or the subject.');
     } else if (emails && a.type === 'email_reply') {
       const email = emails.find((e) => e.id === a.email_id);
+      if (!email) drop('Couldn’t find that email among the ones I can see. Give me the sender’s name or the subject.');
+      else if (email.status === 'sent') drop(`You already replied to "${email.subject || '(no subject)'}".`);
       if (email && email.status !== 'sent') {
         actions.push({
           type: 'email_reply',
@@ -530,6 +636,8 @@ export function toActions(
       const client = picked[0]?.clientId;
       // One client per card, and only campaigns that would actually change.
       const mine = picked.filter((c) => c.clientId === client && (pause ? c.status === 'active' : c.status === 'paused'));
+      if (!client) drop('Couldn’t find those campaigns.');
+      else if (!mine.length) drop(`Those campaigns are already ${pause ? 'paused' : 'running'}.`);
       if (client && mine.length) {
         actions.push({
           type: 'ads_status',
@@ -544,10 +652,16 @@ export function toActions(
       const wanted = (cleanText(a.from_inbox, 200) || '').toLowerCase();
       const inbox = inboxes.find((i) => i === wanted) || inboxes.find((i) => wanted && (i.startsWith(wanted) || i.split('@')[0] === wanted.split('@')[0]));
       const notes = cleanText(a.notes, 3000) || '';
-      if (inbox && /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(to) && notes) actions.push({ type: 'email_new', inbox, to, subject: cleanText(a.subject, 200), notes });
+      if (!inbox) drop(`Which inbox should it go from? ${inboxes.join(', ') || 'No inbox is connected.'}`);
+      else if (!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(to)) drop('I need the recipient’s full email address.');
+      else if (!notes) drop('What should the email say?');
+      else actions.push({ type: 'email_new', inbox, to, subject: cleanText(a.subject, 200), notes });
     } else if (emails && (a.type === 'comment_reply' || a.type === 'comment_hide' || a.type === 'comment_skip')) {
       const c = comments.find((x) => x.id === a.comment_id);
-      if (!c) continue;
+      if (!c) {
+        drop('Couldn’t find that comment among the ones waiting.');
+        continue;
+      }
       const base = { commentId: c.id, author: c.author, message: c.message.slice(0, 300), clientName: c.clientName };
       if (a.type === 'comment_reply') {
         const text = cleanText(a.text, 1500);
@@ -556,6 +670,38 @@ export function toActions(
     } else if (emails && a.type === 'approve_five_star') {
       const client = clients.find((c) => c.id === a.client_id);
       actions.push({ type: 'approve_five_star', clientId: client?.id || null, clientName: client?.brandName || null });
+    } else if (app && typeof a.type === 'string' && a.type.startsWith('jl_')) {
+      const r = app.jl.find((x) => x.id === a.jl_id);
+      if (!r) {
+        drop('Couldn’t find that JL Comfort order or sample request. Give me its number (JL-… or S-…).');
+        continue;
+      }
+      const base = { kind: r.kind, jlId: r.id, number: r.number, customer: r.customer };
+      if (a.type === 'jl_status') {
+        const status = cleanText(a.status, 40) || '';
+        const allowed: readonly string[] = r.kind === 'order' ? JL_ORDER_STATUSES : JL_SAMPLE_STATUSES;
+        if (!allowed.includes(status)) drop(`"${status}" isn’t a ${r.kind} status. Use one of: ${allowed.join(', ')}.`);
+        else if (status === r.status) drop(`${r.number} is already ${status}.`);
+        else actions.push({ type: 'jl_status', ...base, status, from: r.status, note: cleanText(a.note, 300) });
+      } else if (a.type === 'jl_ship') {
+        const trackingNumber = cleanText(a.tracking_number, 80);
+        const carrier = app.carriers.find((c) => c.id === a.carrier)?.id || null;
+        const trackingUrl = cleanUrl(a.tracking_url);
+        if (!trackingNumber) drop(`What’s the tracking number for ${r.number}?`);
+        else if (!carrier && !trackingUrl) drop(`Which carrier shipped ${r.number}? ${app.carriers.map((c) => c.name).join(', ')}, or send the tracking link.`);
+        else actions.push({ type: 'jl_ship', ...base, carrier, trackingNumber, trackingUrl: carrier ? null : trackingUrl });
+      } else if (a.type === 'jl_confirmed') {
+        if (r.kind !== 'sample') drop(`${r.number} is an order; "confirmed by the supplier" is for sample requests.`);
+        else if (['delivered', 'cancelled'].includes(r.status)) drop(`${r.number} is already ${r.status}.`);
+        else actions.push({ type: 'jl_confirmed', ...base, kind: 'sample' });
+      } else if (a.type === 'jl_resend') {
+        const email = a.email === 'shipped' || a.email === 'supplier' ? a.email : a.email === 'confirmation' ? 'confirmation' : null;
+        if (!email) drop('Which email should I send again: the confirmation, the shipped email, or the one to the supplier?');
+        else if (email === 'shipped' && !r.hasTracking) drop(`${r.number} has no tracking yet, so there’s no shipped email to resend.`);
+        else actions.push({ type: 'jl_resend', ...base, email });
+      }
+    } else if (typeof a.type === 'string') {
+      drop(`I can’t do "${a.type}" from the chat yet.`);
     }
   }
   // A new client's main website is checked by add_client already.
@@ -587,6 +733,11 @@ export function actionSummary(a: AssistantAction) {
   if (a.type === 'comment_reply') return `Reply publicly to ${a.author}'s comment${a.clientName ? ` on ${a.clientName}` : ''}${a.text ? `: ${a.text.slice(0, 120)}` : ' with the AI draft'} (he confirms first)`;
   if (a.type === 'comment_hide') return `Hide ${a.author}'s comment${a.clientName ? ` on ${a.clientName}` : ''} (he confirms first)`;
   if (a.type === 'comment_skip') return `Skip ${a.author}'s comment (no reply)`;
+  if (a.type === 'jl_status') return `Set JL Comfort ${a.kind} ${a.number} (${a.customer}) from ${a.from} to ${a.status} (no email; he confirms first)`;
+  if (a.type === 'jl_ship')
+    return `Mark JL Comfort ${a.kind} ${a.number} (${a.customer}) shipped, tracking ${a.trackingNumber}${a.carrier ? ` via ${a.carrier}` : ''}, and email the customer the tracking (he confirms first)`;
+  if (a.type === 'jl_confirmed') return `Mark sample request ${a.number} (${a.customer}) confirmed by the supplier and email the customer (he confirms first)`;
+  if (a.type === 'jl_resend') return `Send ${a.number}'s ${a.email === 'supplier' ? 'request to the supplier' : `${a.email} email to ${a.customer}`} again (he confirms first)`;
   return `Mark task done: ${a.title}`;
 }
 
@@ -654,29 +805,21 @@ async function callModel(m: ChatModel, context: string, history: ChatMessage[], 
  * Gemini as fallback) in strict JSON, whatever model the owner chats with, so a light chat model
  * can't break them. A failure means no changes, never a wrong one.
  */
-async function planActions(
-  question: string,
-  history: ChatMessage[],
-  clients: PlannerClient[],
-  tasks: Task[],
-  facts: MemoryFact[],
-  emails: ChatEmail[] | null = null,
-  comments: PlannerComment[] = [],
-  inboxes: string[] = [],
-  campaigns: PlannerCampaign[] = []
-) {
+async function planActions(question: string, history: ChatMessage[], clients: PlannerClient[], tasks: Task[], facts: MemoryFact[], app: PlannerApp | null = null) {
   const recent = history.slice(-4).map((m) => `${m.role === 'user' ? 'OWNER' : 'BOT'}: ${m.content.slice(0, 500)}`);
+  const dropped: string[] = [];
   try {
     const raw = await aiJson({
-      system: plannerPrompt(clients, tasks, facts, emails ? { emails, comments, inboxes, campaigns } : undefined),
+      system: plannerPrompt(clients, tasks, facts, app ?? undefined),
       user: [...recent, `LATEST (OWNER): ${question.slice(0, 2000)}`].join('\n'),
       feature: 'assistant',
       timeBudgetMs: 20_000,
     });
-    return toActions(raw, clients, tasks, facts, emails, comments, inboxes, campaigns);
+    return { actions: toActions(raw, clients, tasks, facts, app, dropped), dropped, plannerError: null };
   } catch (error) {
-    console.error('Action planner failed:', error instanceof Error ? error.message.slice(0, 200) : error);
-    return [];
+    const message = error instanceof Error ? error.message.slice(0, 200) : String(error);
+    console.error('Action planner failed:', message);
+    return { actions: [] as AssistantAction[], dropped, plannerError: message };
   }
 }
 
@@ -688,6 +831,9 @@ export interface AssistantReply {
   emails: { id: string; subject: string }[]; // emails the answer mentioned
   usedModel: ChatModel;
   fellBackFrom: ChatModel | null;
+  /** Changes he asked for that couldn't be prepared, and why (shown to the model and logged). */
+  dropped: string[];
+  plannerError: string | null;
 }
 
 /**
@@ -698,7 +844,16 @@ export async function askAssistant(
   chosen: ChatModel,
   question: string,
   history: ChatMessage[],
-  opts: { surface?: ChatSurface; extraContext?: () => Promise<string>; runsAtOnce?: (a: AssistantAction) => boolean; comments?: PlannerComment[]; inboxes?: string[]; campaigns?: PlannerCampaign[] } = {}
+  opts: {
+    surface?: ChatSurface;
+    extraContext?: () => Promise<string>;
+    runsAtOnce?: (a: AssistantAction) => boolean;
+    comments?: PlannerComment[];
+    inboxes?: string[];
+    campaigns?: PlannerCampaign[];
+    jl?: JlRecord[];
+    carriers?: { id: string; name: string }[];
+  } = {}
 ): Promise<AssistantReply> {
   const surface = opts.surface || 'telegram';
   const [context, available, profiles, extra] = await Promise.all([
@@ -714,12 +869,19 @@ export async function askAssistant(
   ]);
   if (extra) context.text += `\n\n${extra}`;
   const clients = profiles.filter((c) => c.id && c.brandName) as PlannerClient[];
-  const actions = await planActions(question, history, clients, context.tasks, context.memory.facts, surface === 'app' ? context.emails : null, opts.comments || [], opts.inboxes || [], opts.campaigns || []);
+  const app: PlannerApp | null =
+    surface === 'app'
+      ? { emails: context.emails, comments: opts.comments || [], inboxes: opts.inboxes || [], campaigns: opts.campaigns || [], jl: opts.jl || [], carriers: opts.carriers || [] }
+      : null;
+  const { actions, dropped, plannerError } = await planActions(question, history, clients, context.tasks, context.memory.facts, app);
   // Up to 4 tries, so a Gemini model still answers when the Groq ones hit their per-minute limit.
   const order = [chosen, ...available.filter((m) => m.key !== chosen.key)].slice(0, 4);
   const note = (a: AssistantAction) =>
     opts.runsAtOnce?.(a) ? `${actionSummary(a)} [the app does this right away, with an Undo button: say it's done, no Confirm needed]` : actionSummary(a);
-  const planned = `\n\n(PLANNED CHANGES for this message: ${actions.length ? actions.map(note).join('; ') : 'none'})`;
+  const notDone = [...dropped, ...(plannerError ? ['the change planner failed just now, so nothing was prepared: ask him to send the request again'] : [])];
+  const planned = `\n\n(PLANNED CHANGES for this message: ${actions.length ? actions.map(note).join('; ') : 'none'})${
+    notDone.length ? `\n(COULD NOT PREPARE, tell him plainly and ask for what is missing: ${notDone.join('; ')})` : ''
+  }`;
 
   let lastError: unknown;
   for (const m of order) {
@@ -741,6 +903,8 @@ export async function askAssistant(
         emails: ids('E').map((id) => context.emails.find((e) => e.id === id)).filter(Boolean).map((e) => ({ id: e!.id, subject: e!.subject || '(no subject)' })),
         usedModel: m,
         fellBackFrom: m.key === chosen.key ? null : chosen,
+        dropped,
+        plannerError,
       };
     } catch (error) {
       lastError = error;
