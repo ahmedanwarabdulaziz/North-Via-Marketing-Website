@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import { JlSheet, STATUS_TONE, customerSource, money, type JlKind } from '@/components/jl-sheet';
+import { JlSheet, STATUS_TONE, customerSource, money, statusText, type JlKind } from '@/components/jl-sheet';
 import { Card, Chip, ChipRow, Empty, ErrorBox, Loading, Pill, Row, Screen, Segmented, T } from '@/components/ui';
 import { ago } from '@/lib/format';
 import { usePalette } from '@/lib/theme';
@@ -21,7 +21,8 @@ const ORDER_FILTERS: Filter[] = [
 ];
 
 const SAMPLE_FILTERS: Filter[] = [
-  { key: 'todo', label: 'To do', statuses: ['pending', 'sent_to_supplier', 'supplier_confirmed', 'problem'] },
+  { key: 'todo', label: 'To do', statuses: ['pending', 'sent_to_supplier', 'problem'] },
+  { key: 'confirmed', label: 'Confirmed by the supplier', statuses: ['supplier_confirmed'] },
   { key: 'shipped', label: 'Shipped', statuses: ['shipped'] },
   { key: 'done', label: 'Delivered', statuses: ['delivered'] },
   { key: 'cancelled', label: 'Cancelled', statuses: ['cancelled'] },
@@ -98,7 +99,7 @@ export default function JlComfort() {
                   {o.items.map((i) => `${i.quantity}× ${i.name}`).join(', ')}
                 </T>
                 <Row wrap>
-                  <Pill text={o.statusLabel} tone={STATUS_TONE[o.status] ?? 'muted'} />
+                  <Pill text={statusText(o.status, o.statusLabel)} tone={STATUS_TONE[o.status] ?? 'muted'} />
                   <T style={{ fontWeight: '700' }}>{money(o.totalCents, o.currency)}</T>
                   <Pill text={customerSource(o).label} tone={customerSource(o).tone} />
                   {o.isTest ? <Pill text="TEST" tone="muted" /> : null}
@@ -117,8 +118,8 @@ export default function JlComfort() {
                   {`${s.items.length} sample${s.items.length === 1 ? '' : 's'}: ${s.items.map((i) => i.name).join(', ')}`}
                 </T>
                 <Row wrap>
-                  <Pill text={s.statusLabel} tone={STATUS_TONE[s.status] ?? 'muted'} />
-                  {s.confirmedAt ? <Pill text="✅ Confirmed · emailed" tone="ok" /> : null}
+                  <Pill text={statusText(s.status, s.statusLabel)} tone={STATUS_TONE[s.status] ?? 'muted'} />
+                  {s.confirmedAt ? <Pill text="✅ Customer emailed" tone="ok" /> : null}
                   <T variant="small">{`${s.address.city}, ${s.address.state}`}</T>
                 </Row>
               </Card>

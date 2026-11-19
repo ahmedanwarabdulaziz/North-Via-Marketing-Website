@@ -32,6 +32,10 @@ export const STATUS_TONE: Record<string, 'brand' | 'danger' | 'warn' | 'ok' | 'm
   problem: 'danger',
 };
 
+/** Status name to show: JL Comfort's label, except our own wording for a few. */
+const OWN_NAMES: Record<string, string> = { supplier_confirmed: 'Confirmed by the supplier' };
+export const statusText = (status: string, label?: string | null) => OWN_NAMES[status] || label || status;
+
 const ORDER_STATUSES = ['paid', 'sent_to_supplier', 'shipped', 'delivered', 'closed', 'problem', 'cancelled'];
 const SAMPLE_STATUSES = ['pending', 'sent_to_supplier', 'supplier_confirmed', 'shipped', 'delivered', 'problem', 'cancelled'];
 
@@ -148,7 +152,7 @@ export function JlSheet({
           <T variant="title" style={{ flex: 1 }}>
             {number}
           </T>
-          <Pill text={record.statusLabel} tone={STATUS_TONE[record.status] ?? 'muted'} />
+          <Pill text={statusText(record.status, record.statusLabel)} tone={STATUS_TONE[record.status] ?? 'muted'} />
         </Row>
         <T>{name}</T>
         <T variant="small">{`${dateTime(record.createdAt)}${order?.isTest ? ' · TEST order' : ''}`}</T>
@@ -158,7 +162,7 @@ export function JlSheet({
           </Row>
         ) : null}
         {order ? <T variant="small">{customerSource(order).detail}</T> : null}
-        {sample?.confirmedAt ? <Pill text={`✅ Confirmed · customer emailed ${dateTime(sample.confirmedAt)}`} tone="ok" /> : null}
+        {sample?.confirmedAt ? <Pill text={`✅ Confirmed by the supplier · customer emailed ${dateTime(sample.confirmedAt)}`} tone="ok" /> : null}
       </View>
 
       {note ? <Note text={note.text} tone={note.tone} /> : null}
@@ -247,7 +251,7 @@ export function JlSheet({
           {sample && !closed ? (
             <Tile
               icon="✅"
-              label={sample.confirmedAt ? `Confirmed · emailed ${dateTime(sample.confirmedAt)} (send again?)` : 'Charlotte confirmed (email the customer)'}
+              label={sample.confirmedAt ? `Confirmed by the supplier · emailed ${dateTime(sample.confirmedAt)} (send again?)` : 'Confirmed by the supplier (email the customer)'}
               tone="ok"
               wide
               busy={busy === 'confirmed'}
@@ -260,7 +264,7 @@ export function JlSheet({
                       { action: 'supplier_confirmed' },
                       '✅ Sent again'
                     )
-                  : confirmSend('confirmed', 'Charlotte confirmed?', `${name} gets the “your samples are confirmed” email.`, { action: 'supplier_confirmed' }, '✅ Customer emailed: samples confirmed')
+                  : confirmSend('confirmed', 'Confirmed by the supplier?', `${name} gets the “your samples are confirmed” email.`, { action: 'supplier_confirmed' }, '✅ Customer emailed: samples confirmed')
               }
             />
           ) : null}
@@ -346,9 +350,9 @@ export function JlSheet({
               .map((s) => (
                 <Choice
                   key={s}
-                  label={statusNames[s] || s}
+                  label={statusText(s, statusNames[s])}
                   busy={busy === `st-${s}`}
-                  onPress={() => act(`st-${s}`, { action: 'set_status', status: s, note: statusNote.trim() || undefined }, `🏷 Now: ${statusNames[s] || s}`)}
+                  onPress={() => act(`st-${s}`, { action: 'set_status', status: s, note: statusNote.trim() || undefined }, `🏷 Now: ${statusText(s, statusNames[s])}`)}
                 />
               ))}
           </Grid>
