@@ -364,9 +364,12 @@ export type AssistantAction =
   | { type: 'update_profile'; change: string }
   // Anwarz app only (lib/app-chat.ts runs them):
   | { type: 'library_note'; text: string }
-  | { type: 'email_important'; emailId: string; subject: string }
+  | { type: 'email_important'; emailId: string; subject: string; always?: boolean; from?: string }
+  | { type: 'email_ignore'; emailId: string; subject: string; from: string; mode: 'sender' | 'similar' }
+  | { type: 'task_edit'; taskId: string; title: string; changes: TaskChanges; before: string }
+  | { type: 'task_delete'; taskId: string; title: string }
   | { type: 'email_done'; emailId: string; subject: string }
-  | { type: 'email_reply'; emailId: string; subject: string; to: string; notes: string }
+  | { type: 'email_reply'; emailId: string; subject: string; to: string; notes: string; tone?: string | null }
   | { type: 'email_new'; inbox: string; to: string; subject: string | null; notes: string }
   | { type: 'approve_five_star'; clientId: string | null; clientName: string | null }
   | { type: 'comment_reply'; commentId: string; author: string; message: string; clientName: string | null; text: string | null }
@@ -417,7 +420,19 @@ export const APP_ONLY_ACTIONS = [
   'jl_ship',
   'jl_confirmed',
   'jl_resend',
+  'email_ignore',
+  'task_edit',
+  'task_delete',
 ] as const;
+
+/** A change to a saved task's details (only what changes). Dates and times are Cairo. */
+export interface TaskChanges {
+  title?: string;
+  notes?: string | null;
+  date?: string | null; // YYYY-MM-DD; null = no date
+  time?: string | null; // HH:MM; null = all day
+  priority?: 'low' | 'normal' | 'high';
+}
 
 /** What the app chat's planner can see and act on, beyond tasks, clients and memory. */
 export interface PlannerApp {
@@ -645,9 +660,57 @@ export function toActions(
     } else if (emails && a.type === 'library_note') {
       const text = cleanText(a.text, 2000);
       if (text) actions.push({ type: 'library_note', text });
-    } else if (emails && (a.type === 'email_important' || a.type === 'email_done')) {
+    } else if (emails && a.type === 'email_important') {
       const email = emails.find((e) => e.id === a.email_id);
-      if (email) actions.push({ type: a.type, emailId: email.id, subject: email.subject || '(no subject)' });
+      if (!email) drop('Couldn’t find that email among the ones I can see. Give me the sender’s name or the subject.');
+      else if (!['skipped', 'ignored'].includes(email.status) && a.always !== true) drop(`"${email.subject || '(no subject)'}" is already in your inbox.`);
+      else
+        actions.push({
+          type: 'email_important',
+          emailId: email.id,
+          subject: email.subject || '(no subject)',
+          always: a.always === true,
+          from: email.from_email || email.from_name || '',
+        });
+    } else if (emails && a.type === 'email_ignore') {
+      const email = emails.find((e) => e.id === a.email_id);
+      const mode = a.mode === 'similar' ? 'similar' : 'sender';
+      if (!email) drop('Couldn’t find that email among the ones I can see. Give me the sender’s name or the subject.');
+      else if (mode === 'sender' && !email.from_email) drop('That email has no sender address to ignore.');
+      else actions.push({ type: 'email_ignore', emailId: email.id, subject: email.subject || '(no subject)', from: email.from_email || '', mode });
+    } else if (a.type === 'task_edit') {
+      const task = tasks.find((t) => t.id === a.task_id);
+      if (!task) {
+        drop('Couldn’t find that task among the open tasks.');
+        continue;
+      }
+      const src = (a.changes && typeof a.changes === 'object' ? a.changes : {}) as Record<string, unknown>;
+      const changes: TaskChanges = {};
+      const droppedBefore = dropped.length;
+      const title = cleanText(src.title, 300);
+      if (title && title !== task.title) changes.title = title;
+      if ('notes' in src) changes.notes = cleanText(src.notes, 2000);
+      if ('date' in src) {
+        if (src.date === null || src.date === 'null') changes.date = null;
+        else if (typeof src.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(src.date)) changes.date = src.date;
+        else drop(`"${String(src.date)}" isn’t a date (YYYY-MM-DD).`);
+      }
+      if ('time' in src) {
+        if (src.time === null || src.time === 'null') changes.time = null;
+        else if (typeof src.time === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(src.time)) changes.time = src.time;
+        else drop(`"${String(src.time)}" isn’t a time (HH:MM, 24-hour).`);
+      }
+      if (src.priority === 'low' || src.priority === 'normal' || src.priority === 'high') changes.priority = src.priority;
+      if (dropped.length > droppedBefore) continue; // a bad date or time: that's the reason given
+      if (!Object.keys(changes).length) drop(`Nothing to change on "${task.title}". Say what should change (day, time, title, priority or notes).`);
+      else actions.push({ type: 'task_edit', taskId: task.id, title: task.title, changes, before: formatWhen(task) });
+    } else if (a.type === 'task_delete') {
+      const task = tasks.find((t) => t.id === a.task_id);
+      if (task) actions.push({ type: 'task_delete', taskId: task.id, title: task.title });
+      else drop('Couldn’t find that task among the open tasks.');
+    } else if (emails && a.type === 'email_done') {
+      const email = emails.find((e) => e.id === a.email_id);
+      if (email) actions.push({ type: 'email_done', emailId: email.id, subject: email.subject || '(no subject)' });
       else drop('Couldn’t find that email among the ones I can see. Give me the sender’s name or the subject.');
     } else if (emails && a.type === 'email_reply') {
       const email = emails.find((e) => e.id === a.email_id);
@@ -661,6 +724,7 @@ export function toActions(
           to: email.from_name || email.from_email || '',
           // His points only; a whole letter here means the planner wrote the reply itself, so the AI drafts it instead.
           notes: ((n) => (n.length > 300 || /^(dear|hi|hello|مرحبا|أهلا|اهلا)\b/i.test(n) ? '' : n))(cleanText(a.notes, 2000) || ''),
+          tone: cleanText(a.tone, 120),
         });
       }
     } else if (emails && a.type === 'ads_status' && Array.isArray(a.campaigns)) {
@@ -754,10 +818,15 @@ export function actionSummary(a: AssistantAction) {
   if (a.type === 'forget') return `Forget: ${a.text.slice(0, 150)}`;
   if (a.type === 'update_profile') return `Update master profile: ${a.change.slice(0, 150)}`;
   if (a.type === 'library_note') return `Save to the library: ${a.text.slice(0, 150)}`;
-  if (a.type === 'email_important') return `Move the email "${a.subject}" back to the inbox as important`;
+  if (a.type === 'email_important')
+    return a.always ? `Bring "${a.subject}" back and always show emails from ${a.from}` : `Move the email "${a.subject}" back to the inbox as important`;
+  if (a.type === 'email_ignore')
+    return a.mode === 'sender' ? `Ignore every email from ${a.from} (starting with "${a.subject}")` : `Ignore emails like "${a.subject}" from now on`;
+  if (a.type === 'task_edit') return `Change task "${a.title}": ${describeTaskChanges(a.changes)} (he confirms first)`;
+  if (a.type === 'task_delete') return `Delete task "${a.title}" (he confirms first)`;
   if (a.type === 'email_done') return `Mark the email "${a.subject}" done`;
   if (a.type === 'email_reply')
-    return `Reply to "${a.subject}" (${a.to})${a.notes ? `: ${a.notes.slice(0, 120)}` : ''} [a card under your answer writes the draft with the AI and shows it; he reads it and taps Send. Do NOT write the reply yourself: just say the card is below]`;
+    return `Reply to "${a.subject}" (${a.to})${a.notes ? `: ${a.notes.slice(0, 120)}` : ''}${a.tone ? ` · tone: ${a.tone}` : ''} [a card under your answer writes the draft with the AI and shows it; he reads it and taps Send. Do NOT write the reply yourself: just say the card is below]`;
   if (a.type === 'ads_status')
     return `${a.pause ? 'Pause' : 'Resume'} ${a.clientName}'s ${a.campaigns.map((c) => `${c.platform === 'google' ? 'Google' : 'Meta'} "${c.name}"`).join(', ')} (he confirms first)`;
   if (a.type === 'email_new')
@@ -772,6 +841,19 @@ export function actionSummary(a: AssistantAction) {
   if (a.type === 'jl_confirmed') return `Mark sample request ${a.number} (${a.customer}) confirmed by the supplier and email the customer (he confirms first)`;
   if (a.type === 'jl_resend') return `Send ${a.number}'s ${a.email === 'supplier' ? 'request to the supplier' : `${a.email} email to ${a.customer}`} again (he confirms first)`;
   return `Mark task done: ${a.title}`;
+}
+
+/** "Thu 20 Nov 15:00 · high priority", for cards and the history. */
+export function describeTaskChanges(c: TaskChanges) {
+  return [
+    c.title ? `title → ${c.title}` : '',
+    'date' in c ? (c.date ? `date → ${c.date}` : 'no date') : '',
+    'time' in c ? (c.time ? `time → ${c.time}` : 'all day') : '',
+    c.priority ? `${c.priority} priority` : '',
+    'notes' in c ? (c.notes ? `notes → ${c.notes.slice(0, 80)}` : 'notes cleared') : '',
+  ]
+    .filter(Boolean)
+    .join(', ');
 }
 
 /** True when the text says something was done, which only the bot's buttons can do. */

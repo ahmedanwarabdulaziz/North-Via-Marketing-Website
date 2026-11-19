@@ -5,7 +5,7 @@ import { saveTextFromApp } from './app-library';
 import { taskClientList } from './app-tasks';
 import { clientsWithAds, costPerConversion, fetchClientAds } from './ads-metrics';
 import { stoppedAds } from './ads-watch';
-import { actionSummary, askAssistant, claimsDone, CHAT_MODELS, type AssistantAction, type ChatMessage, type PlannerCampaign, type PlannerComment } from './assistant';
+import { actionSummary, askAssistant, claimsDone, CHAT_MODELS, describeTaskChanges, type AssistantAction, type ChatMessage, type PlannerCampaign, type PlannerComment } from './assistant';
 import { clientCampaigns, setCampaignStatus } from './ads-control';
 import { clientIdsWithMetaAds as metaAdClients } from './meta-ads';
 import { autoModel } from './assistant-telegram';
@@ -18,6 +18,8 @@ import {
   sendNewEmail,
   getEmailItem,
   isNoReply,
+  addIgnoreRule,
+  addImportantSender,
   listIgnoreRules,
   removeIgnoreRule,
   sendEmailReply,
@@ -37,7 +39,19 @@ import { cairoDay, hideStoredComment, listCommentQueue, postApprovedCommentReply
 import { clientInstagramGrowth, googleGrowth, listCompetitors, listFindings } from './competitors';
 import { supabase } from './supabase';
 import { understandTaskMessage } from './task-ai';
-import { completeTask, createTask, formatWhen, listDoneSince, missingFields, setTaskStatus, type TaskFields } from './tasks';
+import {
+  cairoParts,
+  completeTask,
+  createTask,
+  fieldsFromTask,
+  formatWhen,
+  getTask,
+  listDoneSince,
+  missingFields,
+  setTaskStatus,
+  updateTaskFields,
+  type TaskFields,
+} from './tasks';
 import { addWebsite, runWebsiteChecks, websiteOverview } from './website-monitor';
 import { jlApi, jlKey, jlRecords, type JlRecord } from './jl-comfort';
 import { runChatAgent } from './chat-agent';
@@ -64,7 +78,7 @@ export type AppChatAction = AssistantAction & {
   toEmail?: string | null;
   prevStatus?: string; // the email's status before the draft, put back on Drop
   draftSubject?: string; // a new email's subject
-  undo?: { kind: 'task' | 'library' | 'fact'; id: string; file?: FileKey } | null;
+  undo?: { kind: 'task' | 'library' | 'fact' | 'task_fields' | 'task_reopen'; id: string; file?: FileKey; fields?: TaskFields } | null;
   /** What the card says (set by the server, so a new kind of action shows without an app update). */
   card?: string;
   link?: { type: 'task' | 'email' | 'library'; id: string } | null;
@@ -410,8 +424,68 @@ async function runAction(a: AppChatAction): Promise<AppChatAction> {
           await updateEmailAccount(account.id, { ignored_senders: account.ignored_senders.filter((s) => s !== item.from_email) });
         }
         if (cause?.kind === 'rule' && cause.ruleId) await removeIgnoreRule(cause.ruleId);
-        await updateEmailItem(item.id, { status: 'new', summary: item.summary || item.snippet?.slice(0, 300) || null, reason: 'You marked it important' });
-        return { ...a, state: 'done', result: `⭐ Back in Needs me: ${a.subject}`, link: { type: 'email', id: item.id } };
+        if (a.always && account && item.from_email) await addImportantSender(account.id, item.from_email);
+        if (item.status === 'skipped' || item.status === 'ignored')
+          await updateEmailItem(item.id, {
+            status: 'new',
+            summary: item.summary || item.snippet?.slice(0, 300) || null,
+            reason: a.always ? 'Always important sender' : 'You marked it important',
+          });
+        return {
+          ...a,
+          state: 'done',
+          result: a.always ? `⭐ Emails from ${item.from_email} always show in Needs me` : `⭐ Back in Needs me: ${a.subject}`,
+          link: { type: 'email', id: item.id },
+        };
+      }
+      case 'email_ignore': {
+        const item = await getEmailItem(a.emailId);
+        if (!item) return { ...a, state: 'failed', result: 'That email is gone.' };
+        const account = await getEmailAccount(item.account_id);
+        if (!account) return { ...a, state: 'failed', result: 'This inbox was disconnected.' };
+        if (a.mode === 'similar') await addIgnoreRule(item);
+        else if (item.from_email && !account.ignored_senders.includes(item.from_email))
+          await updateEmailAccount(account.id, { ignored_senders: [...account.ignored_senders, item.from_email] });
+        await updateEmailItem(item.id, { status: 'ignored' });
+        return { ...a, state: 'done', result: a.mode === 'similar' ? `🙈 Emails like "${a.subject}" are skipped from now on` : `🙈 Emails from ${a.from} are skipped from now on` };
+      }
+      case 'task_edit': {
+        const task = await getTask(a.taskId);
+        if (!task || task.status !== 'open') return { ...a, state: 'failed', result: 'That task is no longer open.' };
+        const before = fieldsFromTask(task);
+        const next: TaskFields = { ...before };
+        if (a.changes.title) next.title = a.changes.title;
+        if ('notes' in a.changes) next.notes = a.changes.notes ?? null;
+        if (a.changes.priority) next.priority = a.changes.priority;
+        if ('date' in a.changes) {
+          next.date = a.changes.date ?? null;
+          next.noDate = !a.changes.date;
+          if (!a.changes.date) {
+            next.time = null;
+            next.allDay = false;
+          }
+        }
+        if ('time' in a.changes) {
+          next.time = a.changes.time ?? null;
+          next.allDay = !a.changes.time && Boolean(next.date);
+        }
+        // A new time on an undated task needs a day: today.
+        if (next.time && !next.date) {
+          next.date = cairoParts(new Date()).date;
+          next.noDate = false;
+        }
+        const saved = await updateTaskFields(task.id, next);
+        return {
+          ...a,
+          state: 'done',
+          result: `✏️ ${saved.title} · ${formatWhen(saved)}${saved.priority === 'high' ? ' · high priority' : ''}`,
+          undo: { kind: 'task_fields', id: task.id, fields: before },
+          link: { type: 'task', id: task.id },
+        };
+      }
+      case 'task_delete': {
+        await setTaskStatus(a.taskId, 'cancelled');
+        return { ...a, state: 'done', result: `🗑 Deleted: ${a.title}`, undo: { kind: 'task_reopen', id: a.taskId } };
       }
       case 'email_reply': {
         // ✅ on the card writes the draft (nothing is sent); ✅ Send on the drafted card sends it.
@@ -421,7 +495,7 @@ async function runAction(a: AppChatAction): Promise<AppChatAction> {
         if (isNoReply(item.from_email)) return { ...a, state: 'failed', result: 'This is a no-reply address: nobody reads replies to it.' };
         const account = await getEmailAccount(item.account_id);
         if (!account) return { ...a, state: 'failed', result: 'This inbox was disconnected.' };
-        const brief = a.notes ? a.notes : autoBrief(item, account.email);
+        const brief = `${a.notes ? a.notes : autoBrief(item, account.email)}${a.tone ? `\nTone: ${a.tone}` : ''}`;
         const draft = await draftEmailReply({ ...item, brief }, account, brief);
         await updateEmailItem(item.id, { status: 'draft', draft, brief });
         return { ...a, state: 'drafted', draft, from: account.email, toEmail: item.from_email, prevStatus: item.status, result: undefined, link: { type: 'email', id: item.id } };
@@ -771,6 +845,12 @@ Tracking ${a.trackingNumber}${a.carrier ? ` (${a.carrier.toUpperCase()})` : ''},
     case 'jl_confirmed':
       return `✅ ${a.number} · ${a.customer}: confirmed by the supplier
 Emails the customer that their samples are confirmed`;
+    case 'task_edit':
+      return `✏️ ${a.title}\nNow: ${a.before} → ${describeTaskChanges(a.changes)}`;
+    case 'task_delete':
+      return `🗑 Delete task: ${a.title}`;
+    case 'email_ignore':
+      return a.mode === 'sender' ? `🙈 Skip every email from ${a.from}\n(starting with “${a.subject}”)` : `🙈 Skip emails like “${a.subject}” from now on`;
     case 'jl_resend':
       return `✉️ ${a.number} · ${a.customer}: send ${a.email === 'supplier' ? 'the request to the supplier' : `the ${a.email} email`} again`;
     default:
@@ -828,6 +908,8 @@ export async function decideAction(actionId: string, decision: 'confirm' | 'canc
     if (action.state !== 'done' || !action.undo) throw new Error('This can’t be undone.');
     const u = action.undo;
     if (u.kind === 'task') await setTaskStatus(u.id, 'cancelled');
+    if (u.kind === 'task_reopen') await setTaskStatus(u.id, 'open');
+    if (u.kind === 'task_fields' && u.fields) await updateTaskFields(u.id, u.fields);
     if (u.kind === 'library') await setKnowledgeStatus(u.id, 'removed');
     if (u.kind === 'fact' && u.file) await removeFactFrom(u.file, u.id);
     next = { ...action, state: 'undone', result: `↩️ Undone: ${action.result || ''}`, undo: null, link: null };

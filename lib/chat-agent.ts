@@ -19,6 +19,7 @@ import {
 import { getEmailItem, listEmailAccounts } from './email/inbox';
 import { jlApi, jlRecords, type JlRecord } from './jl-comfort';
 import { searchKnowledge } from './knowledge';
+import { clientFileText } from './memory-files';
 import { OPENROUTER_MODEL, openRouterOn } from './openrouter';
 import { formatWhen, listOpenTasks, type Task } from './tasks';
 
@@ -32,7 +33,7 @@ import { formatWhen, listOpenTasks, type Task } from './tasks';
 // Adding a skill = adding one entry to TOOLS (a lookup or a change). The classic two-call chat in
 // lib/assistant.ts stays as the fallback when this fails.
 
-const MAX_STEPS = 6;
+const MAX_STEPS = 8;
 const TIME_BUDGET_MS = 45_000;
 
 /** What the app chat lends the tools (kept in lib/app-chat.ts). */
@@ -178,6 +179,39 @@ const LOOKUPS: Tool[] = [
       (await data.comments()).map((c) => `${c.id} | ${c.clientName || ''} | ${c.platform} | ${c.author}: ${c.message.replace(/\s+/g, ' ').slice(0, 200)} | draft: ${(c.draft || '-').slice(0, 160)}`),
   },
   {
+    name: 'client_file',
+    kind: 'lookup',
+    description:
+      'Everything about ONE client: details, the rules and facts saved for them, their open tasks, recent emails from them, and their ads, reviews and website status. Use for "what’s going on with X", before writing to a client, or when unsure how a client likes things done.',
+    parameters: obj({ client_id: str('Id from list_clients') }),
+    run: async (input, data) => {
+      const client = (await data.clients()).find((c) => c.id === input.client_id);
+      if (!client) return 'No client with that id. Use list_clients first.';
+      const domain = client.email?.split('@')[1];
+      const generic = /^(gmail|yahoo|hotmail|outlook|icloud|live)\./i.test(domain || '');
+      const [file, tasks, emails, snapshot] = await Promise.all([
+        clientFileText(client.id, client.brandName).catch(() => ''),
+        data.tasks(),
+        searchEmails([client.brandName, client.ownerName, client.email, domain && !generic ? domain : ''].filter(Boolean).join(' '), 8).catch(() => [] as ChatEmail[]),
+        data.deps.businessNow(`${client.brandName} ads reviews website`).catch(() => ''),
+      ]);
+      emails.forEach((e) => data.seenEmails.set(e.id, e));
+      const mine = tasks.filter((t) => t.client_id === client.id);
+      mine.forEach((t) => data.seenTasks.set(t.id, t));
+      return [
+        `CLIENT: ${[client.brandName, client.ownerName && `owner ${client.ownerName}`, client.email, client.mobileNumber, client.websiteUrl, client.facebookLink, client.instagramLink].filter(Boolean).join(' | ')}`,
+        file || 'No saved rules or facts for this client yet.',
+        `OPEN TASKS FOR ${client.brandName}:`,
+        ...(mine.length ? mine.map((t) => `${t.id} | ${t.title} | ${formatWhen(t)}`) : ['none']),
+        'RECENT EMAILS THAT MENTION THEM:',
+        ...(emails.length ? emails.map(emailLine) : ['none found']),
+        snapshot ? `BUSINESS NOW (all clients; pick out ${client.brandName}):\n${snapshot.slice(0, 4000)}` : '',
+      ]
+        .filter(Boolean)
+        .join('\n');
+    },
+  },
+  {
     name: 'search_library',
     kind: 'lookup',
     description: 'Search Ahmed’s knowledge library (saved ideas, links, screenshots, notes).',
@@ -201,6 +235,27 @@ const LOOKUPS: Tool[] = [
 const CHANGE_SPECS: { name: string; description: string; parameters: Json }[] = [
   { name: 'task', description: 'Save a task or reminder (done at once, with Undo). Write it as he would say it to his task bot, with client, day and time if known.', parameters: obj({ text: str('The task') }) },
   { name: 'complete_task', description: 'Mark an open task done (he confirms).', parameters: obj({ task_id: str('Id from list_tasks or OPEN TASKS') }) },
+  {
+    name: 'task_edit',
+    description:
+      'Change a saved task: move it to another day or time, rename it, change its priority or notes (he confirms, with Undo). Give ONLY the fields that change. Work out dates from NOW (Cairo): "Thursday" = the coming Thursday.',
+    parameters: obj({
+      task_id: str('Id from list_tasks or OPEN TASKS'),
+      changes: {
+        type: 'object',
+        additionalProperties: false,
+        description: 'Only what changes',
+        properties: {
+          title: str('New title'),
+          date: nullableStr('New day YYYY-MM-DD (Cairo), or null for no date'),
+          time: nullableStr('New time HH:MM 24-hour (Cairo), or null for all day'),
+          priority: { type: 'string', enum: ['low', 'normal', 'high'] },
+          notes: nullableStr('New notes, or null to clear them'),
+        },
+      },
+    }),
+  },
+  { name: 'task_delete', description: 'Delete (cancel) a task he no longer needs (he confirms, with Undo). Not for finished tasks: those are complete_task.', parameters: obj({ task_id: str('Id from list_tasks or OPEN TASKS') }) },
   { name: 'library_note', description: 'Save an idea, note, link or reference to his knowledge library (done at once, with Undo).', parameters: obj({ text: str('What to save, in his words, with the link if any') }) },
   {
     name: 'remember',
@@ -209,12 +264,26 @@ const CHANGE_SPECS: { name: string; description: string; parameters: Json }[] = 
   },
   { name: 'forget', description: 'Forget a remembered fact (he confirms).', parameters: obj({ memory_id: str('Id from MEMORY') }) },
   { name: 'update_profile', description: 'Add or correct something in Ahmed’s own master profile (role, venture, degree, achievement). Not for client facts.', parameters: obj({ change: str('The change, in his words') }) },
-  { name: 'email_important', description: 'Bring a skipped email back to his inbox as important (he confirms).', parameters: obj({ email_id: str('Id from search_emails or EMAILS') }) },
+  {
+    name: 'email_important',
+    description: 'Bring a skipped email back to his inbox as important (he confirms). always=true also shows every future email from that sender ("always show emails from X").',
+    parameters: obj({ email_id: str('Id from search_emails or EMAILS'), always: { type: 'boolean', description: 'Always show this sender from now on' } }),
+  },
+  {
+    name: 'email_ignore',
+    description:
+      'Stop showing emails he doesn’t want (he confirms): mode "sender" skips every email from that sender from now on; "similar" skips emails like this one (same sender and kind of subject).',
+    parameters: obj({ email_id: str('Id from search_emails or EMAILS'), mode: { type: 'string', enum: ['sender', 'similar'] } }),
+  },
   { name: 'email_done', description: 'Mark an email handled / no reply needed (he confirms).', parameters: obj({ email_id: str('Id from search_emails or EMAILS') }) },
   {
     name: 'email_reply',
     description: 'Reply to an email. The app writes the draft; he reads it and taps Send. Never for no-reply senders. Do not write the reply yourself.',
-    parameters: obj({ email_id: str('Id from search_emails or EMAILS'), notes: str('What the reply should say, in his words and language; "" when he just says reply') }),
+    parameters: obj({
+      email_id: str('Id from search_emails or EMAILS'),
+      notes: str('What the reply should say, in his words and language; "" when he just says reply'),
+      tone: nullableStr('How it should sound when he says so, e.g. "short and formal", "warm", "firm about the payment"; else null'),
+    }),
   },
   {
     name: 'email_new',
@@ -364,7 +433,8 @@ How you work in this app (tools):
 - You have LOOKUP tools (search_emails, get_email, list_tasks, list_clients, jl_find, jl_details, list_campaigns, list_comments, search_library, business_now) and CHANGE tools (one per kind of change).
 - When he asks for a change, first find the exact item with a lookup tool (unless its id is already in the CONTEXT), then call the change tool with that id. Never guess an id.
 - A change tool never changes anything by itself: it puts a card under your answer, and it happens only when he taps ✅ Confirm (tasks, library notes and facts he asked you to remember are saved at once, with Undo). The tool result tells you if the card was prepared, or why not; when it wasn't, fix the call or ask him for what's missing.
-- Several changes in one message are fine (one tool call each).
+- Several changes in one message are fine (one tool call each), e.g. "reply to these 3 and mark them done": find each, then one change call per item.
+- "Move / postpone / reschedule / rename" a task = task_edit; "delete / remove / cancel" a task = task_delete; "done / finished" = complete_task.
 - When the lookups don't find what he means, say what you searched and ask (e.g. the sender's name, the order number). Don't say you can't do something a tool can do.
 - After the tools, answer in one short message: what you found and which cards are below. Never say a change is done unless a tool result says "done".`;
 
