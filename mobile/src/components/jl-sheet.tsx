@@ -24,6 +24,7 @@ export const STATUS_TONE: Record<string, 'brand' | 'danger' | 'warn' | 'ok' | 'm
   paid: 'warn',
   pending: 'warn',
   sent_to_supplier: 'brand',
+  supplier_confirmed: 'brand',
   shipped: 'brand',
   delivered: 'ok',
   closed: 'ok',
@@ -32,7 +33,7 @@ export const STATUS_TONE: Record<string, 'brand' | 'danger' | 'warn' | 'ok' | 'm
 };
 
 const ORDER_STATUSES = ['paid', 'sent_to_supplier', 'shipped', 'delivered', 'closed', 'problem', 'cancelled'];
-const SAMPLE_STATUSES = ['pending', 'sent_to_supplier', 'shipped', 'delivered', 'problem', 'cancelled'];
+const SAMPLE_STATUSES = ['pending', 'sent_to_supplier', 'supplier_confirmed', 'shipped', 'delivered', 'problem', 'cancelled'];
 
 export function JlSheet({
   kind,
@@ -389,6 +390,7 @@ export function jlCustomerText(record: JlOrder | JlSample, kind: JlKind, carrier
       lines.push(kind === 'order' ? 'We’ve received your order and are preparing it.' : 'We’ve received your request and are preparing your samples.');
       break;
     case 'sent_to_supplier':
+    case 'supplier_confirmed':
       lines.push(kind === 'order' ? 'Your fabric has been ordered from our supplier, and we’ll send you tracking as soon as it ships.' : 'Your samples are being prepared, and we’ll send you tracking as soon as they ship.');
       break;
     case 'shipped':

@@ -21,7 +21,7 @@ const ORDER_FILTERS: Filter[] = [
 ];
 
 const SAMPLE_FILTERS: Filter[] = [
-  { key: 'todo', label: 'To do', statuses: ['pending', 'sent_to_supplier', 'problem'] },
+  { key: 'todo', label: 'To do', statuses: ['pending', 'sent_to_supplier', 'supplier_confirmed', 'problem'] },
   { key: 'shipped', label: 'Shipped', statuses: ['shipped'] },
   { key: 'done', label: 'Delivered', statuses: ['delivered'] },
   { key: 'cancelled', label: 'Cancelled', statuses: ['cancelled'] },
