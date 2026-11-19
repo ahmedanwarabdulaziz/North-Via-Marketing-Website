@@ -1,6 +1,7 @@
 import { stoppedAds } from './ads-watch';
 import { getSetting, listDocs, setSetting } from './data/store';
 import { GBP_REVIEWS } from './review-engine';
+import { jlApi, jlKey } from './jl-comfort';
 import { supabase } from './supabase';
 import { cairoParts, groupTasks, listOpenTasks } from './tasks';
 import { websiteOverview } from './website-monitor';
@@ -13,12 +14,8 @@ const SETTING = 'app_morning_summary';
 const FROM = '09:00';
 
 async function jlOrdersToShip() {
-  const key = process.env.JLCOMFORT_API_KEY?.trim();
-  if (!key) return null;
-  const base = (process.env.JLCOMFORT_URL || 'https://www.jlcomfort.com').replace(/\/+$/, '');
-  const r = await fetch(`${base}/api/anwarz/overview`, { headers: { Authorization: `Bearer ${key}` }, cache: 'no-store', signal: AbortSignal.timeout(7_000) });
-  if (!r.ok) return null;
-  const o = (await r.json()) as { orders?: Record<string, number> };
+  if (!jlKey()) return null;
+  const o = await jlApi<{ orders?: Record<string, number> }>('overview', undefined, 7_000);
   return o.orders?.paid ?? 0;
 }
 

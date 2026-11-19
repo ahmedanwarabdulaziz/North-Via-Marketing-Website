@@ -82,6 +82,8 @@ export interface HomeData {
   reviews: { waiting: number; bad: number } | null;
   adsStopped?: StoppedAd[];
   websites: { total: number; down: AppWebsite[]; sslSoon: AppWebsite[] } | null;
+  /** OpenRouter credit left in US dollars (the AI chat and drafts use it); null when it can't be read. */
+  aiCredit?: { left: number; total: number; low: boolean } | null;
 }
 
 export interface TaskGroups {

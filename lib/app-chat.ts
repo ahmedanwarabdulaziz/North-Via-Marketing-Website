@@ -54,7 +54,7 @@ import {
 } from './tasks';
 import { addWebsite, runWebsiteChecks, websiteOverview } from './website-monitor';
 import { jlApi, jlKey, jlRecords, type JlRecord } from './jl-comfort';
-import { runChatAgent } from './chat-agent';
+import { runChatAgent, STRONG_MODEL, type AgentReply } from './chat-agent';
 import { OPENROUTER_MODEL } from './openrouter';
 import type { GbpStoredReview } from '@/types/database';
 
@@ -660,14 +660,29 @@ interface TurnReply {
   steps?: string[];
 }
 
+/** Haiku didn't manage it: nothing prepared but changes it couldn't make, or it ran out of steps. */
+const struggled = (r: AgentReply) => r.ranOut || (!r.actions.length && r.dropped.length > 0);
+
 async function agentTurn(question: string, history: ChatMessage[], topic: string): Promise<TurnReply> {
-  const reply = await runChatAgent(
-    question,
-    history,
-    { businessNow: (t) => businessNow(t), campaigns: () => allCampaigns(), comments: () => waitingComments() },
-    runsAtOnce,
-    () => businessNow(topic)
-  );
+  const started = Date.now();
+  const deps = { businessNow: (t: string) => businessNow(t), campaigns: () => allCampaigns(), comments: () => waitingComments() };
+  let reply = await runChatAgent(question, history, deps, runsAtOnce, () => businessNow(topic));
+  let label = 'Claude Haiku 5.5 · tools';
+  let model = OPENROUTER_MODEL;
+  // One more try with the stronger model when Haiku struggled and there's still time (the route has 60 s).
+  const left = 52_000 - (Date.now() - started);
+  if (struggled(reply) && left >= 20_000) {
+    try {
+      const strong = await runChatAgent(question, history, deps, runsAtOnce, () => businessNow(topic), { model: STRONG_MODEL, budgetMs: left - 4_000 });
+      if (!struggled(strong) || strong.actions.length > reply.actions.length) {
+        reply = { ...strong, steps: [...reply.steps.map((s) => `haiku: ${s}`), ...strong.steps.map((s) => `sonnet: ${s}`)] };
+        label = 'Claude Sonnet 5.5 · tools (Haiku couldn’t)';
+        model = STRONG_MODEL;
+      }
+    } catch (error) {
+      console.error('Chat agent: the stronger model failed:', error instanceof Error ? error.message.slice(0, 200) : error);
+    }
+  }
   return {
     text: reply.text,
     actions: reply.actions,
@@ -676,8 +691,8 @@ async function agentTurn(question: string, history: ChatMessage[], topic: string
       ...reply.tasks.slice(0, 4).map((t) => ({ type: 'task' as const, id: t.id, title: t.title })),
       ...reply.emails.slice(0, 4).map((e) => ({ type: 'email' as const, id: e.id, title: e.subject })),
     ],
-    modelLabel: 'Claude Haiku 5.5 · tools',
-    model: OPENROUTER_MODEL,
+    modelLabel: label,
+    model,
     provider: 'openrouter',
     steps: reply.steps,
   };

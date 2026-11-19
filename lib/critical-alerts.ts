@@ -4,6 +4,7 @@ import { getSetting, listDocs, setSetting } from './data/store';
 import { META_CONNECTIONS } from './meta';
 import { isLowBalance, openRouterBalance, openRouterOn } from './openrouter';
 import { ringPhone, type Ring } from './ntfy';
+import { sendPush, type PushMessage } from './push';
 import { allowedChatIds, escapeHtml as h, sendMessage } from './telegram';
 import { cairoParts } from './tasks';
 import type { MetaConnection } from '@/types/database';
@@ -18,11 +19,12 @@ const FB_WARN_DAYS = 5;
 
 interface Problem {
   key: string; // stable per problem, for "once a day"
-  ring?: Ring; // left out: Telegram only
+  ring?: Ring; // left out: no ring
+  push?: PushMessage; // a quiet app notification (no ntfy ring)
   telegram: string; // HTML
 }
 
-/** OpenRouter credit running low (Telegram only, once a day); Anwarz falls back to free models when it's gone. */
+/** OpenRouter credit running low (app notification + Telegram, once a day); Anwarz falls back to free models when it's gone. */
 async function balanceProblems(): Promise<Problem[]> {
   if (!(await openRouterOn().catch(() => false))) return [];
   const balance = await openRouterBalance();
@@ -30,6 +32,12 @@ async function balanceProblems(): Promise<Problem[]> {
   return [
     {
       key: 'or:low',
+      push: {
+        title: `💸 AI credit low: $${balance!.left.toFixed(2)} left`,
+        body: 'The AI chat and drafts use OpenRouter. Top up at openrouter.ai/credits; when it runs out, the chat falls back to the free models.',
+        channel: 'attention',
+        data: { type: 'home' },
+      },
       telegram: `💸 <b>OpenRouter credit is low: $${balance!.left.toFixed(2)} left</b> (of $${balance!.total.toFixed(2)})\nTop up at openrouter.ai/credits, or open /ai and tap 🆓 to use the free models only. When it runs out, Anwarz switches to the free models by itself.`,
     },
   ];
@@ -85,6 +93,7 @@ export async function runCriticalChecks(now = new Date()) {
   for (const p of fresh) {
     for (const chatId of allowedChatIds()) await sendMessage(chatId, { text: p.telegram });
     if (p.ring) await ringPhone(p.ring);
+    if (p.push) await sendPush(p.push);
   }
   return { problems: problems.length, rang: fresh.length };
 }

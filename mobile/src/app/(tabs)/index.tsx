@@ -68,6 +68,25 @@ export default function Home() {
             </Card>
           ) : null}
           <StoppedAdsBanner stopped={data.adsStopped ?? []} onPress={() => router.push('/marketing')} />
+          {data.aiCredit ? (
+            <Pressable
+              onPress={() => router.push('/chat-log')}
+              style={({ pressed }) => ({
+                alignSelf: 'flex-start',
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 6,
+                paddingHorizontal: 10,
+                paddingVertical: 4,
+                borderRadius: radius.pill,
+                backgroundColor: data.aiCredit!.low ? p.dangerSoft : p.brandSoft,
+                opacity: pressed ? 0.6 : 1,
+              })}>
+              <Text style={{ fontSize: 12, fontWeight: '600', color: data.aiCredit.low ? p.danger : p.brand }}>
+                {`🤖 AI credit $${data.aiCredit.left.toFixed(2)}${data.aiCredit.low ? ' · low, top up' : ''}`}
+              </Text>
+            </Pressable>
+          ) : null}
           <Row wrap gap={10}>
             <Stat label="Overdue" value={data.tasks.counts.overdue} tone={data.tasks.counts.overdue ? 'danger' : 'ok'} onPress={() => router.push('/tasks')} />
             <Stat label="Due today" value={data.tasks.counts.today} onPress={() => router.push('/tasks')} />

@@ -87,6 +87,7 @@ export default function More() {
 
       <Section title="Connections">
         <Button title="🔌 Connections: inboxes, Google, Facebook" kind="soft" onPress={() => router.push('/connections')} />
+        <Button title="🧾 Chat log: answers to fix, AI credit" kind="soft" onPress={() => router.push('/chat-log')} />
       </Section>
 
       <Section title="Alerts">

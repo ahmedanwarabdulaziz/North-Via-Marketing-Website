@@ -1,5 +1,6 @@
 import { AppError, appRoute } from '@/lib/app-auth';
 import { listEmailAccounts } from '@/lib/email/inbox';
+import { jlBase, jlKey } from '@/lib/jl-comfort';
 import { supabase } from '@/lib/supabase';
 
 // The Anwarz app's JL Comfort section (orders and sample requests). JL Comfort keeps its own database
@@ -11,15 +12,13 @@ import { supabase } from '@/lib/supabase';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
-// www: jlcomfort.com redirects there, and a redirect would drop the Authorization header.
-const BASE = (process.env.JLCOMFORT_URL || 'https://www.jlcomfort.com').replace(/\/+$/, '');
 // Only these JL Comfort endpoints can be reached through here.
 const ALLOWED = /^(overview|orders|samples)(\/[A-Za-z0-9-]{1,64})?$/;
 
 type Ctx = { params: Promise<{ path: string[] }> };
 
 async function relay(request: Request, { params }: Ctx) {
-  const key = process.env.JLCOMFORT_API_KEY?.trim();
+  const key = jlKey();
   if (!key) throw new AppError('JL Comfort isn’t connected yet (JLCOMFORT_API_KEY is not set).', 503);
   const path = (await params).path.join('/');
   if (!ALLOWED.test(path)) throw new AppError('Not found.', 404);
@@ -27,7 +26,7 @@ async function relay(request: Request, { params }: Ctx) {
   const search = new URL(request.url).search;
   let response: Response;
   try {
-    response = await fetch(`${BASE}/api/anwarz/${path}${search}`, {
+    response = await fetch(`${jlBase()}/api/anwarz/${path}${search}`, {
       method: request.method,
       headers: { Authorization: `Bearer ${key}`, Accept: 'application/json', ...(request.method === 'POST' ? { 'Content-Type': 'application/json' } : {}) },
       body: request.method === 'POST' ? await request.text() : undefined,

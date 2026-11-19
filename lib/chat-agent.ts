@@ -35,6 +35,8 @@ import { formatWhen, listOpenTasks, type Task } from './tasks';
 
 const MAX_STEPS = 8;
 const TIME_BUDGET_MS = 45_000;
+/** Tried again when Haiku can't manage a message (see lib/app-chat.ts). Override with OPENROUTER_STRONG_MODEL. */
+export const STRONG_MODEL = process.env.OPENROUTER_STRONG_MODEL || 'anthropic/claude-sonnet-5.5';
 
 /** What the app chat lends the tools (kept in lib/app-chat.ts). */
 export interface AgentDeps {
@@ -393,7 +395,7 @@ type LoopMessage =
   | { role: 'assistant'; content: string | null; tool_calls?: ToolCall[] }
   | { role: 'tool'; tool_call_id: string; content: string };
 
-async function complete(messages: LoopMessage[], deadline: number) {
+async function complete(messages: LoopMessage[], deadline: number, model: string) {
   const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -403,7 +405,7 @@ async function complete(messages: LoopMessage[], deadline: number) {
       'X-Title': 'Anwarz (North Via)',
     },
     body: JSON.stringify({
-      model: OPENROUTER_MODEL,
+      model,
       messages,
       tools: TOOLS.map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } })),
       tool_choice: 'auto',
@@ -420,10 +422,10 @@ async function complete(messages: LoopMessage[], deadline: number) {
   };
   if (!res.ok || data.error) {
     const error = new Error(`OpenRouter ${res.status}: ${data.error?.message || 'error'}`);
-    await recordAiCall({ provider: 'openrouter', model: OPENROUTER_MODEL, feature: 'assistant', ok: false, error });
+    await recordAiCall({ provider: 'openrouter', model, feature: 'assistant', ok: false, error });
     throw error;
   }
-  await recordAiCall({ provider: 'openrouter', model: OPENROUTER_MODEL, feature: 'assistant', ok: true, tokens: data.usage?.total_tokens });
+  await recordAiCall({ provider: 'openrouter', model, feature: 'assistant', ok: true, tokens: data.usage?.total_tokens });
   return data.choices?.[0]?.message || { content: '' };
 }
 
@@ -445,6 +447,8 @@ export interface AgentReply {
   emails: { id: string; subject: string }[];
   tasks: Task[];
   steps: string[]; // tool calls, for the log
+  /** It used every step (or answered nothing) without finishing. */
+  ranOut: boolean;
 }
 
 /** One chat turn with tools. Throws when OpenRouter is off or fails, so the caller can fall back. */
@@ -453,10 +457,12 @@ export async function runChatAgent(
   history: ChatMessage[],
   deps: AgentDeps,
   runsAtOnce: (a: AssistantAction) => boolean,
-  extraContext?: () => Promise<string>
+  extraContext?: () => Promise<string>,
+  opts: { model?: string; budgetMs?: number } = {}
 ): Promise<AgentReply> {
   if (!(await openRouterOn())) throw new Error('OpenRouter is off.');
-  const deadline = Date.now() + TIME_BUDGET_MS;
+  const model = opts.model || OPENROUTER_MODEL;
+  const deadline = Date.now() + (opts.budgetMs ?? TIME_BUDGET_MS);
   const data = new TurnData(deps);
   const [context, extra] = await Promise.all([buildContext(question, history, true), extraContext ? extraContext().catch(() => '') : Promise.resolve('')]);
   if (extra) context.text += `
@@ -494,12 +500,12 @@ ${extra}`;
   for (let step = 0; step < MAX_STEPS; step++) {
     const lastStep = step === MAX_STEPS - 1 || deadline - Date.now() < 8_000;
     if (lastStep) messages.push({ role: 'user', content: '(No more tools now: answer him with what you have.)' });
-    const reply = await complete(messages, deadline);
+    const reply = await complete(messages, deadline, model);
     const calls = lastStep ? [] : reply.tool_calls || [];
     messages.push({ role: 'assistant', content: reply.content || null, ...(calls.length ? { tool_calls: calls } : {}) });
     if (!calls.length) {
       const raw = (reply.content || '').trim();
-      return finish(raw, actions, dropped, steps, data);
+      return finish(raw, actions, dropped, steps, data, false);
     }
     // Lookups run side by side; changes one after another (they share the actions list).
     const results = await Promise.all(
@@ -534,10 +540,10 @@ ${extra}`;
       messages.push({ role: 'tool', tool_call_id: r.call.id, content: (content || '(empty)').slice(0, 12_000) });
     }
   }
-  return finish('', actions, dropped, steps, data);
+  return finish('', actions, dropped, steps, data, true);
 }
 
-function finish(raw: string, actions: AssistantAction[], dropped: string[], steps: string[], data: TurnData): AgentReply {
+function finish(raw: string, actions: AssistantAction[], dropped: string[], steps: string[], data: TurnData, ranOut: boolean): AgentReply {
   const ids = (prefix: string) => [...new Set([...raw.matchAll(new RegExp(`\\[${prefix}:([A-Za-z0-9_-]{6,40})\\]`, 'g'))].map((x) => x[1]))];
   const text = raw
     .replace(/\s*\[(K|T|E):[A-Za-z0-9_-]{6,40}\]/g, '')
@@ -550,5 +556,6 @@ function finish(raw: string, actions: AssistantAction[], dropped: string[], step
     emails: ids('E').map((id) => data.seenEmails.get(id)).filter((e): e is ChatEmail => Boolean(e)).map((e) => ({ id: e.id, subject: e.subject || '(no subject)' })),
     tasks: ids('T').map((id) => data.seenTasks.get(id)).filter((t): t is Task => Boolean(t)),
     steps,
+    ranOut: ranOut || !raw,
   };
 }

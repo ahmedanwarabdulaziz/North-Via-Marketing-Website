@@ -8,6 +8,7 @@ import { listDocs } from '@/lib/data/store';
 import { GBP_REVIEWS } from '@/lib/review-engine';
 import type { GbpStoredReview } from '@/types/database';
 import { stoppedAds } from '@/lib/ads-watch';
+import { isLowBalance, openRouterBalance } from '@/lib/openrouter';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
@@ -30,7 +31,7 @@ export const GET = appRoute(async () => {
   const reviews = await listDocs<GbpStoredReview>(GBP_REVIEWS, { where: { status: ['draft_ready', 'needs_draft'] } })
     .then((rows) => rows.filter((r) => r.backlog !== 'waiting' && r.backlog !== 'dismissed'))
     .catch(() => null);
-  const ads = await stoppedAds().catch(() => null);
+  const [ads, credit] = await Promise.all([stoppedAds().catch(() => null), openRouterBalance().catch(() => null)]);
   if (emails.error) throw new Error(emails.error.message);
   const groups = groupTasks(open, now);
   const byAccount = new Map(accounts.map((a) => [a.id, a]));
@@ -57,6 +58,8 @@ export const GET = appRoute(async () => {
     },
     // Stopped Google / Meta ads (hourly watch): the red banner on Home.
     adsStopped: ads?.stopped ?? [],
+    // OpenRouter credit left (the AI chat and drafts use it): the small tag on Home.
+    aiCredit: credit ? { left: Math.round(credit.left * 100) / 100, total: Math.round(credit.total * 100) / 100, low: isLowBalance(credit) } : null,
     reviews: reviews ? { waiting: reviews.length, bad: reviews.filter((r) => r.rating > 0 && r.rating <= 2).length } : null,
     websites: sites
       ? {
