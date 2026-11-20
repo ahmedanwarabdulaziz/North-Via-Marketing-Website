@@ -97,12 +97,27 @@ export async function sendPush(message: PushMessage): Promise<number> {
     const normal = { title: message.title.slice(0, 200), message: message.body.slice(0, 1000), ...common };
     const alarm = { alarm: '1', alarmTitle: payload.alarmTitle || '', alarmBody: payload.alarmBody || '', ...(logged.id ? { alertId: logged.id } : {}), ...common };
     // Only app versions that can draw alarms get the alarm format; older ones get the normal (pinned) notification.
+    // PCs (the installed web version) get a Web Push; phones get Firebase.
+    const { isWebPushToken, sendWebPush } = await import('./web-push');
+    const pcs = devices.filter((d) => isWebPushToken(d.push_token));
+    const phones = devices.filter((d) => !isWebPushToken(d.push_token));
     const groups = [
-      { devices: devices.filter((d) => !(logged.alarm && supportsAlarm(d.app_version))), data: normal },
-      { devices: devices.filter((d) => logged.alarm && supportsAlarm(d.app_version)), data: alarm },
+      { devices: phones.filter((d) => !(logged.alarm && supportsAlarm(d.app_version))), data: normal },
+      { devices: phones.filter((d) => logged.alarm && supportsAlarm(d.app_version)), data: alarm },
     ].filter((g) => g.devices.length);
 
     let sent = 0;
+    if (pcs.length) {
+      const web = await sendWebPush(
+        pcs.map((d) => ({ id: d.id, token: d.push_token })),
+        { title: message.title.slice(0, 200), body: message.body.slice(0, 1000), data: payload as Record<string, string>, urgent: logged.urgent }
+      ).catch((error) => {
+        console.error('Web push failed:', error);
+        return { sent: 0, gone: [] as string[] };
+      });
+      if (web.gone.length) await supabase.from('app_devices').update({ push_token: null }).in('id', web.gone);
+      sent += web.sent;
+    }
     for (const g of groups) {
       const result = await getMessaging(app).sendEachForMulticast({
         tokens: g.devices.map((d) => d.push_token),

@@ -2,9 +2,10 @@ import Constants from 'expo-constants';
 import { router } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { useEffect, useState } from 'react';
-import { Alert, Switch } from 'react-native';
+import { Alert, Platform, Switch } from 'react-native';
 
 import { AlertSwitches } from '@/components/alert-switches';
+import { PcNotificationsCard } from '@/components/pc-notifications';
 import { UpdateCard } from '@/components/update-bar';
 import { Button, Card, Row, Screen, Section, T } from '@/components/ui';
 import { API_URL, api } from '@/lib/api';
@@ -111,7 +112,8 @@ export default function More() {
         </Card>
       </Section>
 
-      <Section title="This phone">
+      <Section title={Platform.OS === 'web' ? 'This PC' : 'This phone'}>
+        <PcNotificationsCard />
         <Card>
           <Row>
             <T style={{ flex: 1, fontWeight: '700' }}>🔒 Fingerprint lock</T>

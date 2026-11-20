@@ -1,6 +1,6 @@
 import * as Notifications from 'expo-notifications';
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, AppState, Modal, ScrollView, Text, View } from 'react-native';
+import { Alert, AppState, Modal, Platform, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { api } from '@/lib/api';
@@ -30,6 +30,7 @@ interface UrgentData {
 /** Marks alerts seen on the website and clears their pinned notifications on the phone. */
 export async function markAlertsSeen(ids: string[] | 'all') {
   await api('/alerts/urgent', { body: { seen: ids } });
+  if (Platform.OS === 'web') return;
   const shown = await Notifications.getPresentedNotificationsAsync().catch(() => []);
   for (const n of shown) {
     const alertId = (n.request.content.data as Record<string, unknown> | undefined)?.alertId;
@@ -63,12 +64,13 @@ export function UrgentPopup() {
       if (state === 'active') load();
     });
     // A new urgent alert while the app is open shows at once.
-    const arrived = Notifications.addNotificationReceivedListener((n) => {
+    // (Phone only; the PC version's notifications come from the service worker.)
+    const arrived = Platform.OS === 'web' ? null : Notifications.addNotificationReceivedListener((n) => {
       if ((n.request.content.data as Record<string, unknown> | undefined)?.urgent === '1') load();
     });
     return () => {
       sub.remove();
-      arrived.remove();
+      arrived?.remove();
     };
   }, [load]);
 

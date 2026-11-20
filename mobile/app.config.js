@@ -7,6 +7,9 @@ module.exports = ({ config }) => {
   const firebase = path.join(__dirname, 'google-services.json');
   return {
     ...config,
+    // The PC version (npm run web:publish) lives at northviamarketing.com/app. Only for that export,
+    // so the phone app's config (and its update fingerprint) stays the same.
+    ...(process.env.ANWARZ_WEB === '1' ? { experiments: { ...config.experiments, baseUrl: '/app' } } : {}),
     android: {
       ...config.android,
       ...(fs.existsSync(firebase) ? { googleServicesFile: './google-services.json' } : {}),

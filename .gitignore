@@ -43,3 +43,6 @@ next-env.d.ts
 
 # OS
 Thumbs.db
+
+# Anwarz PC version build (mobile/scripts/publish-web.js)
+.anwarz-web-build/

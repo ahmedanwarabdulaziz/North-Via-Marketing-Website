@@ -2,6 +2,7 @@ import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import * as Notifications from 'expo-notifications';
 import { useEffect } from 'react';
+import { View } from 'react-native';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { LockScreen } from '@/components/lock-screen';
@@ -11,6 +12,9 @@ import { AuthProvider, useAuth } from '@/lib/auth';
 // Imported here, at the top level, so the background task for notification buttons is defined
 // before Android delivers a button press to a closed app.
 import { listenForTaps, markSeen, openAlert, registerForPush, setUpNotifications } from '@/lib/notifications';
+import '@/lib/web-alert'; // PC version: questions become the browser's own dialogs
+import { useLastTap } from '@/lib/last-tap';
+import { isPc, setUpPcNotifications } from '@/lib/pc';
 import { usePalette } from '@/lib/theme';
 
 SplashScreen.preventAutoHideAsync().catch(() => undefined);
@@ -19,7 +23,7 @@ function RootStack() {
   const { ready, signedIn, locked } = useAuth();
   const p = usePalette();
 
-  const lastTap = Notifications.useLastNotificationResponse();
+  const lastTap = useLastTap();
 
   useEffect(() => {
     if (ready) SplashScreen.hideAsync().catch(() => undefined);
@@ -33,6 +37,10 @@ function RootStack() {
   // Signed in: this phone gets alerts, and a tap opens the right screen.
   useEffect(() => {
     if (!ready || !signedIn) return;
+    if (isPc) {
+      void setUpPcNotifications(false).catch(() => undefined); // PC: refresh an existing subscription
+      return;
+    }
     void registerForPush().catch(() => undefined);
     return listenForTaps();
   }, [ready, signedIn]);
@@ -49,7 +57,8 @@ function RootStack() {
   if (!ready) return null;
   if (signedIn && locked) return <LockScreen />;
   return (
-    <>
+    // On a PC (the web version) the phone layout is centred, so it doesn't stretch across a wide window.
+    <View style={isPc ? { flex: 1, width: '100%', maxWidth: 1100, alignSelf: 'center', backgroundColor: p.bg } : { flex: 1 }}>
       {signedIn ? <UrgentPopup /> : null}
       <Stack
         screenOptions={{
@@ -81,7 +90,7 @@ function RootStack() {
         </Stack.Protected>
       </Stack>
       <UpdateBar />
-    </>
+    </View>
   );
 }
 

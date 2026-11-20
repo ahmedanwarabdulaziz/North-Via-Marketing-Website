@@ -1,0 +1,22 @@
+{
+  "name": "Anwarz",
+  "short_name": "Anwarz",
+  "description": "North Via Marketing control center: tasks, email, reviews, ads, clients and the AI chat.",
+  "id": "/app",
+  "start_url": "/app",
+  "scope": "/app",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone"],
+  "background_color": "#F4F5F8",
+  "theme_color": "#274290",
+  "icons": [
+    { "src": "/app/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/app/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/app/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Chat", "url": "/app/chat" },
+    { "name": "Inbox", "url": "/app/inbox" },
+    { "name": "Tasks", "url": "/app/tasks" }
+  ]
+}

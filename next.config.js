@@ -16,6 +16,16 @@ const nextConfig = {
     ignoreBuildErrors: true,
   },
   serverExternalPackages: ['pdfkit'],
+  // The Anwarz PC version (the app's web build, mobile → npm run web:publish) lives in public/app.
+  // Real files are served as they are; every app page (/app/tasks, /app/chat…) gets its index.html.
+  async rewrites() {
+    return {
+      afterFiles: [
+        { source: '/app', destination: '/app/index.html' },
+        { source: '/app/:path((?!_expo|assets|icons).*)', destination: '/app/index.html' },
+      ],
+    }
+  },
   // Local testing only: lets the Anwarz app's web preview (Expo on localhost:8081) call /api/app.
   // The phone app doesn't need CORS, so production sends no such headers.
   ...(process.env.NODE_ENV === 'development'

@@ -67,7 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const result = await api<{ token: string }>('/login', {
       body: {
         password,
-        deviceName: Device.deviceName || Device.modelName || 'Phone',
+        deviceName: Platform.OS === 'web' ? 'PC (Anwarz for Windows)' : Device.deviceName || Device.modelName || 'Phone',
         platform: Platform.OS,
         appVersion: Constants.expoConfig?.version ?? null,
       },
