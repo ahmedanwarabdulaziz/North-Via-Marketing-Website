@@ -1,11 +1,12 @@
-import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
+import { DarkTheme, DefaultTheme, Stack, ThemeProvider, router, type Href } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import * as Notifications from 'expo-notifications';
 import { useEffect } from 'react';
-import { View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { LockScreen } from '@/components/lock-screen';
+import { PcSidebar, useWideScreen } from '@/components/pc-sidebar';
 import { UpdateBar } from '@/components/update-bar';
 import { UrgentPopup } from '@/components/urgent-popup';
 import { AuthProvider, useAuth } from '@/lib/auth';
@@ -24,6 +25,7 @@ function RootStack() {
   const p = usePalette();
 
   const lastTap = useLastTap();
+  const wide = useWideScreen();
 
   useEffect(() => {
     if (ready) SplashScreen.hideAsync().catch(() => undefined);
@@ -56,40 +58,55 @@ function RootStack() {
 
   if (!ready) return null;
   if (signedIn && locked) return <LockScreen />;
+  // PC (web): a sidebar with every section when the window is wide, and a Back button on inner pages
+  // (the installed app has no browser Back button).
+  const sidebar = isPc && wide && signedIn;
+  const back = () => (router.canGoBack() ? router.back() : router.navigate('/' as Href));
   return (
-    // On a PC (the web version) the phone layout is centred, so it doesn't stretch across a wide window.
-    <View style={isPc ? { flex: 1, width: '100%', maxWidth: 1100, alignSelf: 'center', backgroundColor: p.bg } : { flex: 1 }}>
-      {signedIn ? <UrgentPopup /> : null}
-      <Stack
-        screenOptions={{
-          headerStyle: { backgroundColor: p.card },
-          headerTintColor: p.brand,
-          headerTitleStyle: { color: p.text, fontWeight: '700' },
-          contentStyle: { backgroundColor: p.bg },
-        }}>
-        <Stack.Protected guard={signedIn}>
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen name="task/[id]" options={{ title: 'Task' }} />
-          <Stack.Screen name="task/new" options={{ title: 'New task', presentation: 'modal' }} />
-          <Stack.Screen name="email/[id]" options={{ title: 'Email' }} />
-          <Stack.Screen name="client/[id]" options={{ title: 'Client' }} />
-          <Stack.Screen name="more" options={{ title: 'More' }} />
-          <Stack.Screen name="clients" options={{ title: 'Clients' }} />
-          <Stack.Screen name="share" options={{ title: 'Shared to Anwarz' }} />
-          <Stack.Screen name="links" options={{ title: 'Quick links' }} />
-          <Stack.Screen name="jl" options={{ title: 'JL Comfort' }} />
-          <Stack.Screen name="sounds" options={{ title: 'Notifications' }} />
-          <Stack.Screen name="writing" options={{ title: 'Writing modes' }} />
-          <Stack.Screen name="marketing" options={{ title: 'Marketing' }} />
-          <Stack.Screen name="library" options={{ headerShown: false }} />
-          <Stack.Screen name="connections" options={{ title: 'Connections' }} />
-          <Stack.Screen name="chat-log" options={{ title: 'Chat log' }} />
-        </Stack.Protected>
-        <Stack.Protected guard={!signedIn}>
-          <Stack.Screen name="login" options={{ headerShown: false }} />
-        </Stack.Protected>
-      </Stack>
-      <UpdateBar />
+    <View style={{ flex: 1, flexDirection: 'row', backgroundColor: p.bg }}>
+      {sidebar ? <PcSidebar /> : null}
+      <View style={isPc ? { flex: 1, maxWidth: 1100, alignSelf: 'stretch', marginHorizontal: 'auto', width: '100%', backgroundColor: p.bg } : { flex: 1 }}>
+        {signedIn ? <UrgentPopup /> : null}
+        <Stack
+          screenOptions={{
+            headerStyle: { backgroundColor: p.card },
+            headerTintColor: p.brand,
+            headerTitleStyle: { color: p.text, fontWeight: '700' },
+            contentStyle: { backgroundColor: p.bg },
+            ...(isPc
+              ? {
+                  headerLeft: () => (
+                    <Pressable onPress={back} style={({ pressed }) => ({ paddingHorizontal: 12, paddingVertical: 6, opacity: pressed ? 0.6 : 1 })}>
+                      <Text style={{ color: p.brand, fontWeight: '700', fontSize: 15 }}>‹ Back</Text>
+                    </Pressable>
+                  ),
+                }
+              : {}),
+          }}>
+          <Stack.Protected guard={signedIn}>
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+            <Stack.Screen name="task/[id]" options={{ title: 'Task' }} />
+            <Stack.Screen name="task/new" options={{ title: 'New task', presentation: 'modal' }} />
+            <Stack.Screen name="email/[id]" options={{ title: 'Email' }} />
+            <Stack.Screen name="client/[id]" options={{ title: 'Client' }} />
+            <Stack.Screen name="more" options={{ title: 'More' }} />
+            <Stack.Screen name="clients" options={{ title: 'Clients' }} />
+            <Stack.Screen name="share" options={{ title: 'Shared to Anwarz' }} />
+            <Stack.Screen name="links" options={{ title: 'Quick links' }} />
+            <Stack.Screen name="jl" options={{ title: 'JL Comfort' }} />
+            <Stack.Screen name="sounds" options={{ title: 'Notifications' }} />
+            <Stack.Screen name="writing" options={{ title: 'Writing modes' }} />
+            <Stack.Screen name="marketing" options={{ title: 'Marketing' }} />
+            <Stack.Screen name="library" options={{ headerShown: false }} />
+            <Stack.Screen name="connections" options={{ title: 'Connections' }} />
+            <Stack.Screen name="chat-log" options={{ title: 'Chat log' }} />
+          </Stack.Protected>
+          <Stack.Protected guard={!signedIn}>
+            <Stack.Screen name="login" options={{ headerShown: false }} />
+          </Stack.Protected>
+        </Stack>
+        <UpdateBar />
+      </View>
     </View>
   );
 }

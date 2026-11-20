@@ -3,6 +3,8 @@ import { Pressable, Text, View } from 'react-native';
 
 import { usePalette } from '@/lib/theme';
 
+import { useWideScreen } from './pc-sidebar';
+
 // Web preview only: a simple bottom bar in place of the phone's native tabs.
 const TABS = [
   { name: 'index', href: '/', label: 'Home' },
@@ -23,11 +25,13 @@ function TabButton({ children, isFocused, ...props }: TabTriggerSlotProps) {
 
 export default function AppTabs() {
   const p = usePalette();
+  // A wide PC window has the sidebar (pc-sidebar.tsx) instead of this bar.
+  const wide = useWideScreen();
   return (
     <Tabs>
       <TabSlot style={{ flex: 1 }} />
       <TabList asChild>
-        <View style={{ flexDirection: 'row', backgroundColor: p.card, borderTopWidth: 1, borderTopColor: p.border }}>
+        <View style={{ flexDirection: 'row', backgroundColor: p.card, borderTopWidth: 1, borderTopColor: p.border, display: wide ? 'none' : 'flex' }}>
           {TABS.map((tab) => (
             <TabTrigger key={tab.name} name={tab.name} href={tab.href} asChild>
               <TabButton>{tab.label}</TabButton>
