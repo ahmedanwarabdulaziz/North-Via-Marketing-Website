@@ -2,6 +2,7 @@ import * as WebBrowser from 'expo-web-browser';
 import { useState } from 'react';
 import { Alert } from 'react-native';
 
+import { ImapForm } from '@/components/imap-form';
 import { Button, Card, Empty, ErrorBox, Loading, Pill, Row, Screen, Section, T } from '@/components/ui';
 import { api } from '@/lib/api';
 import { ago } from '@/lib/format';
@@ -20,7 +21,11 @@ export default function Connections() {
   const { data, error, loading, refreshing, refresh, reload } = useApi<ConnectionsData>('/connections');
   const [busy, setBusy] = useState<string | null>(null);
 
+  const [imapForm, setImapForm] = useState<{ email?: string } | null>(null);
+
   const reconnect = async (row: ConnectionRow) => {
+    // IMAP mailboxes have no sign-in page: the form asks for the password again.
+    if (row.kind === 'imap') return setImapForm({ email: row.name });
     setBusy(row.id);
     try {
       const { url } = await api<{ url: string }>('/connections', { body: { kind: row.kind, clientId: row.clientId } });
@@ -88,6 +93,7 @@ export default function Connections() {
                   <Row>
                     <Button title="＋ Gmail inbox" small kind="soft" busy={busy === 'add-gmail'} disabled={busy !== null} onPress={() => void add('gmail')} />
                     <Button title="＋ Outlook inbox" small kind="soft" busy={busy === 'add-outlook'} disabled={busy !== null} onPress={() => void add('outlook')} />
+                    <Button title="＋ Other email" small kind="soft" disabled={busy !== null} onPress={() => setImapForm({})} />
                   </Row>
                 ) : null}
               </Section>
@@ -96,6 +102,7 @@ export default function Connections() {
           <T variant="small">Reconnect opens Google, Microsoft or Facebook in the browser. Sign in with the same account, then come back here and pull down to refresh.</T>
         </>
       ) : null}
+      <ImapForm visible={imapForm !== null} key={imapForm?.email ?? 'new'} email={imapForm?.email} onClose={() => setImapForm(null)} onDone={() => void reload()} />
     </Screen>
   );
 }

@@ -7,7 +7,7 @@ export interface ConnectionRow {
   detail: string;
   ok: boolean;
   problem: string | null;
-  kind: 'gmail' | 'outlook' | 'google_ads' | 'gbp' | 'meta';
+  kind: 'gmail' | 'outlook' | 'imap' | 'google_ads' | 'gbp' | 'meta';
   clientId: string | null;
 }
 

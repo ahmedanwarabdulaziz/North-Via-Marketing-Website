@@ -9,6 +9,7 @@ import { getSetting, setSetting } from '../data/store';
 import { allowedChatIds, escapeHtml as h, sendMessage, truncate, type InlineButton, type OutgoingMessage } from '../telegram';
 import { gmailClient, listNewGmail, readGmail, sendGmailNew, sendGmailReply, type MailMessage } from './gmail';
 import { listNewOutlook, outlookSession, sendOutlookNew, sendOutlookReply } from './outlook';
+import { listNewImap, sendImapMail, type ImapSettings } from './imap';
 
 // Connected inboxes: every 5 minutes (from /api/tasks/due) new mail is read, the AI keeps the
 // important ones and a Telegram card is sent. The AI sees each inbox's focus rules, Ahmed's
@@ -17,7 +18,7 @@ import { listNewOutlook, outlookSession, sendOutlookNew, sendOutlookReply } from
 
 export interface EmailAccount {
   id: string;
-  provider: 'gmail' | 'outlook';
+  provider: 'gmail' | 'outlook' | 'imap';
   email: string;
   label: string | null;
   focus: string | null;
@@ -28,6 +29,8 @@ export interface EmailAccount {
   last_checked_at: string | null;
   last_error: string | null;
   created_at: string;
+  /** IMAP mailboxes only: the servers (the password is encrypted_refresh_token). */
+  imap?: ImapSettings | null;
 }
 
 export interface EmailItem {
@@ -82,6 +85,24 @@ export async function saveEmailAccount(provider: EmailAccount['provider'], email
   const id = newEmailId();
   // New inboxes don't ring the phone (Telegram card only); it can be turned on per inbox in the admin page.
   check(await supabase.from('email_accounts').insert({ id, provider, email, label: email.split('@')[0], encrypted_refresh_token: encryptedRefreshToken, ring_urgent: false }));
+  return id;
+}
+
+/** Adds (or updates the password and servers of) an IMAP mailbox. Returns its id. */
+export async function saveImapAccount(email: string, encryptedPassword: string, imap: ImapSettings) {
+  const address = email.trim().toLowerCase();
+  const existing = check(await supabase.from('email_accounts').select('id').eq('email', address).maybeSingle()) as { id: string } | null;
+  if (existing) {
+    check(await supabase.from('email_accounts').update({ provider: 'imap', encrypted_refresh_token: encryptedPassword, imap, last_error: null, enabled: true }).eq('id', existing.id));
+    return existing.id;
+  }
+  const id = newEmailId();
+  // Starts checking from now (no flood of old mail), like a fresh Gmail / Outlook connection.
+  check(
+    await supabase
+      .from('email_accounts')
+      .insert({ id, provider: 'imap', email: address, label: address.split('@')[0], encrypted_refresh_token: encryptedPassword, imap, ring_urgent: false, last_checked_at: new Date().toISOString() })
+  );
   return id;
 }
 
@@ -475,6 +496,10 @@ export async function checkInboxes(now = new Date()) {
         const ids = await listNewGmail(gmail, Math.floor(since / 1000), MAX_PER_ACCOUNT);
         const known = await isKnown(ids);
         readers = ids.filter((i) => !known.has(i)).reverse().map((id) => () => readGmail(gmail, id));
+      } else if (account.provider === 'imap') {
+        const mails = await listNewImap(account, since, MAX_PER_ACCOUNT);
+        const known = await isKnown(mails.map((m) => m.messageId));
+        readers = mails.filter((m) => !known.has(m.messageId)).map((m) => async () => m);
       } else {
         const session = await outlookSession(account.encrypted_refresh_token);
         if (session.encryptedRefreshToken) await supabase.from('email_accounts').update({ encrypted_refresh_token: session.encryptedRefreshToken }).eq('id', account.id);
@@ -636,6 +661,17 @@ ${memory}`,
 
 export async function sendEmailReply(item: EmailItem, account: EmailAccount) {
   if (!item.draft) throw new Error('No reply drafted.');
+  if (account.provider === 'imap') {
+    const subject = item.subject || '';
+    await sendImapMail(account, {
+      to: item.from_name && item.from_email ? `"${item.from_name.replace(/["<>]/g, '')}" <${item.from_email}>` : item.from_email || '',
+      subject: /^re:/i.test(subject) ? subject : `Re: ${subject}`,
+      text: item.draft,
+      inReplyTo: item.rfc_message_id,
+      references: item.thread_id && item.thread_id !== item.rfc_message_id ? item.thread_id : null,
+    });
+    return item.message_id;
+  }
   if (account.provider === 'outlook') {
     const session = await outlookSession(account.encrypted_refresh_token);
     if (session.encryptedRefreshToken) await supabase.from('email_accounts').update({ encrypted_refresh_token: session.encryptedRefreshToken }).eq('id', account.id);
@@ -687,6 +723,10 @@ ${memory}`,
 /** Sends a new email from the connected inbox (Gmail or Outlook). */
 export async function sendNewEmail(account: EmailAccount, mail: { to: string; subject: string; text: string }) {
   if (!isEmailAddress(mail.to)) throw new Error(`“${mail.to}” isn’t an email address.`);
+  if (account.provider === 'imap') {
+    await sendImapMail(account, mail);
+    return;
+  }
   if (account.provider === 'outlook') {
     const session = await outlookSession(account.encrypted_refresh_token);
     if (session.encryptedRefreshToken) await supabase.from('email_accounts').update({ encrypted_refresh_token: session.encryptedRefreshToken }).eq('id', account.id);

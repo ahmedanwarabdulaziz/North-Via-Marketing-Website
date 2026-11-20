@@ -12,7 +12,7 @@ import type { GbpConnection, MetaConnection, SocialAccount } from '@/types/datab
 // /api/app/connect/start?t=…, which starts the provider's sign-in. The token rides along in the
 // OAuth state, so the callback accepts it in place of an admin login (the phone's browser has none).
 
-export type ConnectKind = 'gmail' | 'outlook' | 'google_ads' | 'gbp' | 'meta';
+export type ConnectKind = 'gmail' | 'outlook' | 'imap' | 'google_ads' | 'gbp' | 'meta';
 const PURPOSE = 'anwarz-app-connect';
 const key = () => new TextEncoder().encode(`${process.env.SESSION_SECRET}:app-connect`);
 
@@ -89,10 +89,10 @@ export async function listConnections(): Promise<ConnectionRow[]> {
       id: `email:${a.id}`,
       group: 'Email',
       name: a.email,
-      detail: a.provider === 'gmail' ? 'Gmail' : 'Outlook',
+      detail: a.provider === 'gmail' ? 'Gmail' : a.provider === 'imap' ? `Other email (IMAP · ${a.imap?.imapHost || ''})` : 'Outlook',
       ok: !problem,
       problem,
-      kind: a.provider === 'gmail' ? 'gmail' : 'outlook',
+      kind: a.provider === 'gmail' ? 'gmail' : a.provider === 'imap' ? 'imap' : 'outlook',
       clientId: null,
     });
   }

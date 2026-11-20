@@ -3,6 +3,7 @@ import { supabase } from '../supabase';
 import { bodyText, gmailClient, header, parseFrom, readGmail, withoutQuote, type MailMessage } from './gmail';
 import { listEmailAccounts, newEmailId, type EmailAccount, type EmailItem } from './inbox';
 import { graph, outlookSession } from './outlook';
+import { imapInboxBetween, imapThread, readImap, searchImap, type ImapFound } from './imap';
 
 // The chat's live view of Ahmed's real mailboxes. The 5-minute check only saves new Inbox mail;
 // this reads every folder of every connected inbox on demand, straight from Gmail and Microsoft:
@@ -19,7 +20,7 @@ export type Folder = 'any' | 'inbox' | 'sent' | 'spam' | 'archive' | 'drafts' | 
 export interface FoundEmail {
   ref: string; // "<account id>:<provider message id>", what the other functions take
   inbox: string;
-  provider: 'gmail' | 'outlook';
+  provider: 'gmail' | 'outlook' | 'imap';
   folder: string;
   fromName: string;
   fromEmail: string;
@@ -173,6 +174,27 @@ async function searchOutlook(account: EmailAccount, opts: SearchOptions, max: nu
   return res.value.map((m) => outlookFound(account, m, folders));
 }
 
+// ---------- IMAP (Purelymail and other mailboxes) ----------
+
+const imapFound = (account: EmailAccount, f: ImapFound): FoundEmail => ({
+  ref: `${account.id}:${f.key}`,
+  inbox: account.email,
+  provider: 'imap',
+  folder: f.folder,
+  fromName: f.fromName,
+  fromEmail: f.fromEmail,
+  to: f.to,
+  subject: f.subject,
+  date: f.date,
+  snippet: '',
+  hasAttachments: f.hasAttachments,
+  fromMe: f.fromMe,
+});
+
+async function searchImapFound(account: EmailAccount, o: SearchOptions, max: number) {
+  return (await searchImap(account, o, max)).map((f) => imapFound(account, f));
+}
+
 // ---------- Search ----------
 
 export interface SearchOptions {
@@ -210,7 +232,7 @@ export async function searchMailboxes(opts: SearchOptions) {
   const failed: string[] = [];
   const results = await Promise.all(
     list.map((a) =>
-      (a.provider === 'gmail' ? searchGmail(a, gmailQuery(opts), per) : searchOutlook(a, opts, per)).catch((error) => {
+      (a.provider === 'gmail' ? searchGmail(a, gmailQuery(opts), per) : a.provider === 'imap' ? searchImapFound(a, opts, per) : searchOutlook(a, opts, per)).catch((error) => {
         failed.push(`${a.email}: ${(error instanceof Error ? error.message : String(error)).slice(0, 120)}`);
         return [] as FoundEmail[];
       })
@@ -241,6 +263,33 @@ export async function openMailboxEmail(ref: string): Promise<OpenedEmail> {
   const r = parseRef(ref);
   const account = r && (await accounts()).find((a) => a.id === r.accountId);
   if (!r || !account) throw new Error('That email’s inbox isn’t connected any more.');
+
+  if (account.provider === 'imap') {
+    const { parsed, mail, folder } = await readImap(account, r.messageId);
+    const me = account.email.toLowerCase();
+    const { turns } = await imapThread(account, mail.subject, mail.rfcMessageId).catch(() => ({ turns: [] as Awaited<ReturnType<typeof imapThread>>['turns'] }));
+    const at = turns.findIndex((t) => t.messageId && t.messageId === mail.rfcMessageId);
+    return {
+      email: {
+        ref,
+        inbox: account.email,
+        provider: 'imap',
+        folder: folder.toUpperCase() === 'INBOX' ? 'Inbox' : folder,
+        fromName: mail.fromName,
+        fromEmail: mail.fromEmail,
+        to: mail.to,
+        subject: mail.subject,
+        date: mail.receivedAt,
+        snippet: mail.snippet,
+        hasAttachments: parsed.attachments.length > 0,
+        fromMe: mail.fromEmail === me,
+        body: mail.body,
+      },
+      thread: turns.slice(-8).map(({ from: f, fromMe, date, text }) => ({ from: f, fromMe, date, text })),
+      attachments: parsed.attachments.map((a, i) => ({ id: String(i), name: a.filename || `attachment-${i + 1}`, type: a.contentType || '', size: a.size || 0 })),
+      repliedByMe: at >= 0 ? turns.slice(at + 1).some((t) => t.fromMe) : turns.some((t) => t.fromMe && t.inReplyTo === mail.rfcMessageId),
+    };
+  }
 
   if (account.provider === 'gmail') {
     const gmail = gmailClient(account.encrypted_refresh_token);
@@ -319,7 +368,14 @@ export async function attachmentText(ref: string, attachmentId: string) {
   let bytes: Buffer;
   let name = 'attachment';
   let type = '';
-  if (account.provider === 'gmail') {
+  if (account.provider === 'imap') {
+    const { parsed } = await readImap(account, r.messageId);
+    const a = parsed.attachments[Number(attachmentId)];
+    if (!a) throw new Error('That attachment wasn’t found in the email.');
+    name = a.filename || name;
+    type = a.contentType || '';
+    bytes = a.content;
+  } else if (account.provider === 'gmail') {
     const gmail = gmailClient(account.encrypted_refresh_token);
     const { data: msg } = await gmail.users.messages.get({ userId: 'me', id: r.messageId, format: 'full' });
     const findPart = (p?: gmail_v1.Schema$MessagePart): gmail_v1.Schema$MessagePart | null => {
@@ -374,7 +430,30 @@ export async function waitingOnMe(days = 2, withinDays = 21) {
     list.map(async (account) => {
       try {
         const me = account.email.toLowerCase();
-        if (account.provider === 'gmail') {
+        if (account.provider === 'imap') {
+          const rows = await imapInboxBetween(account, new Date(Date.now() - withinDays * 86_400_000), new Date(cutoff));
+          const seenSubjects = new Set<string>();
+          for (const row of rows.reverse()) {
+            const subjectKey = row.subject.replace(/^((re|fwd?|fw)\s*:\s*)+/i, '').toLowerCase();
+            if (row.fromEmail === me || skip(row.fromEmail, row.subject) || seenSubjects.has(subjectKey)) continue;
+            seenSubjects.add(subjectKey);
+            out.push({
+              ref: `${account.id}:${row.key}`,
+              inbox: account.email,
+              provider: 'imap',
+              folder: 'Inbox',
+              fromName: row.fromName,
+              fromEmail: row.fromEmail,
+              to: row.to,
+              subject: row.subject,
+              date: row.date,
+              snippet: '',
+              hasAttachments: false,
+              fromMe: false,
+              waitingDays: Math.floor((Date.now() - Date.parse(row.date)) / 86_400_000),
+            });
+          }
+        } else if (account.provider === 'gmail') {
           const gmail = gmailClient(account.encrypted_refresh_token);
           const q = `in:inbox newer_than:${withinDays}d older_than:${days}d -from:me -category:promotions -category:social -category:forums -category:updates`;
           const threads = (await gmail.users.threads.list({ userId: 'me', q, maxResults: 25 })).data.threads || [];
@@ -445,6 +524,7 @@ export async function saveFound(ref: string): Promise<string> {
 
   let mail: MailMessage;
   if (account.provider === 'gmail') mail = await readGmail(gmailClient(account.encrypted_refresh_token), r.messageId);
+  else if (account.provider === 'imap') mail = (await readImap(account, r.messageId)).mail;
   else {
     const token = await outlookToken(account);
     const m = await graph<GraphMsg & { internetMessageId?: string }>(token, `/me/messages/${encodeURIComponent(r.messageId)}?$select=${SELECT},body,internetMessageId`, {
