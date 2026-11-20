@@ -2,7 +2,7 @@
   "expo": {
     "name": "Anwarz",
     "slug": "anwarz",
-    "version": "0.6.0",
+    "version": "0.7.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "anwarz",
@@ -75,7 +75,20 @@
             "./assets/sounds/drop.wav"
           ]
         }
-      ]
+      ],
+      [
+        "react-native-fbsdk-next",
+        {
+          "appID": "1663830358491435",
+          "clientToken": "5e884e26c64e0707948ab2c5cb1555bb",
+          "displayName": "Anwarz",
+          "scheme": "fb1663830358491435",
+          "advertiserIDCollectionEnabled": false,
+          "autoLogAppEventsEnabled": false,
+          "isAutoInitEnabled": true
+        }
+      ],
+      "@react-native-google-signin/google-signin"
     ],
     "experiments": {
       "typedRoutes": true,
@@ -90,6 +103,9 @@
       },
       "eas": {
         "projectId": "4bfec8f3-e7f0-4ba4-8e29-28e634ca7451"
+      },
+      "nativeSignIn": {
+        "googleWebClientId": "637160083379-t7bq7fd6g7sb67hq8j43p3b4vosv3j7d.apps.googleusercontent.com"
       }
     },
     "owner": "ahmedahmedanwar",

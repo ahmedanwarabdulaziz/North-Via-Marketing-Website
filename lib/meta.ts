@@ -142,13 +142,30 @@ interface PageEntry {
 
 /** Exchanges the login code, stores the connection, and records every Page it can manage. */
 export async function completeMetaConnection(code: string, clientId: string, via: ConnectVia) {
+  const short = await graph<{ access_token: string }>('oauth/access_token', {
+    params: { client_id: process.env.META_APP_ID || '', client_secret: process.env.META_APP_SECRET || '', redirect_uri: redirectUri(), code },
+  });
+  return connectWithUserToken(short.access_token, clientId, via);
+}
+
+/**
+ * The Anwarz app's native Facebook login (the Facebook app on the phone) hands over a user token
+ * instead of a code. It's accepted only if Facebook confirms it was issued to OUR app and is valid.
+ */
+export async function completeMetaConnectionFromApp(userToken: string, clientId: string) {
+  const appId = process.env.META_APP_ID || '';
+  const check = await graph<{ data?: { app_id?: string; is_valid?: boolean; user_id?: string } }>('debug_token', {
+    params: { input_token: userToken, access_token: `${appId}|${process.env.META_APP_SECRET || ''}` },
+  });
+  if (!check.data?.is_valid || check.data.app_id !== appId) throw new Error('That Facebook login isn’t valid for this app. Try again.');
+  return connectWithUserToken(userToken, clientId, 'admin');
+}
+
+async function connectWithUserToken(shortToken: string, clientId: string, via: ConnectVia) {
   const appId = process.env.META_APP_ID || '';
   const secret = process.env.META_APP_SECRET || '';
-  const short = await graph<{ access_token: string }>('oauth/access_token', {
-    params: { client_id: appId, client_secret: secret, redirect_uri: redirectUri(), code },
-  });
   const long = await graph<{ access_token: string; expires_in?: number }>('oauth/access_token', {
-    params: { grant_type: 'fb_exchange_token', client_id: appId, client_secret: secret, fb_exchange_token: short.access_token },
+    params: { grant_type: 'fb_exchange_token', client_id: appId, client_secret: secret, fb_exchange_token: shortToken },
   });
   const token = long.access_token;
 

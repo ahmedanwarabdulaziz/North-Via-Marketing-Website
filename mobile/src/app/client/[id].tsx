@@ -1,6 +1,7 @@
 import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { Linking } from 'react-native';
 
+import { ClientConnections } from '@/components/client-connections';
 import { ClientRulesView, type ClientRules } from '@/components/client-rules';
 import { EmailCard } from '@/components/email-card';
 import { WebsiteRow } from '@/components/rows';
@@ -51,6 +52,10 @@ export default function ClientScreen() {
           </Row>
         ) : null}
       </Card>
+
+      <Section title="Connections">
+        <ClientConnections clientId={id} />
+      </Section>
 
       {data.rules ? (
         <Section title="Rules">
