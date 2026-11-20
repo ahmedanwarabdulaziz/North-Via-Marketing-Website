@@ -27,7 +27,8 @@
     "pdfkit": "^0.18.0",
     "react": "^18",
     "react-dom": "^18",
-    "tailwindcss": "^3.4.17"
+    "tailwindcss": "^3.4.17",
+    "unpdf": "^2.2.1"
   },
   "devDependencies": {
     "@next/bundle-analyzer": "^15.0.0",

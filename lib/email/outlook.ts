@@ -43,7 +43,7 @@ async function token(body: Record<string, string>) {
   return data as { access_token: string; refresh_token?: string };
 }
 
-async function graph<T>(accessToken: string, path: string, init: RequestInit = {}): Promise<T> {
+export async function graph<T>(accessToken: string, path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`${GRAPH}${path}`, {
     ...init,
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json', Prefer: 'outlook.body-content-type="text"', ...(init.headers || {}) },
@@ -89,7 +89,7 @@ function withoutQuote(text: string) {
   return (cut > 0 ? text.slice(0, cut) : text).replace(/\n{3,}/g, '\n\n').trim();
 }
 
-/** Inbox mail received after `sinceMs`, oldest first. "Other" (non-Focused) mail is skipped. */
+/** Inbox mail received after `sinceMs` (Focused and Other), oldest first. */
 export async function listNewOutlook(accessToken: string, sinceMs: number, max = 10): Promise<MailMessage[]> {
   const since = new Date(sinceMs).toISOString();
   const q = new URLSearchParams({
@@ -99,8 +99,9 @@ export async function listNewOutlook(accessToken: string, sinceMs: number, max =
     $select: 'id,conversationId,internetMessageId,subject,receivedDateTime,bodyPreview,body,from,toRecipients,inferenceClassification',
   });
   const data = await graph<{ value: GraphMessage[] }>(accessToken, `/me/mailFolders/inbox/messages?${q}`);
+  // Focused and "Other" both: the AI sorting (people first, clients always) decides what matters,
+  // so a real email Outlook filed under Other isn't invisible.
   return (data.value || [])
-    .filter((m) => m.inferenceClassification !== 'other')
     .reverse()
     .map((m) => ({
       messageId: m.id,

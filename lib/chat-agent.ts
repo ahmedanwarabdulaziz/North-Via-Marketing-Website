@@ -17,6 +17,7 @@ import {
   type PlannerComment,
 } from './assistant';
 import { getEmailItem, listEmailAccounts } from './email/inbox';
+import { attachmentText, openMailboxEmail, saveFound, searchMailboxes, waitingOnMe, type FoundEmail } from './email/live';
 import { jlApi, jlRecords, type JlRecord } from './jl-comfort';
 import { searchKnowledge } from './knowledge';
 import { clientFileText } from './memory-files';
@@ -81,12 +82,104 @@ const obj = (properties: Json, required: string[] = Object.keys(properties)) => 
 
 // ---------- Lookup tools ----------
 
+const day = (iso: string) => (iso ? iso.slice(0, 10) : '');
+const foundLine = (e: FoundEmail) =>
+  [`[M:${e.ref}]`, day(e.date), `${e.inbox} · ${e.folder}`, e.fromMe ? `from ME to ${e.to.slice(0, 80)}` : `from ${e.fromName} <${e.fromEmail}>`, e.subject, e.hasAttachments ? '📎' : '', e.snippet.replace(/\s+/g, ' ').slice(0, 160)]
+    .filter(Boolean)
+    .join(' | ');
+const nullable = (type: string, description: string) => ({ type: [type, 'null'], description });
+
+/** Live mailbox tools: every folder of every connected inbox, straight from Gmail / Microsoft (lib/email/live.ts). */
+const MAILBOX: Tool[] = [
+  {
+    name: 'mailbox_search',
+    kind: 'lookup',
+    description:
+      'Search Ahmed’s REAL mailboxes live: every connected inbox and EVERY folder (Inbox and its tabs, Sent, Archive / All Mail, Spam / Junk, Trash, labels, sub-folders), any date. Use it for anything search_emails can’t find, for his own sent emails ("what did I send…", "did I reply…"), spam, old emails, attachments. Fill only what you know; null for the rest. Each result has a ref [M:…] for mailbox_open.',
+    parameters: obj({
+      text: nullable('string', 'Any words (names, subject or body words), or null'),
+      from: nullable('string', 'Sender address or name, or null'),
+      to: nullable('string', 'Recipient address or name, or null'),
+      subject: nullable('string', 'Words in the subject, or null'),
+      folder: { type: ['string', 'null'], enum: ['any', 'inbox', 'sent', 'spam', 'archive', 'drafts', 'trash', null], description: 'Where to look; null = every folder' },
+      after: nullable('string', 'Only emails on or after this day (YYYY-MM-DD), or null'),
+      before: nullable('string', 'Only emails before this day (YYYY-MM-DD), or null'),
+      has_attachment: nullable('boolean', 'true = only emails with attachments, or null'),
+      inbox: nullable('string', 'Only this inbox (address), or null for all'),
+    }),
+    run: async (input) => {
+      const s = (k: string) => (typeof input[k] === 'string' && input[k] ? String(input[k]) : undefined);
+      const { results, failed } = await searchMailboxes({
+        text: s('text'),
+        from: s('from'),
+        to: s('to'),
+        subject: s('subject'),
+        folder: (s('folder') as never) || 'any',
+        after: s('after'),
+        before: s('before'),
+        hasAttachment: input.has_attachment === true,
+        inbox: s('inbox'),
+      });
+      return {
+        results: results.length ? results.map(foundLine) : 'Nothing found in the mailboxes. Try fewer or other words, or another folder.',
+        ...(failed.length ? { could_not_search: failed } : {}),
+      };
+    },
+  },
+  {
+    name: 'mailbox_open',
+    kind: 'lookup',
+    description:
+      'Open one email from mailbox_search or waiting_on_me in full: its text, the WHOLE conversation (his own replies included, so you can tell if he replied and what was agreed), and its attachments. It also returns an email_id that every email change tool (email_reply, email_done, email_important…) accepts.',
+    parameters: obj({ ref: str('The ref from [M:…], without the M:') }),
+    run: async (input, data) => {
+      const ref = String(input.ref || '').replace(/^M:/, '');
+      const opened = await openMailboxEmail(ref);
+      const emailId = await saveFound(ref).catch(() => null);
+      if (emailId) {
+        const [line] = await emailsByIds([emailId]);
+        if (line) data.seenEmails.set(emailId, line);
+      }
+      return {
+        email_id: emailId,
+        header: foundLine(opened.email),
+        text: opened.email.body,
+        replied_by_him_after_it: opened.repliedByMe,
+        conversation: opened.thread.map((t) => `${day(t.date)} ${t.fromMe ? 'AHMED' : t.from}: ${t.text.replace(/\s+/g, ' ').slice(0, 600)}`),
+        attachments: opened.attachments.map((a) => `${a.name} (${a.type || 'file'}, ${Math.round(a.size / 1024)} KB) id=${a.id}`),
+      };
+    },
+  },
+  {
+    name: 'mailbox_attachment',
+    kind: 'lookup',
+    description: 'Read the text of a PDF (or text) attachment of an email opened with mailbox_open, e.g. to find an invoice total, a date or an order number.',
+    parameters: obj({ ref: str('The email’s ref'), attachment_id: str('The attachment id from mailbox_open') }),
+    run: async (input) => attachmentText(String(input.ref || '').replace(/^M:/, ''), String(input.attachment_id || '')),
+  },
+  {
+    name: 'waiting_on_me',
+    kind: 'lookup',
+    description:
+      'Emails from real people that Ahmed has NOT answered (checked against his Sent mail), received in the last 3 weeks and waiting at least `days` days. Automated mail, codes and auto-replies are left out. Use for "what am I late on", "who is waiting for my reply".',
+    parameters: obj({ days: nullable('number', 'Waiting at least this many days (default 2)') }),
+    run: async (input) => {
+      const { waiting, failed } = await waitingOnMe(typeof input.days === 'number' ? Math.max(0, Math.min(30, input.days)) : 2, 21);
+      return {
+        waiting: waiting.length ? waiting.map((w) => `${w.waitingDays} days · ${foundLine(w)}`) : 'Nobody is waiting on a reply. ✅',
+        ...(failed.length ? { could_not_check: failed } : {}),
+      };
+    },
+  },
+];
+
 const LOOKUPS: Tool[] = [
+  ...MAILBOX,
   {
     name: 'search_emails',
     kind: 'lookup',
     description:
-      'Search every saved email in all of Ahmed’s inboxes (any age, including skipped ones) by sender name, address or subject words. Use it to find the email he means before replying to it or marking it. Returns the best matches first, each with its id.',
+      'Search the emails Anwarz has SAVED (new Inbox mail it sorted, including skipped ones) by sender name, address or subject words. Fast; use it first for recent inbox email. For Sent, Archive, Spam, tabs, old mail or anything not found here, use mailbox_search. Returns the best matches first, each with its id.',
     parameters: obj({ query: str('Names, email addresses or subject words, e.g. "Isabelle sofa" or "karim@patriva.com"') }),
     run: async (input, data) => {
       const found = await searchEmails(String(input.query || ''), 10);
@@ -432,7 +525,8 @@ async function complete(messages: LoopMessage[], deadline: number, model: string
 const AGENT_RULES = `
 
 How you work in this app (tools):
-- You have LOOKUP tools (search_emails, get_email, list_tasks, list_clients, jl_find, jl_details, list_campaigns, list_comments, search_library, business_now) and CHANGE tools (one per kind of change).
+- You have LOOKUP tools (search_emails, get_email, mailbox_search, mailbox_open, mailbox_attachment, waiting_on_me, list_tasks, list_clients, jl_find, jl_details, list_campaigns, list_comments, search_library, business_now) and CHANGE tools (one per kind of change).
+- Email: search_emails only covers mail Anwarz saved from the Inbox. His real mailboxes (Sent, Archive, Spam/Junk, Gmail tabs, Outlook's Other tab, labels, sub-folders, old mail) are reached with mailbox_search, then mailbox_open for the full text, the whole conversation (his replies too) and attachments. "Did I reply / what did I send / what did we agree" = open the conversation and read it. To act on a mailbox email, use the email_id that mailbox_open returns with the email change tools. If search_emails finds nothing, ALWAYS try mailbox_search before saying it isn't there.
 - When he asks for a change, first find the exact item with a lookup tool (unless its id is already in the CONTEXT), then call the change tool with that id. Never guess an id.
 - A change tool never changes anything by itself: it puts a card under your answer, and it happens only when he taps ✅ Confirm (tasks, library notes and facts he asked you to remember are saved at once, with Undo). The tool result tells you if the card was prepared, or why not; when it wasn't, fix the call or ask him for what's missing.
 - Several changes in one message are fine (one tool call each), e.g. "reply to these 3 and mark them done": find each, then one change call per item.
@@ -547,6 +641,7 @@ function finish(raw: string, actions: AssistantAction[], dropped: string[], step
   const ids = (prefix: string) => [...new Set([...raw.matchAll(new RegExp(`\\[${prefix}:([A-Za-z0-9_-]{6,40})\\]`, 'g'))].map((x) => x[1]))];
   const text = raw
     .replace(/\s*\[(K|T|E):[A-Za-z0-9_-]{6,40}\]/g, '')
+    .replace(/\s*\[M:[^\]\s]{4,200}\]/g, '') // live mailbox refs are for the tools, not for him
     .replace(/\s*\[(DONE by the bot|FAILED|PROPOSED[^\]]*)\]/gi, '')
     .trim();
   return {

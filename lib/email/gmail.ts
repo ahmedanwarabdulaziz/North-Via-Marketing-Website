@@ -59,7 +59,7 @@ export interface MailMessage {
   labels: string[];
 }
 
-function header(headers: gmail_v1.Schema$MessagePartHeader[] | undefined, name: string) {
+export function header(headers: gmail_v1.Schema$MessagePartHeader[] | undefined, name: string) {
   return headers?.find((h) => h.name?.toLowerCase() === name.toLowerCase())?.value || '';
 }
 
@@ -68,7 +68,7 @@ function decode(data?: string | null) {
 }
 
 /** Plain text of a message: text/plain if there is one, otherwise HTML with the tags stripped. */
-function bodyText(part?: gmail_v1.Schema$MessagePart): string {
+export function bodyText(part?: gmail_v1.Schema$MessagePart): string {
   if (!part) return '';
   const find = (p: gmail_v1.Schema$MessagePart, type: string): string | null => {
     if (p.mimeType === type && p.body?.data) return decode(p.body.data);
@@ -94,7 +94,7 @@ function bodyText(part?: gmail_v1.Schema$MessagePart): string {
 }
 
 /** Drops quoted earlier messages ("On … wrote:" and "> " lines) so only the new text is kept. */
-function withoutQuote(text: string) {
+export function withoutQuote(text: string) {
   const cut = text.search(/\n(On .{5,200} wrote:|-----Original Message-----|From: .+\nSent: )/);
   const kept = cut > 0 ? text.slice(0, cut) : text;
   return kept
@@ -105,7 +105,7 @@ function withoutQuote(text: string) {
     .trim();
 }
 
-function parseFrom(value: string) {
+export function parseFrom(value: string) {
   const m = value.match(/^\s*"?([^"<]*)"?\s*<([^>]+)>/);
   return m ? { name: m[1].trim() || m[2], email: m[2].trim().toLowerCase() } : { name: value.trim(), email: value.trim().toLowerCase() };
 }
