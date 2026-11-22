@@ -102,6 +102,7 @@ function RootStack() {
             <Stack.Screen name="library" options={{ headerShown: false }} />
             <Stack.Screen name="connections" options={{ title: 'Connections' }} />
             <Stack.Screen name="social" options={{ title: 'Facebook & Instagram' }} />
+            <Stack.Screen name="accounts" options={{ title: 'Google & Ads' }} />
             <Stack.Screen name="chat-log" options={{ title: 'Chat log' }} />
           </Stack.Protected>
           <Stack.Protected guard={!signedIn}>

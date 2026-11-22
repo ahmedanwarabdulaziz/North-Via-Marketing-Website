@@ -90,6 +90,9 @@ export default function Connections() {
                 ) : (
                   <Empty text="Nothing connected." />
                 )}
+                {group === 'Google' ? (
+                  <Button title="📊 Link Google & ad accounts to clients ›" small kind="soft" onPress={() => router.push('/accounts')} />
+                ) : null}
                 {group === 'Facebook & Instagram' ? (
                   <Button title="📱 Manage all Pages & Instagram ›" small kind="soft" onPress={() => router.push('/social')} />
                 ) : null}

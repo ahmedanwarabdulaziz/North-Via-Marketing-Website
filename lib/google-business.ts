@@ -34,8 +34,10 @@ function getOAuth2Client(redirectUri = googleRedirectUri()) {
  * Used both as the shareable link token and as the OAuth `state`.
  * Client links stay valid for 7 days; admin-initiated ones for 30 minutes.
  */
-export async function createConnectToken(clientId: string, via: ConnectVia) {
-  return new SignJWT({ cid: clientId, via, purpose: STATE_PURPOSE })
+export async function createConnectToken(clientId: string, via: ConnectVia, hub = false, fromApp = false) {
+  // hub: started from Admin → Google & Ads, so the login returns there. fromApp: from the Anwarz
+  // app, so it ends on the "go back to the app" page.
+  return new SignJWT({ cid: clientId, via, purpose: STATE_PURPOSE, ...(hub ? { hub: true } : {}), ...(fromApp ? { app: true } : {}) })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setExpirationTime(via === 'client_link' ? '7d' : '30m')
@@ -46,7 +48,7 @@ export async function verifyConnectToken(token: string) {
   try {
     const { payload } = await jwtVerify(token, stateKey, { algorithms: ['HS256'] });
     if (payload.purpose !== STATE_PURPOSE || typeof payload.cid !== 'string') return null;
-    return { clientId: payload.cid, via: (payload.via === 'client_link' ? 'client_link' : 'admin') as ConnectVia };
+    return { clientId: payload.cid, via: (payload.via === 'client_link' ? 'client_link' : 'admin') as ConnectVia, hub: payload.hub === true, fromApp: payload.app === true };
   } catch {
     return null;
   }

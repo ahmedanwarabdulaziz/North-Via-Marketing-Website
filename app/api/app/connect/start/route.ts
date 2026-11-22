@@ -3,7 +3,7 @@ import { google } from 'googleapis';
 import { verifyAppConnectToken } from '@/lib/app-connect';
 import { gmailAuthUrl } from '@/lib/email/gmail';
 import { outlookAuthUrl, outlookRedirectUri } from '@/lib/email/outlook';
-import { createConnectToken } from '@/lib/google-business';
+import { AGENCY_CONNECT_ID, createConnectToken } from '@/lib/google-business';
 import { googleRedirectUri } from '@/lib/google-oauth';
 import { createMetaConnectToken } from '@/lib/meta';
 
@@ -32,7 +32,8 @@ export async function GET(request: Request) {
       );
     }
     case 'gbp':
-      return NextResponse.redirect(new URL(`/api/google/business/connect?token=${encodeURIComponent(await createConnectToken(clientId!, 'admin'))}`, request.url));
+      // No client: the agency's Google account (the app's Google & Ads screen).
+      return NextResponse.redirect(new URL(`/api/google/business/connect?token=${encodeURIComponent(await createConnectToken(clientId ?? AGENCY_CONNECT_ID, 'admin', false, true))}`, request.url));
     case 'meta':
       // No client: your own Facebook login from the app's Social screen.
       return NextResponse.redirect(new URL(`/api/meta/connect?token=${encodeURIComponent(await createMetaConnectToken(clientId ?? '', 'admin', true))}`, request.url));

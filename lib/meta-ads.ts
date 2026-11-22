@@ -129,6 +129,20 @@ export async function previewClientMetaAdAccounts(clientId: string): Promise<Met
     .sort((a, b) => Number(b.selected) - Number(a.selected) || Number(b.active) - Number(a.active) || a.name.localeCompare(b.name));
 }
 
+/** Every ad account seen so far (refreshed by previewClientMetaAdAccounts), with its client. */
+export async function listMetaAdAccounts() {
+  return Object.entries(await storedAccounts()).map(([id, a]) => ({ id, ...a }));
+}
+
+/** Google & Ads page: puts one ad account on a client, moves it, or (null) unlinks it. */
+export async function assignMetaAdAccount(id: string, clientId: string | null) {
+  const stored = await storedAccounts();
+  if (!stored[id]) throw new Error('That ad account is no longer on any Facebook login. Refresh the list.');
+  if (clientId) stored[id].clientId = clientId;
+  else delete stored[id].clientId;
+  await setSetting(SETTING, { accounts: stored });
+}
+
 /** Links exactly `ids` to the client (accounts linked to another client are skipped). */
 export async function saveClientMetaAdSelection(clientId: string, ids: string[]) {
   const stored = await storedAccounts();

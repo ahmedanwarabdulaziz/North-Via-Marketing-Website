@@ -28,6 +28,7 @@ const MAIN: { icon: string; label: string; href: string }[] = [
 const SETTINGS: { icon: string; label: string; href: string }[] = [
   { icon: '🔌', label: 'Connections', href: '/connections' },
   { icon: '📱', label: 'Facebook & Instagram', href: '/social' },
+  { icon: '📊', label: 'Google & Ads', href: '/accounts' },
   { icon: '🔔', label: 'Notifications', href: '/sounds' },
   { icon: '✍️', label: 'Writing modes', href: '/writing' },
   { icon: '⚙️', label: 'More', href: '/more' },

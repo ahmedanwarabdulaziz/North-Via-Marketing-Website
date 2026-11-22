@@ -18,8 +18,7 @@ export const POST = appRoute(async (request) => {
   const kind = KINDS.find((k) => k === body.kind);
   if (!kind) throw new AppError('Unknown connection.');
   const clientId = typeof body.clientId === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(body.clientId) ? body.clientId : null;
-  // Facebook without a client is your own login (the app's Social screen).
-  if (kind === 'gbp' && !clientId) throw new AppError('Which client?');
+  // Without a client, Facebook is your own login and Google Business the agency's account.
   const token = await createAppConnectToken(kind, clientId);
   const origin = new URL(request.url).origin;
   return { url: `${origin}/api/app/connect/start?t=${encodeURIComponent(token)}` };

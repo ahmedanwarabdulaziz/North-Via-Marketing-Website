@@ -12,15 +12,20 @@ import { appDoneUrl, splitAppState, verifyAppConnectToken } from '@/lib/app-conn
 
 // Business Profile authorizations carry a signed `state`; Google Ads ones carry
 // "ads:<clientId>" and Google Analytics ones "ga:<clientId>".
+const HUB = '_hub'; // Admin → Google & Ads, in place of a client id
 async function handleBusinessProfileCallback(request: Request, code: string | null, state: string) {
   const verified = await verifyConnectToken(state);
   if (!verified) {
     return NextResponse.redirect(new URL('/connect/google?status=expired', request.url));
   }
 
-  const { clientId, via } = verified;
+  const { clientId, via, hub, fromApp } = verified;
   const doneUrl = (status: 'connected' | 'error') =>
-    clientId === AGENCY_CONNECT_ID
+    fromApp
+      ? appDoneUrl(request.url, status, 'Google Business')
+      : hub
+      ? new URL(`/admin/google?gbp=${status}`, request.url)
+      : clientId === AGENCY_CONNECT_ID
       ? new URL(`/admin/reviews?gbp=${status}`, request.url)
       : via === 'admin'
       ? new URL(`/admin/clients/${clientId}?gbp=${status}`, request.url)
@@ -69,9 +74,12 @@ export async function GET(request: Request) {
     const connectionId = kind === 'ga' ? 'analytics_admin_connection' : 'master_admin_connection';
     // Back to the client page the connection was started from, or Settings.
     const adsClientId = state?.split(':')[1] || '';
+    // "_hub": started from Admin → Google & Ads.
     const adsDone = (query: string) =>
       fromApp
         ? appDoneUrl(request.url, query === 'connected' ? 'connected' : 'error', 'Google Ads')
+        : adsClientId === HUB
+        ? new URL(`/admin/google?${kind}=${query}`, request.url)
         : new URL(adsClientId ? `/admin/clients/${adsClientId}?${kind}=${query}` : `/admin/settings?${query === 'connected' ? 'success=connected' : 'error=' + query}`, request.url);
 
     // The shared Google Ads / Analytics connections may only be replaced by a signed-in admin (or the app's signed link).
