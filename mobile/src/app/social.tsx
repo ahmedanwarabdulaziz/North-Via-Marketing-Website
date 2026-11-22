@@ -208,15 +208,16 @@ export default function Social() {
             <Row>
               <Avatar id={x.id} name={x.pageName} />
               <View style={{ flex: 1, gap: 2 }}>
-                <Text style={{ color: p.text, fontWeight: '700', fontSize: 15 }} onPress={() => void Linking.openURL(`https://facebook.com/${x.id}`)}>
+                {/* textAlign: an Arabic name would otherwise flip to the right edge. */}
+                <Text style={{ color: p.text, fontWeight: '700', fontSize: 15, textAlign: 'left' }} onPress={() => void Linking.openURL(`https://facebook.com/${x.id}`)}>
                   {x.pageName}
                 </Text>
                 <Text
-                  style={{ color: x.igUsername ? p.muted : p.muted, fontSize: 12, opacity: x.igUsername ? 1 : 0.7 }}
+                  style={{ color: p.muted, fontSize: 12, opacity: x.igUsername ? 1 : 0.7, textAlign: 'left' }}
                   onPress={x.igUsername ? () => void Linking.openURL(`https://instagram.com/${x.igUsername}`) : undefined}>
                   {x.igUsername ? `📸 @${x.igUsername}` : '📸 No Instagram linked'}
                 </Text>
-                <Text style={{ color: p.muted, fontSize: 11 }}>{x.source}</Text>
+                <Text style={{ color: p.muted, fontSize: 11, textAlign: 'left' }}>{x.source}</Text>
               </View>
             </Row>
             {x.lastError ? <T variant="small" color={p.danger}>{`⚠️ ${x.lastError}`}</T> : null}
@@ -235,7 +236,7 @@ export default function Social() {
                 backgroundColor: x.clientId ? 'transparent' : p.warnSoft,
                 opacity: pressed || saving === x.id ? 0.6 : 1,
               })}>
-              <Text style={{ flex: 1, color: x.clientId ? p.text : p.warn, fontWeight: '600' }}>
+              <Text style={{ flex: 1, color: x.clientId ? p.text : p.warn, fontWeight: '600', textAlign: 'left' }}>
                 {saving === x.id ? 'Saving…' : x.clientId ? `👤 ${clientName.get(x.clientId) ?? 'Client'}` : 'Choose a client'}
               </Text>
               <Text style={{ color: p.brand, fontWeight: '700' }}>Change ›</Text>
@@ -264,7 +265,7 @@ export default function Social() {
                       borderRadius: radius.md,
                       backgroundColor: on ? p.brandSoft : pressed ? p.border : 'transparent',
                     })}>
-                    <Text style={{ color: on ? p.brand : p.text, fontWeight: on ? '700' : '500' }}>{on ? `✓ ${c.name}` : c.name}</Text>
+                    <Text style={{ color: on ? p.brand : p.text, fontWeight: on ? '700' : '500', textAlign: 'left' }}>{on ? `✓ ${c.name}` : c.name}</Text>
                   </Pressable>
                 );
               })}

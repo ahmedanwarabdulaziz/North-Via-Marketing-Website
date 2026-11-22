@@ -73,18 +73,26 @@ export async function graph<T>(
     url.searchParams.set('access_token', options.token);
     url.searchParams.set('appsecret_proof', appSecretProof(options.token));
   }
-  const res = await fetch(url, {
-    method: options.method || 'GET',
-    headers: options.body ? { 'Content-Type': 'application/json' } : undefined,
-    body: options.body ? JSON.stringify(options.body) : undefined,
-    signal: AbortSignal.timeout(20_000),
-    cache: 'no-store',
-  });
-  const data = (await res.json().catch(() => ({}))) as T & { error?: { message?: string; code?: number } };
-  if (!res.ok || data.error) {
+  const method = options.method || 'GET';
+  // Meta's own hiccups ("An unexpected error has occurred. Please retry your request later.", codes
+  // 1 and 2, or is_transient) usually pass within seconds: reads are tried twice more before failing.
+  for (let attempt = 1; ; attempt++) {
+    const res = await fetch(url, {
+      method,
+      headers: options.body ? { 'Content-Type': 'application/json' } : undefined,
+      body: options.body ? JSON.stringify(options.body) : undefined,
+      signal: AbortSignal.timeout(20_000),
+      cache: 'no-store',
+    });
+    const data = (await res.json().catch(() => ({}))) as T & { error?: { message?: string; code?: number; is_transient?: boolean } };
+    if (res.ok && !data.error) return data;
+    const transient = data.error?.is_transient === true || data.error?.code === 1 || data.error?.code === 2 || res.status >= 500;
+    if (method === 'GET' && transient && attempt < 3) {
+      await new Promise((r) => setTimeout(r, attempt * 1500));
+      continue;
+    }
     throw new MetaApiError(data.error?.message || `Meta API error ${res.status}`, data.error?.code, res.status);
   }
-  return data;
 }
 
 /** Follows `paging.next` cursors up to `maxPages`. */
@@ -267,8 +275,8 @@ export async function saveClientAccountSelection(clientId: string, selectedIds: 
   const now = new Date().toISOString();
   const writes: Array<{ id: string; data: object }> = [];
   for (const c of choices) {
-    if (wanted.has(c.id) && !c.takenByClientId && !c.selected) writes.push({ id: c.id, data: { clientId, linked: true, linkedAt: now, updatedAt: now } });
-    else if (!wanted.has(c.id) && c.selected) writes.push({ id: c.id, data: { clientId: null, linked: false, updatedAt: now } });
+    if (wanted.has(c.id) && !c.takenByClientId && !c.selected) writes.push({ id: c.id, data: { clientId, linked: true, linkedAt: now, lastError: null, updatedAt: now } });
+    else if (!wanted.has(c.id) && c.selected) writes.push({ id: c.id, data: { clientId: null, linked: false, lastError: null, updatedAt: now } });
   }
   await setDocs(SOCIAL_ACCOUNTS, writes, { merge: true });
   return choices.filter((c) => (wanted.has(c.id) && !c.takenByClientId)).length;
@@ -285,7 +293,8 @@ export async function assignSocialAccount(accountId: string, clientId: string | 
   await setDoc(
     SOCIAL_ACCOUNTS,
     accountId,
-    clientId ? { clientId, linked: true, linkedAt: now, updatedAt: now } : { clientId: null, linked: false, updatedAt: now },
+    // An old sync error belongs to the old setup; the next sync reports anything still wrong.
+    clientId ? { clientId, linked: true, linkedAt: now, lastError: null, updatedAt: now } : { clientId: null, linked: false, lastError: null, updatedAt: now },
     { merge: true }
   );
   await logAudit('meta.page_assigned', { accountId, pageName: account.pageName, from: account.linked ? account.clientId : null, to: clientId });
@@ -295,7 +304,7 @@ export async function assignSocialAccount(accountId: string, clientId: string | 
 export async function disconnectClientSocial(clientId: string) {
   const accounts = await listDocs<SocialAccount>(SOCIAL_ACCOUNTS, { where: { clientId } });
   const now = new Date().toISOString();
-  await setDocs(SOCIAL_ACCOUNTS, accounts.map((a) => ({ id: a.id, data: { clientId: null, linked: false, updatedAt: now } })), { merge: true });
+  await setDocs(SOCIAL_ACCOUNTS, accounts.map((a) => ({ id: a.id, data: { clientId: null, linked: false, lastError: null, updatedAt: now } })), { merge: true });
 
   const own = await getDoc<MetaConnection>(META_CONNECTIONS, `client:${clientId}`);
   if (own) {
