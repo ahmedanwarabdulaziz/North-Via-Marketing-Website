@@ -25,10 +25,14 @@ const MAIN: { icon: string; label: string; href: string }[] = [
   { icon: '🔗', label: 'Quick links', href: '/links' },
 ];
 
-const SETTINGS: { icon: string; label: string; href: string }[] = [
-  { icon: '🔌', label: 'Connections', href: '/connections' },
-  { icon: '📱', label: 'Facebook & Instagram', href: '/social' },
+// Every login the automation uses, grouped: mailboxes, Facebook & Instagram, Google & ad accounts.
+const CONNECTIONS: { icon: string; label: string; href: string }[] = [
+  { icon: '📧', label: 'Mail', href: '/connections' },
+  { icon: '📱', label: 'Social media', href: '/social' },
   { icon: '📊', label: 'Google & Ads', href: '/accounts' },
+];
+
+const SETTINGS: { icon: string; label: string; href: string }[] = [
   { icon: '🔔', label: 'Notifications', href: '/sounds' },
   { icon: '✍️', label: 'Writing modes', href: '/writing' },
   { icon: '⚙️', label: 'More', href: '/more' },
@@ -71,6 +75,9 @@ export function PcSidebar() {
           <Text style={{ color: p.onBrand, fontWeight: '800' }}>＋ New task</Text>
         </Pressable>
         {MAIN.map(item)}
+        <View style={{ height: 1, backgroundColor: p.border, marginVertical: space.sm }} />
+        <Text style={{ color: p.muted, fontSize: 11, fontWeight: '800', letterSpacing: 0.8, paddingHorizontal: space.md, paddingTop: 2, paddingBottom: 4 }}>CONNECTIONS</Text>
+        {CONNECTIONS.map(item)}
         <View style={{ height: 1, backgroundColor: p.border, marginVertical: space.sm }} />
         {SETTINGS.map(item)}
       </ScrollView>

@@ -21,22 +21,35 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <h2 className="text-xl font-bold text-zinc-900 tracking-tight">Admin<span className="text-blue-600">OS</span></h2>
         </div>
         
-        <nav className="flex-1 p-4 space-y-1">
+        <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
           {[
             { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
             { href: '/admin/tasks', label: 'Tasks', icon: CheckSquare },
             { href: '/admin/clients', label: 'Clients', icon: Users },
             { href: '/admin/ads', label: 'Google Ads', icon: BarChart3 },
             { href: '/admin/reviews', label: 'Google Reviews', icon: Star },
-            { href: '/admin/social', label: 'Facebook & Instagram', icon: Share2 },
-            { href: '/admin/google', label: 'Google & Ads', icon: Link2 },
             { href: '/admin/library', label: 'Library', icon: BookOpen },
             { href: '/admin/invoices', label: 'Invoices', icon: FileText },
-            { href: '/admin/email', label: 'Email', icon: Mail },
             { href: '/admin/memory', label: 'Memory', icon: Brain },
             { href: '/admin/competitors', label: 'Competitors', icon: Eye },
+            // Every login the automation uses, grouped under one heading.
+            { heading: 'Connections' },
+            { href: '/admin/email', label: 'Mail', icon: Mail },
+            { href: '/admin/social', label: 'Social media', icon: Share2 },
+            { href: '/admin/google', label: 'Google & Ads', icon: Link2 },
+            { heading: '' },
             { href: '/admin/settings', label: 'Settings', icon: Settings },
-          ].map(({ href, label, icon: Icon }) => {
+          ].map((entry) => {
+            if ('heading' in entry) {
+              return entry.heading ? (
+                <div key={entry.heading} className="pt-4 mt-3 border-t border-zinc-100 px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+                  {entry.heading}
+                </div>
+              ) : (
+                <div key="divider" className="!mt-3 !mb-3 border-t border-zinc-100" />
+              );
+            }
+            const { href, label, icon: Icon } = entry;
             const active = isActive(href);
 
             return (

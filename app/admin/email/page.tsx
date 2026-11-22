@@ -23,7 +23,7 @@ export default async function EmailPage({ searchParams }: { searchParams: Promis
         <div>
           <h1 className="text-3xl font-bold text-zinc-900 tracking-tight flex items-center gap-3">
             <Mail className="w-8 h-8 text-zinc-400" />
-            Email inboxes
+            Mail connections
           </h1>
           <p className="text-zinc-500 mt-2 max-w-2xl">
             Every 5 minutes Anwarz reads new mail, keeps the important ones and sends them to Telegram. Reply there with a voice note or

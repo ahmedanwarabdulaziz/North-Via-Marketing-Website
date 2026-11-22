@@ -11,11 +11,10 @@ import { usePalette } from '@/lib/theme';
 import { automationQuietFor, type ConnectionRow, type ConnectionsData } from '@/lib/connections';
 import { useApi } from '@/lib/use-api';
 
-// More → Connections: every account the automation needs (inboxes, Google Ads, Google reviews,
-// Facebook & Instagram), what's wrong with any of them, and a Reconnect button that opens the sign-in
-// in the phone's browser with a 15-minute link. The website also alerts you when one breaks.
-
-const GROUPS: ConnectionRow['group'][] = ['Email', 'Google', 'Facebook & Instagram'];
+// Connections → Mail: the mailboxes, what's wrong with any of them, and a Reconnect button that opens
+// the sign-in in the phone's browser with a 15-minute link. Google and Facebook logins have their own
+// pages (Social media, Google & Ads), but a broken one is listed here too, since the Home alert and
+// notifications open this page. The website also alerts you when one breaks.
 
 export default function Connections() {
   const p = usePalette();
@@ -43,6 +42,28 @@ export default function Connections() {
 
   const quiet = automationQuietFor(data);
   const broken = data?.connections.filter((c) => !c.ok) ?? [];
+  const mail = data?.connections.filter((c) => c.group === 'Email') ?? [];
+  const otherBroken = broken.filter((c) => c.group !== 'Email');
+
+  const rowCard = (c: ConnectionRow) => (
+    <Card key={c.id} tone={c.ok ? undefined : 'danger'}>
+      <Row>
+        <T style={{ flex: 1, fontWeight: '700' }}>{c.name}</T>
+        <Pill text={c.ok ? 'Connected' : 'Needs you'} tone={c.ok ? 'ok' : 'danger'} />
+      </Row>
+      {c.detail ? <T variant="small">{c.group === 'Email' ? c.detail : `${c.group} · ${c.detail}`}</T> : null}
+      {c.problem ? <T variant="small" color={p.danger}>{c.problem}</T> : null}
+      <Button
+        title={c.ok ? '🔄 Reconnect' : '🔌 Reconnect now'}
+        small
+        kind={c.ok ? 'outline' : 'primary'}
+        tone={c.ok ? 'brand' : 'danger'}
+        busy={busy === c.id}
+        disabled={busy !== null}
+        onPress={() => void reconnect(c)}
+      />
+    </Card>
+  );
 
   return (
     <Screen padTop={false} refreshing={refreshing} onRefresh={refresh}>
@@ -63,49 +84,24 @@ export default function Connections() {
             </T>
           </Card>
 
-          {GROUPS.map((group) => {
-            const rows = data.connections.filter((c) => c.group === group);
-            return (
-              <Section key={group} title={group}>
-                {rows.length ? (
-                  rows.map((c) => (
-                    <Card key={c.id} tone={c.ok ? undefined : 'danger'}>
-                      <Row>
-                        <T style={{ flex: 1, fontWeight: '700' }}>{c.name}</T>
-                        <Pill text={c.ok ? 'Connected' : 'Needs you'} tone={c.ok ? 'ok' : 'danger'} />
-                      </Row>
-                      {c.detail ? <T variant="small">{c.detail}</T> : null}
-                      {c.problem ? <T variant="small" color={p.danger}>{c.problem}</T> : null}
-                      <Button
-                        title={c.ok ? '🔄 Reconnect' : '🔌 Reconnect now'}
-                        small
-                        kind={c.ok ? 'outline' : 'primary'}
-                        tone={c.ok ? 'brand' : 'danger'}
-                        busy={busy === c.id}
-                        disabled={busy !== null}
-                        onPress={() => void reconnect(c)}
-                      />
-                    </Card>
-                  ))
-                ) : (
-                  <Empty text="Nothing connected." />
-                )}
-                {group === 'Google' ? (
-                  <Button title="📊 Link Google & ad accounts to clients ›" small kind="soft" onPress={() => router.push('/accounts')} />
-                ) : null}
-                {group === 'Facebook & Instagram' ? (
-                  <Button title="📱 Manage all Pages & Instagram ›" small kind="soft" onPress={() => router.push('/social')} />
-                ) : null}
-                {group === 'Email' ? (
-                  <Row>
-                    <Button title="＋ Gmail inbox" small kind="soft" busy={busy === 'add-gmail'} disabled={busy !== null} onPress={() => void add('gmail')} />
-                    <Button title="＋ Outlook inbox" small kind="soft" busy={busy === 'add-outlook'} disabled={busy !== null} onPress={() => void add('outlook')} />
-                    <Button title="＋ Other email" small kind="soft" disabled={busy !== null} onPress={() => setImapForm({})} />
-                  </Row>
-                ) : null}
-              </Section>
-            );
-          })}
+          <Section title="Mailboxes">
+            {mail.length ? mail.map(rowCard) : <Empty text="No mailbox connected." />}
+            <Row wrap>
+              <Button title="＋ Gmail inbox" small kind="soft" busy={busy === 'add-gmail'} disabled={busy !== null} onPress={() => void add('gmail')} />
+              <Button title="＋ Outlook inbox" small kind="soft" busy={busy === 'add-outlook'} disabled={busy !== null} onPress={() => void add('outlook')} />
+              <Button title="＋ Other email" small kind="soft" disabled={busy !== null} onPress={() => setImapForm({})} />
+            </Row>
+          </Section>
+
+          {/* Google and Facebook logins live on their own pages; a broken one still shows here. */}
+          {otherBroken.length ? <Section title="Other logins that need you">{otherBroken.map(rowCard)}</Section> : null}
+
+          <Section title="Other connections">
+            <Row wrap>
+              <Button title="📱 Social media ›" small kind="soft" onPress={() => router.push('/social')} />
+              <Button title="📊 Google & Ads ›" small kind="soft" onPress={() => router.push('/accounts')} />
+            </Row>
+          </Section>
           <T variant="small">Reconnect opens Google, Microsoft or Facebook in the browser. Sign in with the same account, then come back here and pull down to refresh.</T>
         </>
       ) : null}

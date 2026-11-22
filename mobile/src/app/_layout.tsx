@@ -100,8 +100,8 @@ function RootStack() {
             <Stack.Screen name="writing" options={{ title: 'Writing modes' }} />
             <Stack.Screen name="marketing" options={{ title: 'Marketing' }} />
             <Stack.Screen name="library" options={{ headerShown: false }} />
-            <Stack.Screen name="connections" options={{ title: 'Connections' }} />
-            <Stack.Screen name="social" options={{ title: 'Facebook & Instagram' }} />
+            <Stack.Screen name="connections" options={{ title: 'Mail connections' }} />
+            <Stack.Screen name="social" options={{ title: 'Social media' }} />
             <Stack.Screen name="accounts" options={{ title: 'Google & Ads' }} />
             <Stack.Screen name="chat-log" options={{ title: 'Chat log' }} />
           </Stack.Protected>

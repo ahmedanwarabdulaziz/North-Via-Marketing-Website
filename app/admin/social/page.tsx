@@ -16,9 +16,9 @@ export default async function SocialConnectionsPage({ searchParams }: { searchPa
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-zinc-900 tracking-tight flex items-center gap-3">
           <Share2 className="w-8 h-8 text-zinc-400" />
-          Facebook &amp; Instagram
+          Social media
         </h1>
-        <p className="text-zinc-500 mt-2">Connect Facebook once, then choose which client each Page and Instagram account belongs to.</p>
+        <p className="text-zinc-500 mt-2">Facebook &amp; Instagram: connect Facebook once, then choose which client each Page and Instagram account belongs to.</p>
       </div>
 
       <SocialConnectionsManager {...data} notice={meta === 'connected' || meta === 'error' ? meta : undefined} reason={reason} />
