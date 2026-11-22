@@ -23,10 +23,13 @@ export const POST = appRoute(async (request) => {
   try {
     if (body.provider === 'meta') {
       if (!metaConfigured()) throw new AppError('Facebook isn’t set up on the server (META_APP_ID / META_APP_SECRET).', 503);
-      if (!clientId) throw new AppError('Which client?');
       if (typeof body.accessToken !== 'string' || body.accessToken.length < 20) throw new AppError('The Facebook login didn’t come through. Try again.');
-      const { pages } = await completeMetaConnectionFromApp(body.accessToken, clientId);
-      return { ok: true, message: `Facebook connected: ${pages} Page${pages === 1 ? '' : 's'} found. Pick this client’s below.` };
+      // No client: your own login from the app's Social screen.
+      const { pages } = await completeMetaConnectionFromApp(body.accessToken, clientId ?? '');
+      return {
+        ok: true,
+        message: `Facebook connected: ${pages} Page${pages === 1 ? '' : 's'} found. ${clientId ? 'Pick this client’s below.' : 'Choose a client for each one.'}`,
+      };
     }
     if (body.provider === 'google') {
       if (typeof body.serverAuthCode !== 'string' || body.serverAuthCode.length < 10) throw new AppError('The Google sign-in didn’t come through. Try again.');

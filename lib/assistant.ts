@@ -364,6 +364,7 @@ export type AssistantAction =
   | { type: 'update_profile'; change: string }
   // Anwarz app only (lib/app-chat.ts runs them):
   | { type: 'library_note'; text: string }
+  | { type: 'library_file'; name: string }
   | { type: 'email_important'; emailId: string; subject: string; always?: boolean; from?: string }
   | { type: 'email_ignore'; emailId: string; subject: string; from: string; mode: 'sender' | 'similar' }
   | { type: 'task_edit'; taskId: string; title: string; changes: TaskChanges; before: string }
@@ -407,6 +408,7 @@ export interface PlannerComment {
 export type ChatSurface = 'telegram' | 'app';
 export const APP_ONLY_ACTIONS = [
   'library_note',
+  'library_file',
   'email_important',
   'email_done',
   'email_reply',
@@ -436,6 +438,8 @@ export interface TaskChanges {
 
 /** What the app chat's planner can see and act on, beyond tasks, clients and memory. */
 export interface PlannerApp {
+  /** Files he attached in this chat (names), for library_file. */
+  attachments?: string[];
   emails: ChatEmail[];
   comments: PlannerComment[];
   inboxes: string[];
@@ -657,6 +661,12 @@ export function toActions(
     } else if (a.type === 'forget') {
       const fact = facts.find((f) => f.id === a.memory_id);
       if (fact) actions.push({ type: 'forget', factId: fact.id, text: fact.text });
+    } else if (emails && a.type === 'library_file') {
+      const name = cleanText(a.name, 200);
+      const files = app?.attachments ?? [];
+      const match = files.find((f) => f === name) || files.find((f) => name && f.toLowerCase().includes(name.toLowerCase()));
+      if (match) actions.push({ type: 'library_file', name: match });
+      else dropped.push(files.length ? `No attached file called "${name}". Attached: ${files.join(', ')}.` : 'No file is attached in this chat.');
     } else if (emails && a.type === 'library_note') {
       const text = cleanText(a.text, 2000);
       if (text) actions.push({ type: 'library_note', text });
@@ -818,6 +828,7 @@ export function actionSummary(a: AssistantAction) {
   if (a.type === 'forget') return `Forget: ${a.text.slice(0, 150)}`;
   if (a.type === 'update_profile') return `Update master profile: ${a.change.slice(0, 150)}`;
   if (a.type === 'library_note') return `Save to the library: ${a.text.slice(0, 150)}`;
+  if (a.type === 'library_file') return `Save the attached file "${a.name}" to the library`;
   if (a.type === 'email_important')
     return a.always ? `Bring "${a.subject}" back and always show emails from ${a.from}` : `Move the email "${a.subject}" back to the inbox as important`;
   if (a.type === 'email_ignore')

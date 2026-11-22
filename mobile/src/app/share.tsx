@@ -8,23 +8,27 @@ import { Alert, View } from 'react-native';
 import { Note, Tile } from '@/components/sheet';
 import { Card, Empty, Input, Loading, Row, Screen, T } from '@/components/ui';
 import { api } from '@/lib/api';
+import { setPendingChat, tooBig, type ChatFile } from '@/lib/attachments';
 import { radius, space, usePalette } from '@/lib/theme';
 import type { AddTaskResult, LibraryItem } from '@/lib/types';
 
 /**
  * Opens when something is shared to Anwarz from another app: screenshots or photos, a link, or text.
- * 📚 Save to Library (the AI reads and files it, like the Telegram bot) or ✅ Make it a task.
+ * 📚 Save to Library (the AI reads and files it, like the Telegram bot), ✅ Make it a task, or
+ * 💬 Ask the chat about it (pictures and PDFs go with the next chat message).
  */
 export default function ShareReceived() {
   const p = usePalette();
   const { resolvedSharedPayloads, isResolving, error } = useIncomingShare();
   const [caption, setCaption] = useState('');
-  const [busy, setBusy] = useState<'library' | 'task' | null>(null);
+  const [busy, setBusy] = useState<'library' | 'task' | 'chat' | null>(null);
   const [note, setNote] = useState<string | null>(null);
 
   const images = resolvedSharedPayloads.filter((s) => s.contentType === 'image' && s.contentUri);
+  // PDFs (and other files) only go to the chat, which reads them.
+  const docs = resolvedSharedPayloads.filter((s) => s.contentType === 'file' && s.contentUri);
   const texts = resolvedSharedPayloads
-    .filter((s) => s.contentType !== 'image')
+    .filter((s) => s.contentType !== 'image' && s.contentType !== 'file')
     .map((s) => (s.contentType === 'website' ? s.contentUri || s.value : s.value) || '')
     .filter(Boolean);
   const text = [...new Set(texts)].join('\n').trim();
@@ -33,6 +37,41 @@ export default function ShareReceived() {
     clearSharedPayloads();
     Alert.alert('Done', message);
     router.replace(go);
+  };
+
+  // 💬 Ask the chat: the pictures go with the next chat message; text and links go in its box.
+  const askChat = async () => {
+    setBusy('chat');
+    setNote(null);
+    try {
+      const files: ChatFile[] = [];
+      for (const [i, img] of images.slice(0, 4).entries()) {
+        const data = await new File(img.contentUri!).base64();
+        const file = { name: `shared-${i + 1}.jpg`, mimeType: img.contentMimeType || img.mimeType || 'image/jpeg', data, size: Math.round((data.length * 3) / 4) };
+        if (tooBig(files, file)) {
+          setNote(`Picture ${i + 1} is too big for the chat (over 3 MB). Send a screenshot instead, or save it to the library.`);
+          continue;
+        }
+        files.push(file);
+      }
+      for (const [i, doc] of docs.slice(0, 4 - files.length).entries()) {
+        const data = await new File(doc.contentUri!).base64();
+        const mimeType = doc.contentMimeType || doc.mimeType || 'application/pdf';
+        const file = { name: /pdf/i.test(mimeType) ? `shared-${i + 1}.pdf` : `shared-file-${i + 1}`, mimeType, data, size: Math.round((data.length * 3) / 4) };
+        if (tooBig(files, file)) {
+          setNote(`File ${i + 1} is too big for the chat (over 3 MB).`);
+          continue;
+        }
+        files.push(file);
+      }
+      setPendingChat(files, [caption, text].filter(Boolean).join('\n'));
+      clearSharedPayloads();
+      router.replace('/chat');
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
   };
 
   const saveToLibrary = async () => {
@@ -85,7 +124,8 @@ export default function ShareReceived() {
   };
 
   if (isResolving) return <Loading />;
-  const nothing = !images.length && !text;
+  const nothing = !images.length && !text && !docs.length;
+  const onlyDocs = docs.length > 0 && !images.length && !text;
 
   return (
     <Screen padTop={false}>
@@ -106,6 +146,12 @@ export default function ShareReceived() {
               ))}
             </Row>
           ) : null}
+          {docs.length ? (
+            <Card>
+              <T variant="label">Shared</T>
+              <T>{docs.map((d, i) => `📄 ${d.originalName || `file ${i + 1}`}`).join('\n')}</T>
+            </Card>
+          ) : null}
           {text ? (
             <Card>
               <T variant="label">Shared</T>
@@ -119,8 +165,13 @@ export default function ShareReceived() {
             <Input value={caption} onChangeText={setCaption} placeholder="e.g. for Pacific, idea for next month’s posts" multiline />
           </View>
           {note ? <Note text={note} tone="danger" /> : null}
-          <Tile icon="📚" label={images.length > 1 ? `Save ${images.length} to Library` : 'Save to Library'} tone="brand" wide busy={busy === 'library'} disabled={busy !== null} onPress={saveToLibrary} />
-          <Tile icon="✅" label="Make it a task" wide busy={busy === 'task'} disabled={busy !== null} onPress={makeTask} />
+          {onlyDocs ? null : (
+            <>
+              <Tile icon="📚" label={images.length > 1 ? `Save ${images.length} to Library` : 'Save to Library'} tone="brand" wide busy={busy === 'library'} disabled={busy !== null} onPress={saveToLibrary} />
+              <Tile icon="✅" label="Make it a task" wide busy={busy === 'task'} disabled={busy !== null} onPress={makeTask} />
+            </>
+          )}
+          <Tile icon="💬" label="Ask the chat about it" tone={onlyDocs ? 'brand' : undefined} wide busy={busy === 'chat'} disabled={busy !== null} onPress={() => void askChat()} />
           {busy ? <T variant="small" style={{ textAlign: 'center' }}>The AI is reading it…</T> : null}
         </>
       )}

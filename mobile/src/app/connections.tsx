@@ -1,3 +1,4 @@
+import { router } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { useState } from 'react';
 import { Alert } from 'react-native';
@@ -89,6 +90,9 @@ export default function Connections() {
                 ) : (
                   <Empty text="Nothing connected." />
                 )}
+                {group === 'Facebook & Instagram' ? (
+                  <Button title="📱 Manage all Pages & Instagram ›" small kind="soft" onPress={() => router.push('/social')} />
+                ) : null}
                 {group === 'Email' ? (
                   <Row>
                     <Button title="＋ Gmail inbox" small kind="soft" busy={busy === 'add-gmail'} disabled={busy !== null} onPress={() => void add('gmail')} />

@@ -4,6 +4,7 @@ import { headers } from 'next/headers';
 import { revalidatePath } from 'next/cache';
 import { requireAdmin } from '@/lib/admin-auth';
 import {
+  assignSocialAccount,
   createMetaConnectToken,
   disconnectClientSocial,
   metaConfigured,
@@ -28,6 +29,24 @@ export async function getMetaConnectUrl(clientId: string, via: 'admin' | 'client
     if (!metaConfigured()) throw new Error('Facebook isn’t set up yet: add META_APP_ID and META_APP_SECRET to the environment.');
     const token = await createMetaConnectToken(clientId, via);
     return { success: true, url: `${await siteOrigin()}/api/meta/connect?token=${encodeURIComponent(token)}` };
+  } catch (error) {
+    return { success: false, error: errorMessage(error) };
+  }
+}
+
+/** Admin → Facebook & Instagram: your own Facebook login, not tied to any client. */
+export async function getAgencyMetaConnectUrl() {
+  return getMetaConnectUrl('', 'admin');
+}
+
+/** Puts a Page (and its Instagram) on a client, moves it, or takes it off (clientId null). */
+export async function assignSocialPage(accountId: string, clientId: string | null) {
+  await requireAdmin();
+  try {
+    await assignSocialAccount(accountId, clientId);
+    revalidatePath('/admin/social');
+    if (clientId) revalidatePath(`/admin/clients/${clientId}`);
+    return { success: true };
   } catch (error) {
     return { success: false, error: errorMessage(error) };
   }

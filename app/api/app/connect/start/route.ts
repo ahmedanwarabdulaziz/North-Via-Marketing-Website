@@ -34,6 +34,7 @@ export async function GET(request: Request) {
     case 'gbp':
       return NextResponse.redirect(new URL(`/api/google/business/connect?token=${encodeURIComponent(await createConnectToken(clientId!, 'admin'))}`, request.url));
     case 'meta':
-      return NextResponse.redirect(new URL(`/api/meta/connect?token=${encodeURIComponent(await createMetaConnectToken(clientId!, 'admin'))}`, request.url));
+      // No client: your own Facebook login from the app's Social screen.
+      return NextResponse.redirect(new URL(`/api/meta/connect?token=${encodeURIComponent(await createMetaConnectToken(clientId ?? '', 'admin', true))}`, request.url));
   }
 }

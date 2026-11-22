@@ -16,7 +16,8 @@ import {
   type PlannerClient,
   type PlannerComment,
 } from './assistant';
-import { getEmailItem, listEmailAccounts } from './email/inbox';
+import { getEmailItem, inboxBusinessLinks, listEmailAccounts } from './email/inbox';
+import { attachmentsText, type ChatAttachment } from './chat-attachments';
 import { attachmentText, openMailboxEmail, saveFound, searchMailboxes, waitingOnMe, type FoundEmail } from './email/live';
 import { jlApi, jlRecords, type JlRecord } from './jl-comfort';
 import { searchKnowledge } from './knowledge';
@@ -52,6 +53,8 @@ class TurnData {
   /** Every email and task the assistant has seen this turn, so its [E:…]/[T:…] tags become buttons. */
   seenEmails = new Map<string, ChatEmail>();
   seenTasks = new Map<string, Task>();
+  /** Files attached in this conversation (for library_file). */
+  files: ChatAttachment[] = [];
   constructor(readonly deps: AgentDeps) {}
   private once<T>(key: string, load: () => Promise<T>) {
     if (!this.cache.has(key)) this.cache.set(key, load());
@@ -63,6 +66,18 @@ class TurnData {
   campaigns = () => this.once('campaigns', () => this.deps.campaigns());
   comments = () => this.once('comments', () => this.deps.comments());
   inboxes = () => this.once('inboxes', async () => (await listEmailAccounts()).filter((x) => x.enabled).map((x) => x.email.toLowerCase()));
+  /** Each mailbox with what it is and whose it is, so he can say "Sanad's mailbox". */
+  inboxLines = () =>
+    this.once('inboxLines', async () => {
+      const [accounts, links, clients] = await Promise.all([listEmailAccounts(), inboxBusinessLinks().catch(() => ({}) as Record<string, string>), this.clients()]);
+      return accounts
+        .filter((a) => a.enabled)
+        .map((a) => {
+          const provider = a.provider === 'gmail' ? 'Gmail' : a.provider === 'outlook' ? 'Outlook' : `IMAP (${a.imap?.imapHost || 'own server'})`;
+          const client = links[a.id] ? clients.find((c) => c.id === links[a.id])?.brandName : null;
+          return `- ${a.email} · ${provider}${a.label ? ` · label "${a.label}"` : ''}${client ? ` · belongs to the client ${client}` : ''}`;
+        });
+    });
 }
 
 type Json = Record<string, unknown>;
@@ -109,7 +124,7 @@ const MAILBOX: Tool[] = [
     }),
     run: async (input) => {
       const s = (k: string) => (typeof input[k] === 'string' && input[k] ? String(input[k]) : undefined);
-      const { results, failed } = await searchMailboxes({
+      const { results, failed, perInbox: searched } = await searchMailboxes({
         text: s('text'),
         from: s('from'),
         to: s('to'),
@@ -122,6 +137,7 @@ const MAILBOX: Tool[] = [
       });
       return {
         results: results.length ? results.map(foundLine) : 'Nothing found in the mailboxes. Try fewer or other words, or another folder.',
+        searched_mailboxes: searched.map((x) => `${x.inbox}: ${x.found === 0 ? 'nothing found' : x.found === 'could not search' ? 'could not search' : `${x.found} found`}`),
         ...(failed.length ? { could_not_search: failed } : {}),
       };
     },
@@ -351,6 +367,11 @@ const CHANGE_SPECS: { name: string; description: string; parameters: Json }[] = 
     }),
   },
   { name: 'task_delete', description: 'Delete (cancel) a task he no longer needs (he confirms, with Undo). Not for finished tasks: those are complete_task.', parameters: obj({ task_id: str('Id from list_tasks or OPEN TASKS') }) },
+  {
+    name: 'library_file',
+    description: 'Save a file he attached in this chat (a picture, screenshot or PDF) to his knowledge library (done at once, with Undo). The library reads and files it.',
+    parameters: obj({ name: str('The attached file’s name, as listed under ATTACHED FILES') }),
+  },
   { name: 'library_note', description: 'Save an idea, note, link or reference to his knowledge library (done at once, with Undo).', parameters: obj({ text: str('What to save, in his words, with the link if any') }) },
   {
     name: 'remember',
@@ -460,7 +481,7 @@ async function appFor(name: string, input: Json, data: TurnData): Promise<Planne
     name.startsWith('comment_') ? data.comments() : Promise.resolve([] as PlannerComment[]),
     name === 'email_new' ? data.inboxes() : Promise.resolve([] as string[]),
   ]);
-  return { emails, comments, inboxes, campaigns, jl: jl.records, carriers: jl.carriers };
+  return { emails, comments, inboxes, campaigns, jl: jl.records, carriers: jl.carriers, attachments: data.files.map((f) => f.name) };
 }
 
 const TOOLS: Tool[] = [
@@ -483,8 +504,10 @@ interface ToolCall {
   type: 'function';
   function: { name: string; arguments: string };
 }
+type ContentPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } };
 type LoopMessage =
-  | { role: 'system' | 'user'; content: string }
+  | { role: 'system'; content: string }
+  | { role: 'user'; content: string | ContentPart[] }
   | { role: 'assistant'; content: string | null; tool_calls?: ToolCall[] }
   | { role: 'tool'; tool_call_id: string; content: string };
 
@@ -526,6 +549,10 @@ const AGENT_RULES = `
 
 How you work in this app (tools):
 - You have LOOKUP tools (search_emails, get_email, mailbox_search, mailbox_open, mailbox_attachment, waiting_on_me, list_tasks, list_clients, jl_find, jl_details, list_campaigns, list_comments, search_library, business_now) and CHANGE tools (one per kind of change).
+- FOLLOW THE CONVERSATION. Each message continues the one before: "it", "that", "the sent one", "him", "there", "and the inbox?" refer to what you were just talking about. Carry the same mailbox, client, email, order or task into your next tool calls (e.g. after talking about Sanad's mailbox, "the last sent email" = mailbox_search with folder sent and inbox = Sanad's address). The [Looked at: …] notes in your earlier answers say what you already searched. Ask only when it's really unclear.
+- MAILBOXES lists every connected mailbox with its provider and whose it is. Questions like "do you have access to X's email" are answered from that list (and checked with mailbox_search when needed), never guessed. A mailbox belongs to the client named there, not to a Gmail label.
+- When a search covers several mailboxes, say what each one had (searched_mailboxes), including "nothing found" (e.g. "Sanad's Sent folder is empty").
+- ATTACHED FILES are files he sent in this chat: pictures are shown to you; PDFs and text files are given as text. Read them to answer, use them for tasks, emails or replies, and save one to the library with library_file when he asks.
 - Email: search_emails only covers mail Anwarz saved from the Inbox. His real mailboxes (Sent, Archive, Spam/Junk, Gmail tabs, Outlook's Other tab, labels, sub-folders, old mail) are reached with mailbox_search, then mailbox_open for the full text, the whole conversation (his replies too) and attachments. "Did I reply / what did I send / what did we agree" = open the conversation and read it. To act on a mailbox email, use the email_id that mailbox_open returns with the email change tools. If search_emails finds nothing, ALWAYS try mailbox_search before saying it isn't there.
 - When he asks for a change, first find the exact item with a lookup tool (unless its id is already in the CONTEXT), then call the change tool with that id. Never guess an id.
 - A change tool never changes anything by itself: it puts a card under your answer, and it happens only when he taps ✅ Confirm (tasks, library notes and facts he asked you to remember are saved at once, with Undo). The tool result tells you if the card was prepared, or why not; when it wasn't, fix the call or ask him for what's missing.
@@ -552,7 +579,7 @@ export async function runChatAgent(
   deps: AgentDeps,
   runsAtOnce: (a: AssistantAction) => boolean,
   extraContext?: () => Promise<string>,
-  opts: { model?: string; budgetMs?: number } = {}
+  opts: { model?: string; budgetMs?: number; attachments?: ChatAttachment[] } = {}
 ): Promise<AgentReply> {
   if (!(await openRouterOn())) throw new Error('OpenRouter is off.');
   const model = opts.model || OPENROUTER_MODEL;
@@ -564,13 +591,25 @@ export async function runChatAgent(
 ${extra}`;
   context.emails.forEach((e) => data.seenEmails.set(e.id, e));
   context.tasks.forEach((t) => data.seenTasks.set(t.id, t));
-  const inboxes = await data.inboxes().catch(() => [] as string[]);
+  const inboxLines = await data.inboxLines().catch(() => [] as string[]);
+  const files = opts.attachments ?? [];
+  data.files = files;
+  const pictures = files.filter((f) => f.kind === 'image' && f.image).slice(-3);
 
   const messages: LoopMessage[] = [
     // The classic prompt's "PLANNED CHANGES" section describes the two-call chat; the tool rules replace it.
-    { role: 'system', content: `${systemPromptFor('app').split('Changes — be honest:')[0].trim()}${AGENT_RULES}\n\nCONTEXT:\n${context.text}\n\nINBOXES he can send from: ${inboxes.join(', ') || '(none)'}` },
+    { role: 'system', content: `${systemPromptFor('app').split('Changes — be honest:')[0].trim()}${AGENT_RULES}\n\nCONTEXT:\n${context.text}\n\nMAILBOXES (connected; he can read and send from each):\n${inboxLines.join('\n') || '(none)'}${files.length ? `\n\n${attachmentsText(files)}` : ''}` },
     ...history.slice(-8).map((h) => ({ role: h.role, content: h.content.slice(0, 1500) }) as LoopMessage),
-    { role: 'user', content: question },
+    // Pictures he attached are shown to Claude with his message.
+    pictures.length
+      ? {
+          role: 'user',
+          content: [
+            { type: 'text', text: question },
+            ...pictures.map((f) => ({ type: 'image_url' as const, image_url: { url: `data:image/jpeg;base64,${f.image}` } })),
+          ],
+        }
+      : { role: 'user', content: question },
   ];
 
   const actions: AssistantAction[] = [];

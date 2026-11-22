@@ -103,8 +103,9 @@ async function graphAll<T>(path: string, token: string, params: Record<string, s
 // ---------- Connecting ----------
 
 /** Signed token naming who a Meta login is for. Client links last 7 days; admin ones 30 minutes. */
-export async function createMetaConnectToken(clientId: string, via: ConnectVia) {
-  return new SignJWT({ cid: clientId, via, purpose: STATE_PURPOSE })
+export async function createMetaConnectToken(clientId: string, via: ConnectVia, fromApp = false) {
+  // fromApp: started in the Anwarz app, so the browser ends on /connect/done, not an admin page.
+  return new SignJWT({ cid: clientId, via, purpose: STATE_PURPOSE, ...(fromApp ? { app: true } : {}) })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setExpirationTime(via === 'client_link' ? '7d' : '30m')
@@ -115,7 +116,7 @@ export async function verifyMetaConnectToken(token: string) {
   try {
     const { payload } = await jwtVerify(token, stateKey, { algorithms: ['HS256'] });
     if (payload.purpose !== STATE_PURPOSE || typeof payload.cid !== 'string') return null;
-    return { clientId: payload.cid, via: (payload.via === 'client_link' ? 'client_link' : 'admin') as ConnectVia };
+    return { clientId: payload.cid, via: (payload.via === 'client_link' ? 'client_link' : 'admin') as ConnectVia, fromApp: payload.app === true };
   } catch {
     return null;
   }
@@ -271,6 +272,23 @@ export async function saveClientAccountSelection(clientId: string, selectedIds: 
   }
   await setDocs(SOCIAL_ACCOUNTS, writes, { merge: true });
   return choices.filter((c) => (wanted.has(c.id) && !c.takenByClientId)).length;
+}
+
+/**
+ * Admin → Facebook & Instagram: puts one Page (and its Instagram) on a client, moves it to another
+ * client, or (clientId null) takes it off every client.
+ */
+export async function assignSocialAccount(accountId: string, clientId: string | null) {
+  const account = await getDoc<SocialAccount>(SOCIAL_ACCOUNTS, accountId);
+  if (!account) throw new Error('That Page is no longer on any Facebook connection. Reconnect Facebook.');
+  const now = new Date().toISOString();
+  await setDoc(
+    SOCIAL_ACCOUNTS,
+    accountId,
+    clientId ? { clientId, linked: true, linkedAt: now, updatedAt: now } : { clientId: null, linked: false, updatedAt: now },
+    { merge: true }
+  );
+  await logAudit('meta.page_assigned', { accountId, pageName: account.pageName, from: account.linked ? account.clientId : null, to: clientId });
 }
 
 /** Stops monitoring this client's Pages; a client's own login is revoked and removed. */

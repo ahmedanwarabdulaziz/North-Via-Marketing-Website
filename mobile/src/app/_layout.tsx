@@ -57,7 +57,9 @@ function RootStack() {
   }, [ready, signedIn, lastTap]);
 
   if (!ready) return null;
-  if (signedIn && locked) return <LockScreen />;
+  // Locked: the fingerprint screen covers the app instead of replacing it, so whatever opened the
+  // app (a share from another app, a notification) is still there once he unlocks.
+  const lockedNow = signedIn && locked;
   // PC (web): a sidebar with every section when the window is wide, and a Back button on inner pages
   // (the installed app has no browser Back button).
   const sidebar = isPc && wide && signedIn;
@@ -66,7 +68,7 @@ function RootStack() {
     <View style={{ flex: 1, flexDirection: 'row', backgroundColor: p.bg }}>
       {sidebar ? <PcSidebar /> : null}
       <View style={isPc ? { flex: 1, maxWidth: 1100, alignSelf: 'stretch', marginHorizontal: 'auto', width: '100%', backgroundColor: p.bg } : { flex: 1 }}>
-        {signedIn ? <UrgentPopup /> : null}
+        {signedIn && !lockedNow ? <UrgentPopup /> : null}
         <Stack
           screenOptions={{
             headerStyle: { backgroundColor: p.card },
@@ -99,6 +101,7 @@ function RootStack() {
             <Stack.Screen name="marketing" options={{ title: 'Marketing' }} />
             <Stack.Screen name="library" options={{ headerShown: false }} />
             <Stack.Screen name="connections" options={{ title: 'Connections' }} />
+            <Stack.Screen name="social" options={{ title: 'Facebook & Instagram' }} />
             <Stack.Screen name="chat-log" options={{ title: 'Chat log' }} />
           </Stack.Protected>
           <Stack.Protected guard={!signedIn}>
@@ -107,6 +110,11 @@ function RootStack() {
         </Stack>
         <UpdateBar />
       </View>
+      {lockedNow ? (
+        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 100 }}>
+          <LockScreen />
+        </View>
+      ) : null}
     </View>
   );
 }

@@ -2,7 +2,7 @@
   "expo": {
     "name": "Anwarz",
     "slug": "anwarz",
-    "version": "0.7.0",
+    "version": "0.8.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "anwarz",
@@ -33,6 +33,14 @@
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Anwarz attaches the photos you pick to the chat.",
+          "cameraPermission": "Anwarz uses the camera to take a picture for the chat.",
+          "microphonePermission": false
+        }
+      ],
       "expo-router",
       [
         "expo-splash-screen",
@@ -51,10 +59,12 @@
             "enabled": true,
             "singleShareMimeTypes": [
               "image/*",
-              "text/plain"
+              "text/plain",
+              "application/pdf"
             ],
             "multipleShareMimeTypes": [
-              "image/*"
+              "image/*",
+              "application/pdf"
             ]
           }
         }

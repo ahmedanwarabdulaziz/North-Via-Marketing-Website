@@ -1,6 +1,11 @@
 import { AppError, appRoute, jsonBody } from '@/lib/app-auth';
 import { appChatSession, askFromApp, newAppChat, rateAnswer, setChatEngine } from '@/lib/app-chat';
+import { prepareAttachments } from '@/lib/chat-attachments';
 import { transcribeAudio } from '@/lib/task-ai';
+
+/** Messages as the app gets them: attached pictures keep their name only (the data stays on the server). */
+const forApp = <T extends { attachments?: { name: string; kind: string; image?: string; text?: string; size: number; mimeType: string }[] }>(messages: T[]) =>
+  messages.map((m) => (m.attachments?.length ? { ...m, attachments: m.attachments.map(({ image: _image, text: _text, ...rest }) => rest) } : m));
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -8,15 +13,16 @@ export const maxDuration = 60;
 /** The open chat (Chat tab). */
 export const GET = appRoute(async () => {
   const session = await appChatSession();
-  return { messages: session?.messages || [], model: session?.model || null };
+  return { messages: forApp(session?.messages || []), model: session?.model || null };
 });
 
 /**
  * { text } or { audio: { data, mimeType } }: ask the assistant; quick actions run at once, others come back as cards.
+ * attachments?: [{ name, mimeType, data (base64) }]  pictures, PDFs or text files to ask about (at most 4).
  * { action: 'new' }: start a fresh chat.
  */
 export const POST = appRoute(async (request) => {
-  const body = await jsonBody<{ text?: unknown; audio?: { data?: unknown; mimeType?: unknown }; action?: unknown; at?: unknown; rating?: unknown; note?: unknown }>(request);
+  const body = await jsonBody<{ text?: unknown; audio?: { data?: unknown; mimeType?: unknown }; attachments?: unknown; action?: unknown; at?: unknown; rating?: unknown; note?: unknown }>(request);
   if (body.action === 'new') {
     await newAppChat();
     return { messages: [] };
@@ -36,6 +42,14 @@ export const POST = appRoute(async (request) => {
     heard = true;
     if (!text) throw new AppError('I couldn’t hear anything in that voice note.');
   }
+  let attachments: Awaited<ReturnType<typeof prepareAttachments>> = [];
+  try {
+    attachments = await prepareAttachments(body.attachments);
+  } catch (error) {
+    throw new AppError(error instanceof Error ? error.message : 'Couldn’t read the attached files.', 413);
+  }
+  // A file on its own: ask what to do with it.
+  if (!text && attachments.length) text = attachments.length === 1 ? `(Sent a file: ${attachments[0].name})` : `(Sent ${attachments.length} files)`;
   if (!text) throw new AppError('Type or say something.');
   // "/tools" or "/classic": switch which engine answers (to compare them).
   if (/^\/(tools|classic)$/i.test(text)) {
@@ -51,8 +65,8 @@ export const POST = appRoute(async (request) => {
     return { messages: [...(session?.messages || []), { role: 'user' as const, content: text, at }, note], answer: note, heard: null };
   }
   try {
-    const { session, answer } = await askFromApp(text, heard);
-    return { messages: session.messages, answer, heard: heard ? text : null };
+    const { session, answer } = await askFromApp(text, heard, attachments);
+    return { messages: forApp(session.messages), answer, heard: heard ? text : null };
   } catch (error) {
     console.error('App chat failed:', error);
     throw new AppError(error instanceof Error && /quota/i.test(error.message) ? error.message : 'No AI model could answer right now (busy or out of quota). Try again in a minute.', 503);

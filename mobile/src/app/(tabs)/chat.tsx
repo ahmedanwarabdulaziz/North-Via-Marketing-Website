@@ -1,5 +1,5 @@
-import { router } from 'expo-router';
-import { useEffect, useRef, useState, type ComponentRef } from 'react';
+import { router, useFocusEffect } from 'expo-router';
+import { useCallback, useEffect, useRef, useState, type ComponentRef } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -9,6 +9,8 @@ import { api } from '@/lib/api';
 import { radius, space, usePalette } from '@/lib/theme';
 import type { Audio } from '@/lib/types';
 import { useKeyboardSpace } from '@/lib/use-keyboard-space';
+import { fileIcon, takePendingChatFiles, takePendingChatText, tooBig, type ChatFile } from '@/lib/attachments';
+import { AttachButton } from '@/components/attach-button';
 import { useApi } from '@/lib/use-api';
 
 // The AI chat: the same assistant as the Telegram bot, seeing tasks, emails (skipped ones too),
@@ -58,6 +60,7 @@ interface ChatMessage {
   actions?: ChatAction[];
   links?: { type: 'task' | 'email' | 'library'; id: string; title: string }[];
   feedback?: 'bad' | 'good' | null;
+  attachments?: { name: string; kind: string; mimeType: string; size: number }[];
 }
 
 const SUGGESTIONS = [
@@ -278,6 +281,9 @@ function Bubble({ message, onActionChange, onRated }: { message: ChatMessage; on
           borderColor: p.border,
         }}>
         {message.heard ? <Text style={{ color: mine ? p.onBrand : p.muted, fontSize: 11, opacity: 0.8 }}>🎙 voice</Text> : null}
+        {message.attachments?.length ? (
+          <Text style={{ color: mine ? p.onBrand : p.muted, fontSize: 13, marginBottom: 4 }}>{message.attachments.map((f) => `${fileIcon(f)} ${f.name}`).join('   ')}</Text>
+        ) : null}
         <Text selectable style={{ color: mine ? p.onBrand : p.text, fontSize: 15, lineHeight: 22, writingDirection: /[؀-ۿ]/.test(message.content.slice(0, 40)) ? 'rtl' : 'ltr' }}>
           {message.content.replace(/\*\*(.+?)\*\*/g, '$1')}
         </Text>
@@ -309,6 +315,21 @@ export default function Chat() {
   const { data, setData, error, loading, refresh } = useApi<{ messages: ChatMessage[]; model: string | null }>('/chat');
   const [text, setText] = useState('');
   const [pending, setPending] = useState<ChatMessage | null>(null); // the question while the AI thinks
+  // Files to send with the next message (📎, or "Ask the chat" from the Share screen).
+  const [files, setFiles] = useState<ChatFile[]>([]);
+  const addFiles = (more: ChatFile[]) =>
+    setFiles((now) => {
+      const next = [...now];
+      for (const f of more) {
+        if (next.length >= 4) break;
+        if (tooBig(next, f)) {
+          Alert.alert('Too much at once', `${f.name} didn’t fit: send the files in two messages.`);
+          continue;
+        }
+        next.push(f);
+      }
+      return next;
+    });
   const scroll = useRef<ComponentRef<typeof ScrollView>>(null);
   const screen = useRef<ComponentRef<typeof View>>(null);
   const keyboardSpace = useKeyboardSpace(screen);
@@ -319,14 +340,34 @@ export default function Chat() {
     return () => clearTimeout(t);
   }, [messages.length, pending, keyboardSpace]);
 
+  // Files from the Share screen ("Ask the chat") arrive whenever this tab comes into view.
+  useFocusEffect(
+    useCallback(() => {
+      const shared = takePendingChatFiles();
+      if (shared.length) setFiles((now) => [...now, ...shared].slice(0, 4));
+      const sharedText = takePendingChatText();
+      if (sharedText) setText((now) => (now ? `${now}\n${sharedText}` : sharedText));
+    }, [])
+  );
+
   const ask = async (body: { text?: string; audio?: Audio }) => {
-    setPending({ role: 'user', content: body.text ?? '🎙 …', at: new Date().toISOString(), heard: Boolean(body.audio) });
+    const sending = files;
+    setPending({
+      role: 'user',
+      content: body.text ?? (body.audio ? '🎙 …' : ''),
+      at: new Date().toISOString(),
+      heard: Boolean(body.audio),
+      attachments: sending.map((f) => ({ name: f.name, kind: '', mimeType: f.mimeType, size: f.size })),
+    });
     setText('');
+    setFiles([]);
     try {
-      const r = await api<{ messages: ChatMessage[] }>('/chat', { body, timeoutMs: 90_000 });
+      const attachments = sending.map(({ name, mimeType, data }) => ({ name, mimeType, data }));
+      const r = await api<{ messages: ChatMessage[] }>('/chat', { body: { ...body, ...(attachments.length ? { attachments } : {}) }, timeoutMs: 90_000 });
       setData((d) => ({ model: d?.model ?? null, messages: r.messages }));
     } catch (e) {
       if (body.text) setText(body.text);
+      setFiles(sending); // keep them for another try
       Alert.alert('No answer', e instanceof Error ? e.message : String(e));
     } finally {
       setPending(null);
@@ -335,7 +376,7 @@ export default function Chat() {
 
   const send = () => {
     const q = text.trim();
-    if (q && !pending) void ask({ text: q });
+    if ((q || files.length) && !pending) void ask({ text: q });
   };
 
   const newChat = () =>
@@ -395,11 +436,25 @@ export default function Chat() {
         ) : null}
       </ScrollView>
 
-      <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: space.sm, padding: space.sm, paddingHorizontal: space.md, borderTopWidth: 1, borderTopColor: p.border, backgroundColor: p.card }}>
+      {files.length ? (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm, paddingHorizontal: space.md, paddingTop: space.sm, borderTopWidth: 1, borderTopColor: p.border, backgroundColor: p.card }}>
+          {files.map((f, i) => (
+            <Pressable
+              key={`${f.name}:${i}`}
+              onPress={() => setFiles((now) => now.filter((_, j) => j !== i))}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: p.brandSoft, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6, maxWidth: '100%' }}>
+              <Text numberOfLines={1} style={{ color: p.brand, fontWeight: '600', maxWidth: 220 }}>{`${fileIcon(f)} ${f.name}`}</Text>
+              <Text style={{ color: p.brand, fontWeight: '800' }}>✕</Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
+      <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: space.sm, padding: space.sm, paddingHorizontal: space.md, borderTopWidth: files.length ? 0 : 1, borderTopColor: p.border, backgroundColor: p.card }}>
+        <AttachButton disabled={Boolean(pending) || files.length >= 4} onPick={addFiles} />
         <TextInput
           value={text}
           onChangeText={setText}
-          placeholder="Ask or tell me what to do…"
+          placeholder={files.length ? 'What should I do with it? (or just send)' : 'Ask or tell me what to do…'}
           placeholderTextColor={p.muted}
           multiline
           style={{
@@ -415,7 +470,7 @@ export default function Chat() {
             writingDirection: /[؀-ۿ]/.test(text.slice(0, 20)) ? 'rtl' : 'ltr',
           }}
         />
-        {text.trim() ? (
+        {text.trim() || files.length ? (
           <Button title="➤" onPress={send} disabled={Boolean(pending)} />
         ) : (
           <VoiceButton label="🎙" compact disabled={Boolean(pending)} onDone={(audio) => void ask({ audio })} />

@@ -239,7 +239,9 @@ export async function searchMailboxes(opts: SearchOptions) {
     )
   );
   const all = results.flat().sort((a, b) => b.date.localeCompare(a.date)).slice(0, MAX_RESULTS);
-  return { results: all, failed };
+  // How many each mailbox had, empty ones included, so "Sanad's Sent is empty" can be said.
+  const perInbox = list.map((a, i) => ({ inbox: a.email, found: failed.some((f) => f.startsWith(`${a.email}:`)) ? 'could not search' : results[i].length }));
+  return { results: all, failed, perInbox };
 }
 
 // ---------- Open one: full text, the conversation, attachments ----------

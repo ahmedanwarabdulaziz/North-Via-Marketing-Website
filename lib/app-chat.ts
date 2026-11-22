@@ -1,7 +1,8 @@
 import crypto from 'crypto';
+import { attachmentsText, type ChatAttachment } from './chat-attachments';
 import { listClientProfiles } from './admin-ops';
 import { clientNames } from './app-api';
-import { saveTextFromApp } from './app-library';
+import { saveImageFromApp, saveTextFromApp } from './app-library';
 import { taskClientList } from './app-tasks';
 import { clientsWithAds, costPerConversion, fetchClientAds } from './ads-metrics';
 import { stoppedAds } from './ads-watch';
@@ -96,6 +97,8 @@ export interface AppChatMessage {
   dropped?: string[];
   /** The tool calls the assistant made (tools engine), for the failure log. */
   steps?: string[];
+  /** Files he attached to this message (pictures scaled down, PDFs as text). */
+  attachments?: ChatAttachment[];
   /** His 👎 / 👍 on this answer. */
   feedback?: 'bad' | 'good' | null;
 }
@@ -397,6 +400,17 @@ async function runAction(a: AppChatAction): Promise<AppChatAction> {
         const task = await saveTaskFromChat(a.text);
         return { ...a, state: 'done', result: `📌 ${task.title} · ${formatWhen(task)}`, undo: { kind: 'task', id: task.id }, link: { type: 'task', id: task.id } };
       }
+      case 'library_file': {
+        // The file he attached in this chat (kept on his message).
+        const session = await appChatSession();
+        const file = [...(session?.messages || [])].reverse().flatMap((m) => m.attachments || []).find((f) => f.name === a.name);
+        if (!file) return { ...a, state: 'failed', result: `“${a.name}” isn’t in this chat any more. Attach it again.` };
+        const { item } =
+          file.kind === 'image' && file.image
+            ? await saveImageFromApp({ data: file.image, mimeType: 'image/jpeg' }, file.name)
+            : await saveTextFromApp(`📎 ${file.name}\n\n${file.text || '(no text)'}`);
+        return { ...a, state: 'done', result: `📚 Saved: ${item.title}`, undo: { kind: 'library', id: item.id }, link: { type: 'library', id: item.id } };
+      }
       case 'library_note': {
         const { item } = await saveTextFromApp(a.text);
         return { ...a, state: 'done', result: `📚 Saved: ${item.title}`, undo: { kind: 'library', id: item.id }, link: { type: 'library', id: item.id } };
@@ -617,7 +631,7 @@ async function runAction(a: AppChatAction): Promise<AppChatAction> {
 }
 
 /** Done at once (with Undo): a task, a library note, a fact he clearly asked to save. The rest wait for ✅. */
-const runsAtOnce = (a: AssistantAction) => a.type === 'task' || a.type === 'library_note' || (a.type === 'remember' && Boolean(a.explicit));
+const runsAtOnce = (a: AssistantAction) => a.type === 'task' || a.type === 'library_note' || a.type === 'library_file' || (a.type === 'remember' && Boolean(a.explicit));
 
 /** The model only sees plain text; this says what happened to each action. */
 function actionNote(a: AppChatAction) {
@@ -628,11 +642,46 @@ function actionNote(a: AppChatAction) {
   return `[PROPOSED, not done yet: ${actionSummary(a)}]`;
 }
 
+/** "[Looked at: Sent of info@sanadproprojects.com]": what earlier turns searched, so a follow-up can continue it. */
+function lookedAt(steps: string[] | undefined) {
+  if (!steps?.length) return '';
+  const short = steps
+    .map((s) => s.replace(/^(haiku|sonnet): /, ''))
+    .map((s) => {
+      const [name, ...rest] = s.split(' ');
+      let args: Record<string, unknown> = {};
+      try {
+        args = JSON.parse(rest.join(' '));
+      } catch {
+        // cut off in the log
+      }
+      const kept = Object.entries(args).filter(([, v]) => v !== null && v !== '' && v !== false);
+      return `${name}${kept.length ? `(${kept.map(([k, v]) => `${k}=${String(v).slice(0, 60)}`).join(', ')})` : ''}`;
+    });
+  return `[Looked at: ${[...new Set(short)].slice(0, 6).join('; ')}]`;
+}
+
 function toHistory(messages: AppChatMessage[]): ChatMessage[] {
   return messages.slice(-MODEL_TURNS).map((m) => ({
     role: m.role,
-    content: [m.content, ...(m.actions || []).map(actionNote)].filter(Boolean).join('\n'),
+    content: [
+      m.content,
+      m.attachments?.length ? `[Attached: ${m.attachments.map((f) => f.name).join(', ')}]` : '',
+      m.role === 'assistant' ? lookedAt(m.steps) : '',
+      ...(m.actions || []).map(actionNote),
+    ]
+      .filter(Boolean)
+      .join('\n'),
   }));
+}
+
+/** Files attached in the last few messages (newest last), so follow-ups still see them. */
+function recentFiles(messages: AppChatMessage[], now: ChatAttachment[]) {
+  const earlier = messages
+    .filter((m) => m.role === 'user')
+    .slice(-3)
+    .flatMap((m) => m.attachments || []);
+  return [...earlier, ...now].slice(-6);
 }
 
 // ---------- Which engine answers ----------
@@ -663,17 +712,17 @@ interface TurnReply {
 /** Haiku didn't manage it: nothing prepared but changes it couldn't make, or it ran out of steps. */
 const struggled = (r: AgentReply) => r.ranOut || (!r.actions.length && r.dropped.length > 0);
 
-async function agentTurn(question: string, history: ChatMessage[], topic: string): Promise<TurnReply> {
+async function agentTurn(question: string, history: ChatMessage[], topic: string, files: ChatAttachment[] = []): Promise<TurnReply> {
   const started = Date.now();
   const deps = { businessNow: (t: string) => businessNow(t), campaigns: () => allCampaigns(), comments: () => waitingComments() };
-  let reply = await runChatAgent(question, history, deps, runsAtOnce, () => businessNow(topic));
+  let reply = await runChatAgent(question, history, deps, runsAtOnce, () => businessNow(topic), { attachments: files });
   let label = 'Claude Haiku 5.5 · tools';
   let model = OPENROUTER_MODEL;
   // One more try with the stronger model when Haiku struggled and there's still time (the route has 60 s).
   const left = 52_000 - (Date.now() - started);
   if (struggled(reply) && left >= 20_000) {
     try {
-      const strong = await runChatAgent(question, history, deps, runsAtOnce, () => businessNow(topic), { model: STRONG_MODEL, budgetMs: left - 4_000 });
+      const strong = await runChatAgent(question, history, deps, runsAtOnce, () => businessNow(topic), { model: STRONG_MODEL, budgetMs: left - 4_000, attachments: files });
       if (!struggled(strong) || strong.actions.length > reply.actions.length) {
         reply = { ...strong, steps: [...reply.steps.map((s) => `haiku: ${s}`), ...strong.steps.map((s) => `sonnet: ${s}`)] };
         label = 'Claude Sonnet 5.5 · tools (Haiku couldn’t)';
@@ -698,8 +747,9 @@ async function agentTurn(question: string, history: ChatMessage[], topic: string
   };
 }
 
-export async function askFromApp(question: string, heard: boolean) {
+export async function askFromApp(question: string, heard: boolean, attachments: ChatAttachment[] = []) {
   let session = await openSession();
+  const files = recentFiles(session.messages || [], attachments);
   const history = toHistory(session.messages || []);
   const recentAsks = (session.messages || []).filter((m) => m.role === 'user').slice(-2).map((m) => m.content);
   const topic = [...recentAsks, question].join(' ');
@@ -707,15 +757,16 @@ export async function askFromApp(question: string, heard: boolean) {
   let agentError: string | null = null;
   if ((await chatEngine()) === 'agent') {
     try {
-      reply = await agentTurn(question, history, topic);
+      reply = await agentTurn(question, history, topic, files);
     } catch (error) {
       agentError = error instanceof Error ? error.message.slice(0, 300) : String(error);
       console.error('Chat agent failed, using the classic chat:', agentError);
     }
   }
-  if (!reply) reply = await classicTurn(question, history, topic, session.model);
+  // The classic chat can't see pictures; it gets the text of PDFs and text files.
+  if (!reply) reply = await classicTurn(files.length ? `${question}\n\n${attachmentsText(files)}` : question, history, topic, session.model);
   if (agentError) reply.modelLabel += ' (tools unavailable)';
-  return saveTurn(session, question, heard, reply, agentError);
+  return saveTurn(session, question, heard, reply, agentError, attachments);
 }
 
 async function classicTurn(question: string, history: ChatMessage[], topic: string, lastModel: string | null): Promise<TurnReply> {
@@ -764,7 +815,7 @@ async function classicTurn(question: string, history: ChatMessage[], topic: stri
 }
 
 /** Runs the quick actions, saves both messages, and logs anything that went wrong. */
-async function saveTurn(session: Session, question: string, heard: boolean, reply: TurnReply, agentError: string | null) {
+async function saveTurn(session: Session, question: string, heard: boolean, reply: TurnReply, agentError: string | null, attachments: ChatAttachment[] = []) {
   const actions: AppChatAction[] = [];
   for (const a of reply.actions) {
     const action: AppChatAction = { ...a, id: crypto.randomBytes(4).toString('base64url'), state: 'proposed' };
@@ -784,7 +835,8 @@ async function saveTurn(session: Session, question: string, heard: boolean, repl
     links: reply.links,
     ...(reply.steps?.length ? { steps: reply.steps } : {}),
   };
-  const messages = [...(session.messages || []), { role: 'user' as const, content: question, at: now, heard }, answer].slice(-KEEP_MESSAGES);
+  const mine: AppChatMessage = { role: 'user', content: question, at: now, heard, ...(attachments.length ? { attachments } : {}) };
+  const messages = [...(session.messages || []), mine, answer].slice(-KEEP_MESSAGES);
   session = await saveSession(session.id, { messages, model: reply.model, provider: reply.provider });
   // Something went wrong without him having to say so: log it for review.
   const problems = [...(answer.dropped || []), ...(agentError ? [`Tools chat failed, classic chat answered: ${agentError}`] : []), ...actions.filter((a) => a.state === 'failed').map((a) => `Failed: ${actionSummary(a)}: ${a.result || ''}`), warning ? 'Claimed a change that wasn’t made' : ''].filter(Boolean);
