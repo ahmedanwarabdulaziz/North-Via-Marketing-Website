@@ -1,3 +1,5 @@
+import { createOpenRouter } from '@openrouter/ai-sdk-provider';
+import { isStepCount, jsonSchema, streamText, tool, type ModelMessage, type ToolSet } from 'ai';
 import { listClientProfiles } from './admin-ops';
 import { recordAiCall } from './ai-usage';
 import {
@@ -32,10 +34,11 @@ import { formatWhen, listOpenTasks, type Task } from './tasks';
 // toActions (the same checks as the classic planner) and becomes a card he confirms in the app; if
 // the check fails, the reason goes back to the assistant so it can fix the call or ask him.
 //
-// Adding a skill = adding one entry to TOOLS (a lookup or a change). The classic two-call chat in
-// lib/assistant.ts stays as the fallback when this fails.
+// Adding a skill = adding one entry to TOOLS (a lookup or a change). The loop runs on the Vercel AI
+// SDK (streamText): it retries OpenRouter's short hiccups and streams steps and words to the app.
+// The classic two-call chat in lib/assistant.ts is only the emergency fallback when OpenRouter fails.
 
-const MAX_STEPS = 8;
+const MAX_STEPS = 12;
 const TIME_BUDGET_MS = 45_000;
 /** Tried again when Haiku can't manage a message (see lib/app-chat.ts). Override with OPENROUTER_STRONG_MODEL. */
 export const STRONG_MODEL = process.env.OPENROUTER_STRONG_MODEL || 'anthropic/claude-sonnet-5.5';
@@ -497,53 +500,35 @@ const TOOLS: Tool[] = [
   ),
 ];
 
-// ---------- The loop (OpenRouter, OpenAI-style tool calls) ----------
+// ---------- The loop (Vercel AI SDK through OpenRouter) ----------
 
-interface ToolCall {
-  id: string;
-  type: 'function';
-  function: { name: string; arguments: string };
-}
-type ContentPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } };
-type LoopMessage =
-  | { role: 'system'; content: string }
-  | { role: 'user'; content: string | ContentPart[] }
-  | { role: 'assistant'; content: string | null; tool_calls?: ToolCall[] }
-  | { role: 'tool'; tool_call_id: string; content: string };
+const openrouter = createOpenRouter({
+  apiKey: process.env.OPENROUTER_API_KEY,
+  headers: { 'HTTP-Referer': 'https://www.northviamarketing.com', 'X-Title': 'Anwarz (North Via)' },
+});
 
-async function complete(messages: LoopMessage[], deadline: number, model: string) {
-  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': 'https://www.northviamarketing.com',
-      'X-Title': 'Anwarz (North Via)',
-    },
-    body: JSON.stringify({
-      model,
-      messages,
-      tools: TOOLS.map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } })),
-      tool_choice: 'auto',
-      temperature: 0.3,
-      max_tokens: 2048,
-      reasoning: { enabled: false },
-    }),
-    signal: AbortSignal.timeout(Math.max(5_000, deadline - Date.now())),
-  });
-  const data = (await res.json().catch(() => ({}))) as {
-    choices?: Array<{ message?: { content?: string | null; tool_calls?: ToolCall[] }; finish_reason?: string }>;
-    usage?: { total_tokens?: number };
-    error?: { message?: string };
-  };
-  if (!res.ok || data.error) {
-    const error = new Error(`OpenRouter ${res.status}: ${data.error?.message || 'error'}`);
-    await recordAiCall({ provider: 'openrouter', model, feature: 'assistant', ok: false, error });
-    throw error;
-  }
-  await recordAiCall({ provider: 'openrouter', model, feature: 'assistant', ok: true, tokens: data.usage?.total_tokens });
-  return data.choices?.[0]?.message || { content: '' };
-}
+/** What the app sees while a turn runs: a step ("Searching the mailboxes…"), words of the answer, or "start the answer again". */
+export type AgentEvent = { type: 'step'; label: string } | { type: 'text'; delta: string } | { type: 'reset' };
+
+/** Short, human labels for the live progress line. */
+const STEP_LABELS: Record<string, string> = {
+  mailbox_search: 'Searching the mailboxes',
+  mailbox_open: 'Opening the email',
+  mailbox_attachment: 'Reading the attachment',
+  waiting_on_me: 'Checking who is waiting on you',
+  search_emails: 'Searching saved emails',
+  get_email: 'Reading the email',
+  list_tasks: 'Looking at your tasks',
+  list_clients: 'Looking at the clients',
+  jl_find: 'Looking up JL Comfort',
+  jl_details: 'Opening the JL Comfort order',
+  list_campaigns: 'Checking the ad campaigns',
+  list_comments: 'Checking comments',
+  client_file: 'Opening the client file',
+  search_library: 'Searching the library',
+  business_now: 'Checking the business',
+};
+export const stepLabel = (name: string) => STEP_LABELS[name] || `Preparing: ${name.replace(/_/g, ' ')}`;
 
 const AGENT_RULES = `
 
@@ -579,16 +564,21 @@ export async function runChatAgent(
   deps: AgentDeps,
   runsAtOnce: (a: AssistantAction) => boolean,
   extraContext?: () => Promise<string>,
-  opts: { model?: string; budgetMs?: number; attachments?: ChatAttachment[] } = {}
+  opts: { model?: string; budgetMs?: number; attachments?: ChatAttachment[]; onEvent?: (e: AgentEvent) => void; earlier?: string } = {}
 ): Promise<AgentReply> {
   if (!(await openRouterOn())) throw new Error('OpenRouter is off.');
   const model = opts.model || OPENROUTER_MODEL;
   const deadline = Date.now() + (opts.budgetMs ?? TIME_BUDGET_MS);
+  const emit = (e: AgentEvent) => {
+    try {
+      opts.onEvent?.(e);
+    } catch {
+      // the app went away; the turn still finishes and is saved
+    }
+  };
   const data = new TurnData(deps);
   const [context, extra] = await Promise.all([buildContext(question, history, true), extraContext ? extraContext().catch(() => '') : Promise.resolve('')]);
-  if (extra) context.text += `
-
-${extra}`;
+  if (extra) context.text += `\n\n${extra}`;
   context.emails.forEach((e) => data.seenEmails.set(e.id, e));
   context.tasks.forEach((t) => data.seenTasks.set(t.id, t));
   const inboxLines = await data.inboxLines().catch(() => [] as string[]);
@@ -596,19 +586,13 @@ ${extra}`;
   data.files = files;
   const pictures = files.filter((f) => f.kind === 'image' && f.image).slice(-3);
 
-  const messages: LoopMessage[] = [
-    // The classic prompt's "PLANNED CHANGES" section describes the two-call chat; the tool rules replace it.
-    { role: 'system', content: `${systemPromptFor('app').split('Changes — be honest:')[0].trim()}${AGENT_RULES}\n\nCONTEXT:\n${context.text}\n\nMAILBOXES (connected; he can read and send from each):\n${inboxLines.join('\n') || '(none)'}${files.length ? `\n\n${attachmentsText(files)}` : ''}` },
-    ...history.slice(-8).map((h) => ({ role: h.role, content: h.content.slice(0, 1500) }) as LoopMessage),
+  // The classic prompt's "PLANNED CHANGES" section describes the two-call chat; the tool rules replace it.
+  const instructions = `${systemPromptFor('app').split('Changes — be honest:')[0].trim()}${AGENT_RULES}\n\nCONTEXT:\n${context.text}\n\nMAILBOXES (connected; he can read and send from each):\n${inboxLines.join('\n') || '(none)'}${files.length ? `\n\n${attachmentsText(files)}` : ''}${opts.earlier ? `\n\nEARLIER IN THIS CHAT (summary of the older messages, before the ones below; use it to follow the conversation):\n${opts.earlier}` : ''}`;
+  const messages: ModelMessage[] = [
+    ...history.slice(-12).map((h): ModelMessage => (h.role === 'user' ? { role: 'user', content: h.content.slice(0, 2000) } : { role: 'assistant', content: h.content.slice(0, 2000) })),
     // Pictures he attached are shown to Claude with his message.
     pictures.length
-      ? {
-          role: 'user',
-          content: [
-            { type: 'text', text: question },
-            ...pictures.map((f) => ({ type: 'image_url' as const, image_url: { url: `data:image/jpeg;base64,${f.image}` } })),
-          ],
-        }
+      ? { role: 'user', content: [{ type: 'text', text: question }, ...pictures.map((f) => ({ type: 'image' as const, image: f.image!, mediaType: 'image/jpeg' }))] }
       : { role: 'user', content: question },
   ];
 
@@ -630,50 +614,67 @@ ${extra}`;
     return made.map((a) => (runsAtOnce(a) ? `done (saved at once, with an Undo button): ${actionSummary(a)}` : `card prepared, waiting for his ✅ Confirm: ${actionSummary(a)}`)).join('\n');
   };
 
-  for (let step = 0; step < MAX_STEPS; step++) {
-    const lastStep = step === MAX_STEPS - 1 || deadline - Date.now() < 8_000;
-    if (lastStep) messages.push({ role: 'user', content: '(No more tools now: answer him with what you have.)' });
-    const reply = await complete(messages, deadline, model);
-    const calls = lastStep ? [] : reply.tool_calls || [];
-    messages.push({ role: 'assistant', content: reply.content || null, ...(calls.length ? { tool_calls: calls } : {}) });
-    if (!calls.length) {
-      const raw = (reply.content || '').trim();
-      return finish(raw, actions, dropped, steps, data, false);
-    }
-    // Lookups run side by side; changes one after another (they share the actions list).
-    const results = await Promise.all(
-      calls.map(async (call) => {
-        const tool = TOOLS.find((t) => t.name === call.function.name);
-        let input: Json = {};
-        try {
-          input = JSON.parse(call.function.arguments || '{}') as Json;
-        } catch {
-          return { call, content: 'Error: the arguments were not valid JSON. Call the tool again.' };
-        }
-        steps.push(`${call.function.name} ${JSON.stringify(input).slice(0, 200)}`);
-        if (!tool) return { call, content: `Error: there is no tool "${call.function.name}".` };
-        if (tool.kind === 'change') return { call, input, change: true as const };
-        try {
-          const out = await tool.run(input, data);
-          return { call, content: typeof out === 'string' ? out : JSON.stringify(out) };
-        } catch (error) {
-          return { call, content: `Error: ${error instanceof Error ? error.message.slice(0, 300) : String(error)}` };
-        }
-      })
-    );
-    for (const r of results) {
-      let content = 'content' in r ? r.content : '';
-      if ('change' in r) {
-        try {
-          content = await prepareChange(r.call.function.name, r.input ?? {});
-        } catch (error) {
-          content = `Error: ${error instanceof Error ? error.message.slice(0, 300) : String(error)}`;
-        }
+  // Lookups return data at once; changes become cards (prepareChange). Errors go back to the assistant as text.
+  const tools: ToolSet = Object.fromEntries(
+    TOOLS.map((t) => [
+      t.name,
+      tool({
+        description: t.description,
+        inputSchema: jsonSchema<Json>(t.parameters as never),
+        execute: async (input: Json) => {
+          steps.push(`${t.name} ${JSON.stringify(input).slice(0, 200)}`);
+          try {
+            const out = t.kind === 'change' ? await prepareChange(t.name, input) : await t.run(input, data);
+            return (typeof out === 'string' ? out : JSON.stringify(out)).slice(0, 12_000) || '(empty)';
+          } catch (error) {
+            return `Error: ${error instanceof Error ? error.message.slice(0, 300) : String(error)}`;
+          }
+        },
+      }),
+    ])
+  );
+
+  let finalText = '';
+  let stepText = '';
+  let tokens = 0;
+  try {
+    const result = streamText({
+      model: openrouter.chat(model, { extraBody: { reasoning: { enabled: false } } }),
+      instructions,
+      messages,
+      tools,
+      temperature: 0.3,
+      maxOutputTokens: 2048,
+      maxRetries: 2, // OpenRouter's short hiccups (429 / 5xx) are retried instead of ending the turn
+      abortSignal: AbortSignal.timeout(Math.max(5_000, deadline - Date.now())),
+      stopWhen: isStepCount(MAX_STEPS),
+      // The last step (or when time is short) answers with what it has, no more tools.
+      prepareStep: ({ stepNumber }) => (stepNumber >= MAX_STEPS - 1 || deadline - Date.now() < 10_000 ? { toolChoice: 'none' as const } : undefined),
+    });
+    for await (const part of result.fullStream) {
+      if (part.type === 'start-step') {
+        if (stepText.trim()) emit({ type: 'reset' }); // words before a tool call ("Let me check…") make way for the answer
+        stepText = '';
+      } else if (part.type === 'text-delta') {
+        stepText += part.text;
+        emit({ type: 'text', delta: part.text });
+      } else if (part.type === 'tool-call') {
+        emit({ type: 'step', label: stepLabel(part.toolName) });
+      } else if (part.type === 'finish-step') {
+        tokens += part.usage?.totalTokens ?? 0;
+        if (part.finishReason !== 'tool-calls') finalText = stepText;
+      } else if (part.type === 'error') {
+        throw part.error instanceof Error ? part.error : new Error(String(part.error));
       }
-      messages.push({ role: 'tool', tool_call_id: r.call.id, content: (content || '(empty)').slice(0, 12_000) });
     }
+  } catch (error) {
+    await recordAiCall({ provider: 'openrouter', model, feature: 'assistant', ok: false, error: error instanceof Error ? error : new Error(String(error)) });
+    // Out of time after some work: answer with what was prepared rather than failing the turn.
+    if (steps.length && error instanceof Error && /abort|timeout/i.test(`${error.name} ${error.message}`)) return finish(finalText.trim(), actions, dropped, steps, data, true);
+    throw error;
   }
-  return finish('', actions, dropped, steps, data, true);
+  await recordAiCall({ provider: 'openrouter', model, feature: 'assistant', ok: true, tokens });
+  return finish(finalText.trim(), actions, dropped, steps, data, !finalText.trim());
 }
 
 function finish(raw: string, actions: AssistantAction[], dropped: string[], steps: string[], data: TurnData, ranOut: boolean): AgentReply {

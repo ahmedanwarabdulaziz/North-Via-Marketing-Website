@@ -9,7 +9,7 @@ import { newId } from './tasks';
 // When two facts still disagree, the newer one wins (the prompts say so).
 
 const KEY = 'assistant_memory';
-const MAX_FACTS = 60;
+const MAX_FACTS = 200;
 const MAX_FACT_CHARS = 300;
 const MAX_PROFILE_CHARS = 1500;
 /** Facts shown to the model, newest first, until this many characters. */
@@ -75,13 +75,37 @@ export function factsInBudget(facts: MemoryFact[], labels?: FactLabel[]) {
   return out;
 }
 
+const FACT_STOP = new Set(['the', 'and', 'for', 'with', 'that', 'this', 'from', 'about', 'his', 'her', 'are', 'was', 'what', 'عن', 'في', 'على', 'من', 'مع', 'اللي', 'ده', 'دي']);
+const factWords = (text: string) => new Set(text.toLowerCase().replace(/[^\w؀-ۿ@.\s]/g, ' ').split(/\s+/).filter((w) => w.length >= 3 && !FACT_STOP.has(w)));
+
+/**
+ * The facts for one conversation when they don't all fit: those that share words with what's being
+ * talked about (a client's name, a mailbox, a subject) first, then the newest, up to the budget.
+ * Shown newest first either way, so the newer one still wins on a conflict.
+ */
+export function factsForTopic(facts: MemoryFact[], topic: string) {
+  const all = factsInBudget(facts);
+  if (all.length === facts.length || !topic.trim()) return all;
+  const words = factWords(topic);
+  const scored = facts.map((f, i) => ({ f, i, hits: [...factWords(f.text)].filter((w) => words.has(w)).length }));
+  const order = [...scored.filter((x) => x.hits > 0).sort((a, b) => b.hits - a.hits || b.i - a.i), ...scored.filter((x) => x.hits === 0).sort((a, b) => b.i - a.i)];
+  const picked = new Set<MemoryFact>();
+  let used = 0;
+  for (const { f } of order) {
+    used += f.text.length + 14;
+    if (used > FACTS_BUDGET) continue; // a shorter one may still fit
+    picked.add(f);
+  }
+  return [...facts].reverse().filter((f) => picked.has(f));
+}
+
 /** The memory block for the chat model's context (newest first; newer wins on a conflict). */
-export function memoryContext(memory: AssistantMemory) {
-  const facts = factsInBudget(memory.facts);
+export function memoryContext(memory: AssistantMemory, topic = '') {
+  const facts = factsForTopic(memory.facts, topic);
   return [
     `ABOUT THE OWNER: ${memory.profile || '(no profile yet)'}`,
     '',
-    `REMEMBERED FACTS AND INSTRUCTIONS (${memory.facts.length}${facts.length < memory.facts.length ? `, newest ${facts.length} shown` : ''}; newest first — if two disagree, the NEWER one wins):`,
+    `REMEMBERED FACTS AND INSTRUCTIONS (${memory.facts.length}${facts.length < memory.facts.length ? `, the ${facts.length} that fit this conversation shown` : ''}; newest first — if two disagree, the NEWER one wins):`,
     ...(facts.length ? facts.map((f) => `[M:${f.id}] (${labelOf(f)}, ${f.at.slice(0, 10)}) ${f.text}`) : ['none yet']),
   ].join('\n');
 }

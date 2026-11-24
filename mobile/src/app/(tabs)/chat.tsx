@@ -5,12 +5,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button, ErrorBox, Input, Loading, Row, T } from '@/components/ui';
 import { VoiceButton } from '@/components/voice-button';
-import { api } from '@/lib/api';
+import { api, apiStream } from '@/lib/api';
 import { radius, space, usePalette } from '@/lib/theme';
 import type { Audio } from '@/lib/types';
 import { useKeyboardSpace } from '@/lib/use-keyboard-space';
 import { fileIcon, takePendingChatFiles, takePendingChatText, tooBig, type ChatFile } from '@/lib/attachments';
 import { AttachButton } from '@/components/attach-button';
+import { RichText } from '@/components/rich-text';
 import { useApi } from '@/lib/use-api';
 
 // The AI chat: the same assistant as the Telegram bot, seeing tasks, emails (skipped ones too),
@@ -284,9 +285,13 @@ function Bubble({ message, onActionChange, onRated }: { message: ChatMessage; on
         {message.attachments?.length ? (
           <Text style={{ color: mine ? p.onBrand : p.muted, fontSize: 13, marginBottom: 4 }}>{message.attachments.map((f) => `${fileIcon(f)} ${f.name}`).join('   ')}</Text>
         ) : null}
-        <Text selectable style={{ color: mine ? p.onBrand : p.text, fontSize: 15, lineHeight: 22, writingDirection: /[؀-ۿ]/.test(message.content.slice(0, 40)) ? 'rtl' : 'ltr' }}>
-          {message.content.replace(/\*\*(.+?)\*\*/g, '$1')}
-        </Text>
+        {mine ? (
+          <Text selectable style={{ color: p.onBrand, fontSize: 15, lineHeight: 22, writingDirection: /[؀-ۿ]/.test(message.content.slice(0, 40)) ? 'rtl' : 'ltr' }}>
+            {message.content}
+          </Text>
+        ) : (
+          <RichText text={message.content} />
+        )}
         {message.model ? <Text style={{ color: p.muted, fontSize: 11, marginTop: 4 }}>{`— ${message.model}`}</Text> : null}
       </View>
       {message.actions?.map((a) => <ActionCard key={a.id} action={a} onChange={onActionChange} />)}
@@ -309,12 +314,41 @@ function Bubble({ message, onActionChange, onRated }: { message: ChatMessage; on
   );
 }
 
+/** The answer while it's being worked out: each step it took (✓) and the words so far. */
+function LiveAnswer({ steps, text, heard }: { steps: string[]; text: string; heard: boolean }) {
+  const p = usePalette();
+  return (
+    <View style={{ gap: space.sm }}>
+      {steps.map((s, i) => (
+        <Row key={`${s}:${i}`}>
+          {i === steps.length - 1 && !text ? <ActivityIndicator size="small" color={p.brand} /> : <Text style={{ color: p.ok, width: 20, textAlign: 'center' }}>✓</Text>}
+          <T variant="small">{`${s}…`}</T>
+        </Row>
+      ))}
+      {text ? (
+        <View style={{ backgroundColor: p.card, borderRadius: radius.lg, borderBottomLeftRadius: 4, paddingHorizontal: 14, paddingVertical: 10, borderWidth: 1, borderColor: p.border }}>
+          <RichText selectable={false} text={text.replace(/\s*\[(K|T|E):[A-Za-z0-9_-]{6,40}\]/g, '').replace(/\s*\[M:[^\]\s]{4,200}\]/g, '')} />
+        </View>
+      ) : null}
+      {!steps.length && !text ? (
+        <Row>
+          <ActivityIndicator color={p.brand} />
+          <T variant="small">{heard ? 'Listening and thinking…' : 'Thinking…'}</T>
+        </Row>
+      ) : null}
+    </View>
+  );
+}
+
 export default function Chat() {
   const p = usePalette();
   const insets = useSafeAreaInsets();
   const { data, setData, error, loading, refresh } = useApi<{ messages: ChatMessage[]; model: string | null }>('/chat');
   const [text, setText] = useState('');
   const [pending, setPending] = useState<ChatMessage | null>(null); // the question while the AI thinks
+  // What the AI is doing right now (its steps) and the words of its answer so far, as they stream in.
+  const [live, setLive] = useState<{ steps: string[]; text: string }>({ steps: [], text: '' });
+  const answering = live.text.length > 0;
   // Files to send with the next message (📎, or "Ask the chat" from the Share screen).
   const [files, setFiles] = useState<ChatFile[]>([]);
   const addFiles = (more: ChatFile[]) =>
@@ -338,7 +372,7 @@ export default function Chat() {
   useEffect(() => {
     const t = setTimeout(() => scroll.current?.scrollToEnd({ animated: true }), 80);
     return () => clearTimeout(t);
-  }, [messages.length, pending, keyboardSpace]);
+  }, [messages.length, pending, keyboardSpace, live.steps.length, answering]);
 
   // Files from the Share screen ("Ask the chat") arrive whenever this tab comes into view.
   useFocusEffect(
@@ -361,16 +395,41 @@ export default function Chat() {
     });
     setText('');
     setFiles([]);
+    setLive({ steps: [], text: '' });
     try {
       const attachments = sending.map(({ name, mimeType, data }) => ({ name, mimeType, data }));
-      const r = await api<{ messages: ChatMessage[] }>('/chat', { body: { ...body, ...(attachments.length ? { attachments } : {}) }, timeoutMs: 90_000 });
-      setData((d) => ({ model: d?.model ?? null, messages: r.messages }));
+      let finished: ChatMessage[] | null = null;
+      let failed: string | null = null;
+      await apiStream('/chat', { ...body, ...(attachments.length ? { attachments } : {}), stream: true }, (event) => {
+        if (event.type === 'heard' && typeof event.text === 'string') {
+          const heardText = event.text;
+          setPending((now) => (now ? { ...now, content: heardText } : now));
+        } else if (event.type === 'step' && typeof event.label === 'string') {
+          const label = event.label;
+          setLive((now) => (now.steps[now.steps.length - 1] === label ? now : { ...now, steps: [...now.steps, label] }));
+        } else if (event.type === 'text' && typeof event.delta === 'string') {
+          const delta = event.delta;
+          setLive((now) => ({ ...now, text: now.text + delta }));
+        } else if (event.type === 'reset') {
+          setLive((now) => ({ ...now, text: '' }));
+        } else if (event.type === 'error') {
+          failed = typeof event.error === 'string' ? event.error : 'No answer.';
+        } else if (Array.isArray(event.messages)) {
+          // 'done' (or a server that answers in one piece)
+          finished = event.messages as ChatMessage[];
+        }
+      });
+      if (failed) throw new Error(failed);
+      if (!finished) throw new Error('The answer was cut off. Try again.');
+      const done: ChatMessage[] = finished;
+      setData((d) => ({ model: d?.model ?? null, messages: done }));
     } catch (e) {
       if (body.text) setText(body.text);
       setFiles(sending); // keep them for another try
       Alert.alert('No answer', e instanceof Error ? e.message : String(e));
     } finally {
       setPending(null);
+      setLive({ steps: [], text: '' });
     }
   };
 
@@ -428,10 +487,7 @@ export default function Chat() {
         {pending ? (
           <>
             <Bubble message={pending} onActionChange={updateAction} />
-            <Row>
-              <ActivityIndicator color={p.brand} />
-              <T variant="small">{pending.heard ? 'Listening and thinking…' : 'Thinking…'}</T>
-            </Row>
+            <LiveAnswer steps={live.steps} text={live.text} heard={Boolean(pending.heard)} />
           </>
         ) : null}
       </ScrollView>

@@ -55,7 +55,8 @@ import {
 } from './tasks';
 import { addWebsite, runWebsiteChecks, websiteOverview } from './website-monitor';
 import { jlApi, jlKey, jlRecords, type JlRecord } from './jl-comfort';
-import { runChatAgent, STRONG_MODEL, type AgentReply } from './chat-agent';
+import { runChatAgent, STRONG_MODEL, type AgentEvent, type AgentReply } from './chat-agent';
+import { earlierInChat, refreshEarlierSummary } from './chat-memory';
 import { OPENROUTER_MODEL } from './openrouter';
 import type { GbpStoredReview } from '@/types/database';
 
@@ -661,8 +662,9 @@ function lookedAt(steps: string[] | undefined) {
   return `[Looked at: ${[...new Set(short)].slice(0, 6).join('; ')}]`;
 }
 
-function toHistory(messages: AppChatMessage[]): ChatMessage[] {
-  return messages.slice(-MODEL_TURNS).map((m) => ({
+/** The last MODEL_TURNS messages for the model (all of them with all=true, for the running summary). */
+function toHistory(messages: AppChatMessage[], all = false): ChatMessage[] {
+  return (all ? messages : messages.slice(-MODEL_TURNS)).map((m) => ({
     role: m.role,
     content: [
       m.content,
@@ -712,17 +714,19 @@ interface TurnReply {
 /** Haiku didn't manage it: nothing prepared but changes it couldn't make, or it ran out of steps. */
 const struggled = (r: AgentReply) => r.ranOut || (!r.actions.length && r.dropped.length > 0);
 
-async function agentTurn(question: string, history: ChatMessage[], topic: string, files: ChatAttachment[] = []): Promise<TurnReply> {
+async function agentTurn(question: string, history: ChatMessage[], topic: string, files: ChatAttachment[] = [], onEvent?: (e: AgentEvent) => void, earlier = ''): Promise<TurnReply> {
   const started = Date.now();
   const deps = { businessNow: (t: string) => businessNow(t), campaigns: () => allCampaigns(), comments: () => waitingComments() };
-  let reply = await runChatAgent(question, history, deps, runsAtOnce, () => businessNow(topic), { attachments: files });
+  let reply = await runChatAgent(question, history, deps, runsAtOnce, () => businessNow(topic), { attachments: files, onEvent, earlier });
   let label = 'Claude Haiku 5.5 · tools';
   let model = OPENROUTER_MODEL;
   // One more try with the stronger model when Haiku struggled and there's still time (the route has 60 s).
   const left = 52_000 - (Date.now() - started);
   if (struggled(reply) && left >= 20_000) {
     try {
-      const strong = await runChatAgent(question, history, deps, runsAtOnce, () => businessNow(topic), { model: STRONG_MODEL, budgetMs: left - 4_000, attachments: files });
+      onEvent?.({ type: 'reset' });
+      onEvent?.({ type: 'step', label: 'Trying again with a stronger model' });
+      const strong = await runChatAgent(question, history, deps, runsAtOnce, () => businessNow(topic), { model: STRONG_MODEL, budgetMs: left - 4_000, attachments: files, onEvent, earlier });
       if (!struggled(strong) || strong.actions.length > reply.actions.length) {
         reply = { ...strong, steps: [...reply.steps.map((s) => `haiku: ${s}`), ...strong.steps.map((s) => `sonnet: ${s}`)] };
         label = 'Claude Sonnet 5.5 · tools (Haiku couldn’t)';
@@ -747,29 +751,41 @@ async function agentTurn(question: string, history: ChatMessage[], topic: string
   };
 }
 
-export async function askFromApp(question: string, heard: boolean, attachments: ChatAttachment[] = []) {
+/** onEvent: live steps and words while the answer is worked out (the streaming chat in the app). */
+export async function askFromApp(question: string, heard: boolean, attachments: ChatAttachment[] = [], onEvent?: (e: AgentEvent) => void) {
   let session = await openSession();
   const files = recentFiles(session.messages || [], attachments);
   const history = toHistory(session.messages || []);
   const recentAsks = (session.messages || []).filter((m) => m.role === 'user').slice(-2).map((m) => m.content);
   const topic = [...recentAsks, question].join(' ');
+  // What was said before the model's window in a long chat (lib/chat-memory.ts).
+  const earlier = (session.messages || []).length > MODEL_TURNS ? await earlierInChat(session.id).catch(() => '') : '';
   let reply: TurnReply | null = null;
   let agentError: string | null = null;
   if ((await chatEngine()) === 'agent') {
     try {
-      reply = await agentTurn(question, history, topic, files);
+      reply = await agentTurn(question, history, topic, files, onEvent, earlier);
     } catch (error) {
       agentError = error instanceof Error ? error.message.slice(0, 300) : String(error);
       console.error('Chat agent failed, using the classic chat:', agentError);
+      onEvent?.({ type: 'reset' });
+      onEvent?.({ type: 'step', label: 'Tools are busy, answering the simple way' });
     }
   }
   // The classic chat can't see pictures; it gets the text of PDFs and text files.
-  if (!reply) reply = await classicTurn(files.length ? `${question}\n\n${attachmentsText(files)}` : question, history, topic, session.model);
+  if (!reply) reply = await classicTurn(files.length ? `${question}\n\n${attachmentsText(files)}` : question, history, topic, session.model, earlier);
   if (agentError) reply.modelLabel += ' (tools unavailable)';
   return saveTurn(session, question, heard, reply, agentError, attachments);
 }
 
-async function classicTurn(question: string, history: ChatMessage[], topic: string, lastModel: string | null): Promise<TurnReply> {
+/** After an answer is sent: keeps the running summary of a long chat up to date (run with next/server after()). */
+export async function afterAppTurn(sessionId: string) {
+  const { data } = await supabase.from('chat_sessions').select('messages').eq('id', sessionId).single();
+  const messages = ((data as { messages?: AppChatMessage[] } | null)?.messages || []) as AppChatMessage[];
+  await refreshEarlierSummary(sessionId, toHistory(messages, true), MODEL_TURNS);
+}
+
+async function classicTurn(question: string, history: ChatMessage[], topic: string, lastModel: string | null, earlier = ''): Promise<TurnReply> {
   // Every message starts with the best model that has quota (Claude Haiku when OpenRouter is on), so a
   // conversation doesn't stay on a fallback after one busy moment; askAssistant falls back if it fails.
   const chosen = (await autoModel()) || CHAT_MODELS.find((m) => m.model === lastModel) || null;
@@ -783,6 +799,7 @@ async function classicTurn(question: string, history: ChatMessage[], topic: stri
     surface: 'app',
     extraContext: async () =>
       [
+        earlier ? `EARLIER IN THIS CHAT (summary of the older messages):\n${earlier}` : '',
         await businessNow(topic),
         comments.length
           ? `FACEBOOK / INSTAGRAM COMMENTS WAITING (${comments.length}, risky first):\n${comments

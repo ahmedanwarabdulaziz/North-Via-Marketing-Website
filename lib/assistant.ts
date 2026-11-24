@@ -260,7 +260,7 @@ export async function buildContext(question: string, history: ChatMessage[], wit
   const text = [
     `NOW (Cairo): ${WEEKDAYS[weekdayOf(now.date)]} ${now.date} ${now.time}`,
     '',
-    memoryContext(memory),
+    memoryContext(memory, [topicText, ...about.map((c) => c.brandName)].join(' ')),
     '',
     `CLIENTS: ${clients.map((c) => `${c.brandName}${c.ownerName ? ` (owner ${c.ownerName})` : ''}${c.websiteUrl ? ` ${c.websiteUrl}` : ''}`).join('; ') || 'none'}`,
     '',
