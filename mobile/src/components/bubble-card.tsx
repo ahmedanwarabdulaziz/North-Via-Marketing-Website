@@ -70,8 +70,9 @@ export function BubbleCard() {
         <Switch value={on} onValueChange={toggle} />
       </Row>
       <T variant="small">
-        A small Anwarz button over every app. Tap it, type or paste what you want to say, pick a mode, then 📋 Copy & close and paste it anywhere.
-        Drag it to the ✕ at the bottom to hide it. Also in the quick-settings panel: add “Anwarz ✍️” with the ✏️ pencil there.
+        A small Anwarz button over every app. Tap it, type, paste or speak what you want to say (copy their message first to reply to it), pick a
+        mode, then 📋 Copy & close and paste it anywhere. Long-press it for Speak, Quick task, Ask Anwarz or Hide for 1 hour; the red number is
+        urgent alerts waiting. Drag it to the ✕ at the bottom to turn it off. Also in quick settings: add “Anwarz ✍️” with the ✏️ pencil there.
       </T>
       <Row>
         <Button title="✍️ Write a reply now" small kind="soft" onPress={() => bubble.openComposer()} />

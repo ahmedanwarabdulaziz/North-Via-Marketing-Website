@@ -16,7 +16,10 @@ import java.lang.ref.WeakReference
 class ProcessTextActivity : ReactActivity() {
   companion object {
     const val COMPONENT = "ProcessText"
-    /** "compose": opened by the bubble, the quick-settings tile or the app, with an empty text box. */
+    /**
+     * "compose": opened by the bubble, the quick-settings tile or the app, with an empty text box;
+     * "speak", "task", "ask": from the bubble's long-press menu.
+     */
     const val EXTRA_ACTION = "anwarz_action"
     var current: WeakReference<ProcessTextActivity>? = null
   }
@@ -35,7 +38,7 @@ class ProcessTextActivity : ReactActivity() {
           putString(
             "action",
             when {
-              intent.getStringExtra(EXTRA_ACTION) == "compose" -> "compose"
+              intent.getStringExtra(EXTRA_ACTION) in setOf("compose", "speak", "task", "ask") -> intent.getStringExtra(EXTRA_ACTION)
               alias.endsWith("CorrectText") -> "correct"
               else -> "rephrase"
             }

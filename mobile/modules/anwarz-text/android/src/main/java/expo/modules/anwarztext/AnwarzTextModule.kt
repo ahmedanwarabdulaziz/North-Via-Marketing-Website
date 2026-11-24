@@ -47,6 +47,12 @@ class AnwarzTextModule : Module() {
 
     Function("isBubbleOn") { BubbleService.running }
 
+    /** The red number on the bubble: urgent alerts waiting (0 hides it). */
+    Function("setBubbleBadge") { count: Int ->
+      BubbleService.setBadge(context, count)
+      true
+    }
+
     /** Opens the writing panel with an empty text box (the same as tapping the bubble). */
     Function("openComposer") {
       context.startActivity(BubbleService.composeIntent(context))

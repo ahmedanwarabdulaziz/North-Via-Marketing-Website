@@ -11,6 +11,7 @@ type Native = {
   stopBubble?(): boolean;
   isBubbleOn?(): boolean;
   openComposer?(): boolean;
+  setBubbleBadge?(count: number): boolean;
 };
 const native = requireOptionalNativeModule<Native>('AnwarzText');
 
@@ -30,4 +31,6 @@ export const bubble = {
   isOn: () => native?.isBubbleOn?.() ?? false,
   /** The writing panel with an empty text box, as if the bubble were tapped. */
   openComposer: () => native?.openComposer?.() ?? false,
+  /** The red number on the bubble (urgent alerts waiting); 0 hides it. */
+  setBadge: (count: number) => native?.setBubbleBadge?.(count) ?? false,
 };

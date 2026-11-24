@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Alert, AppState, Modal, Platform, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { bubble } from '../../modules/anwarz-text';
 import { api } from '@/lib/api';
 import { ago } from '@/lib/format';
 import { openAlert } from '@/lib/notifications';
@@ -57,6 +58,11 @@ export function UrgentPopup() {
       })
       .catch(() => undefined);
   }, []);
+
+  // The red number on the floating bubble (Android): what's still unseen, cleared by Seen.
+  useEffect(() => {
+    bubble.setBadge(alerts.length);
+  }, [alerts.length]);
 
   useEffect(() => {
     load();
