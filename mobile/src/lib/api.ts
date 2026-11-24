@@ -98,7 +98,7 @@ export async function api<T>(path: string, options: { method?: 'GET' | 'POST'; b
  * line as it arrives. Uses expo/fetch on phones (React Native's own fetch can't stream) and the
  * browser's fetch on the web. Resolves when the stream ends.
  */
-export async function apiStream(path: string, body: unknown, onEvent: (event: Record<string, unknown>) => void, timeoutMs = 120_000): Promise<void> {
+export async function apiStream(path: string, body: unknown, onEvent: (event: Record<string, unknown>) => void, timeoutMs = 310_000): Promise<void> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   const doFetch = (Platform.OS === 'web' ? globalThis.fetch.bind(globalThis) : expoFetch) as unknown as typeof globalThis.fetch;

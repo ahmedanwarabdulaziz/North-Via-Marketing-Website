@@ -38,8 +38,8 @@ import { formatWhen, listOpenTasks, type Task } from './tasks';
 // SDK (streamText): it retries OpenRouter's short hiccups and streams steps and words to the app.
 // The classic two-call chat in lib/assistant.ts is only the emergency fallback when OpenRouter fails.
 
-const MAX_STEPS = 12;
-const TIME_BUDGET_MS = 45_000;
+const MAX_STEPS = 20;
+const TIME_BUDGET_MS = 150_000; // Haiku's share of the route's 300 s (Sonnet may retry in what's left)
 /** Tried again when Haiku can't manage a message (see lib/app-chat.ts). Override with OPENROUTER_STRONG_MODEL. */
 export const STRONG_MODEL = process.env.OPENROUTER_STRONG_MODEL || 'anthropic/claude-sonnet-5.5';
 

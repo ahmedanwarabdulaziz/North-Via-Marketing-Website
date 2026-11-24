@@ -720,9 +720,10 @@ async function agentTurn(question: string, history: ChatMessage[], topic: string
   let reply = await runChatAgent(question, history, deps, runsAtOnce, () => businessNow(topic), { attachments: files, onEvent, earlier });
   let label = 'Claude Haiku 5.5 · tools';
   let model = OPENROUTER_MODEL;
-  // One more try with the stronger model when Haiku struggled and there's still time (the route has 60 s).
-  const left = 52_000 - (Date.now() - started);
-  if (struggled(reply) && left >= 20_000) {
+  // One more try with the stronger model when Haiku struggled and there's still time (the route has 300 s;
+  // the rest is kept for saving the turn, or the classic chat if this throws).
+  const left = 250_000 - (Date.now() - started);
+  if (struggled(reply) && left >= 40_000) {
     try {
       onEvent?.({ type: 'reset' });
       onEvent?.({ type: 'step', label: 'Trying again with a stronger model' });

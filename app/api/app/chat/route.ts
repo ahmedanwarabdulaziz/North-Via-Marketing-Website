@@ -19,7 +19,8 @@ const forApp = <T extends { attachments?: { name: string; kind: string; image?: 
   messages.map((m) => (m.attachments?.length ? { ...m, attachments: m.attachments.map(({ image: _image, text: _text, ...rest }) => rest) } : m));
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
+// Long tasks (several mailboxes, many clients) get up to 5 minutes; the app sees each step live.
+export const maxDuration = 300;
 
 /** The open chat (Chat tab). */
 export const GET = appRoute(async () => {
