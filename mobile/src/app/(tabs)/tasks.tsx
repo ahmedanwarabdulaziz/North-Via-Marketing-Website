@@ -67,7 +67,7 @@ export default function Tasks() {
   const [picked, setTab] = useState<Tab>('today');
   // Anything unexpected (e.g. a value kept by a live reload of an older screen) falls back to Today.
   const tab: Tab = TABS.some((t) => t.key === picked) ? picked : 'today';
-  const open = useApi<TaskGroups>(tab !== 'done' ? '/tasks' : null);
+  const open = useApi<TaskGroups>(tab !== 'done' ? '/tasks' : null, { live: true });
   const done = useApi<{ done: { at: string; task: AppTask }[] }>(tab === 'done' ? '/tasks?view=done' : null);
   const current = tab === 'done' ? done : open;
   const [selected, setSelected] = useState<Set<string>>(new Set());

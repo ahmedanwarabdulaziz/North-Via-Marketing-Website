@@ -22,7 +22,7 @@ function greeting() {
 
 export default function Home() {
   const p = usePalette();
-  const { data, error, loading, refreshing, refresh, reload } = useApi<HomeData>('/home');
+  const { data, error, loading, refreshing, refresh, reload } = useApi<HomeData>('/home', { live: true });
   const links = useApi<{ links: QuickLink[] }>('/links');
   const pinned = (links.data?.links ?? []).filter((l) => l.pinned);
   const health = useApi<ConnectionsData>('/connections');

@@ -13,6 +13,12 @@ self.addEventListener('push', (event) => {
     msg = { title: 'Anwarz', body: event.data ? event.data.text() : '' };
   }
   const data = msg.data || {};
+  // Tell an open Anwarz window, so the screen it shows reloads at once (src/lib/live-refresh.ts).
+  const tellWindows = self.clients
+    .matchAll({ type: 'window', includeUncontrolled: true })
+    .then((wins) => wins.forEach((w) => w.postMessage({ type: 'anwarz-refresh', kind: data.type || null })))
+    .catch(() => undefined);
+  event.waitUntil(tellWindows);
   event.waitUntil(
     self.registration.showNotification(msg.title || 'Anwarz', {
       body: msg.body || '',

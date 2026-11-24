@@ -29,7 +29,7 @@ export default function Inbox() {
     if (params.view === 'skipped' || params.view === 'waiting' || params.view === 'handled') setView(params.view);
   }
   const [inbox, setInbox] = useState<string | null>(null);
-  const { data, error, loading, refreshing, refresh, reload } = useApi<InboxData>(`/emails?view=${view}${inbox ? `&inbox=${encodeURIComponent(inbox)}` : ''}`);
+  const { data, error, loading, refreshing, refresh, reload } = useApi<InboxData>(`/emails?view=${view}${inbox ? `&inbox=${encodeURIComponent(inbox)}` : ''}`, { live: true });
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [working, setWorking] = useState<BulkAction | null>(null);
   const selecting = selected.size > 0;

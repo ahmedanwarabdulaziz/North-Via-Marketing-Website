@@ -8,6 +8,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { LockScreen } from '@/components/lock-screen';
 import { PcSidebar, useWideScreen } from '@/components/pc-sidebar';
 import { UpdateBar } from '@/components/update-bar';
+import { WebUpdater } from '@/components/web-updater';
 import { UrgentPopup } from '@/components/urgent-popup';
 import { AuthProvider, useAuth } from '@/lib/auth';
 // Imported here, at the top level, so the background task for notification buttons is defined
@@ -110,6 +111,7 @@ function RootStack() {
           </Stack.Protected>
         </Stack>
         <UpdateBar />
+        <WebUpdater />
       </View>
       {lockedNow ? (
         <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 100 }}>

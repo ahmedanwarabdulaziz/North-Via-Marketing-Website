@@ -12,10 +12,13 @@ const out = path.join(site, 'public', 'app');
 const tmp = path.join(site, '.anwarz-web-build'); // outside mobile/: its .gitignore is part of the update fingerprint
 
 fs.rmSync(tmp, { recursive: true, force: true });
+// Each build gets an id, baked into the app and written to version.json: the open PC app checks it and
+// updates itself when a newer build is out (src/components/web-updater.tsx).
+const build = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
 execSync(`npx expo export --platform web --output-dir "${tmp}"`, {
   cwd: mobile,
   stdio: 'inherit',
-  env: { ...process.env, ANWARZ_WEB: '1', EXPO_PUBLIC_API_URL: process.env.EXPO_PUBLIC_API_URL || 'https://www.northviamarketing.com' },
+  env: { ...process.env, ANWARZ_WEB: '1', EXPO_PUBLIC_API_URL: process.env.EXPO_PUBLIC_API_URL || 'https://www.northviamarketing.com', EXPO_PUBLIC_WEB_BUILD: build },
 });
 
 fs.rmSync(out, { recursive: true, force: true });
@@ -25,6 +28,7 @@ fs.rmSync(tmp, { recursive: true, force: true });
 // Installable app: manifest, service worker (Windows notifications), icons.
 for (const f of ['manifest.webmanifest', 'sw.js']) fs.copyFileSync(path.join(mobile, 'web', f), path.join(out, f));
 fs.mkdirSync(path.join(out, 'icons'), { recursive: true });
+fs.writeFileSync(path.join(out, 'version.json'), JSON.stringify({ build }));
 const sharp = require(path.join(site, 'node_modules', 'sharp'));
 const icon = path.join(mobile, 'assets', 'images', 'icon.png');
 

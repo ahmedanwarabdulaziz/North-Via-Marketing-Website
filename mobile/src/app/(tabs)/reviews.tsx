@@ -20,7 +20,7 @@ export default function Reviews() {
   const p = usePalette();
   const [view, setView] = useState<'waiting' | 'answered'>('waiting');
   const [client, setClient] = useState<string | null>(null);
-  const { data, error, loading, refreshing, refresh, reload } = useApi<ReviewsData>(`/reviews?view=${view}${client ? `&client=${encodeURIComponent(client)}` : ''}`);
+  const { data, error, loading, refreshing, refresh, reload } = useApi<ReviewsData>(`/reviews?view=${view}${client ? `&client=${encodeURIComponent(client)}` : ''}`, { live: true });
   const [posting, setPosting] = useState<string | null>(null); // 'all' or a client id
 
   // Ready 5★ drafts per client, from the list on screen.

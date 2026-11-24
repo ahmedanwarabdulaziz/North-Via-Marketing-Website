@@ -2,12 +2,16 @@ import { useFocusEffect } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
 
 import { api } from './api';
+import { onLiveRefresh } from './live-refresh';
 
 /**
  * Loads an /api/app path, again every time the screen comes back into view
  * (so a change made on a detail screen shows on the list). Pull-to-refresh calls refresh().
+ * With live: true (list screens), while it's open it also reloads quietly when he comes back to
+ * the app, when an alert arrives and every minute while it's on screen (lib/live-refresh.ts).
  */
-export function useApi<T>(path: string | null) {
+export function useApi<T>(path: string | null, opts: { live?: boolean } = {}) {
+  const live = Boolean(opts.live);
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -40,7 +44,10 @@ export function useApi<T>(path: string | null) {
   useFocusEffect(
     useCallback(() => {
       void load('focus');
-    }, [load])
+      // Only list screens opt in: a screen with something being edited (a draft, a form) never
+      // reloads under his hands.
+      return live ? onLiveRefresh(() => void load('focus')) : undefined;
+    }, [load, live])
   );
 
   const refresh = useCallback(() => load('pull'), [load]);
