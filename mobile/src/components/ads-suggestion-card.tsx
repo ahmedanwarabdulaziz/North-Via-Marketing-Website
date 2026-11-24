@@ -52,6 +52,75 @@ function headline(s: AdsSuggestion) {
   return `“${s.text}”`;
 }
 
+/**
+ * A plain statement of what pressing ✅ will do, shown on the card and in the window before it is applied.
+ * `now` is what Ahmed has typed (edits change the sentence at once).
+ */
+function willDo(
+  s: AdsSuggestion,
+  now: { text: string; match: AdsSuggestion['matchType']; level: 'campaign' | 'ad_group'; value: number; heads: string[]; descs: string[] },
+): { summary: string; details: string[] } {
+  const d = s.detail && 'from' in s.detail ? s.detail : null;
+  const campaign = s.campaign ? `campaign “${s.campaign}”` : 'the campaign';
+  const group = s.adGroup ? `ad group “${s.adGroup}”` : 'the ad group';
+  const matchWords = now.match === 'EXACT' ? 'only this exact search' : now.match === 'PHRASE' ? 'searches that contain these words in this order' : 'any related search (broad)';
+  switch (s.type) {
+    case 'add_keyword':
+      return {
+        summary: `Adds the keyword “${now.text.trim()}” to ${group} (${campaign}) in Google Ads.`,
+        details: [`Your ads can show for ${matchWords}, and you pay when someone clicks.`, 'Nothing is removed or changed.', 'Undo removes the keyword again.'],
+      };
+    case 'add_negative':
+      return {
+        summary: `Stops your ads showing for searches containing “${now.text.trim()}” in ${now.level === 'ad_group' && s.adGroup ? group : campaign}.`,
+        details: [`Blocks ${matchWords}. You stop paying for those clicks.`, 'Your keywords and ads are not changed.', 'Undo lifts the block.'],
+      };
+    case 'pause_keyword':
+      return {
+        summary: `Pauses the keyword “${s.text}” in ${group} (${campaign}).`,
+        details: ['Your ads stop showing for it, so it stops costing money.', 'Nothing is deleted: its history stays.', 'Undo turns it back on.'],
+      };
+    case 'change_bid':
+      return d
+        ? {
+            summary: `Changes the most you pay per click for “${s.text}” from ${money(d.from)} to ${money(now.value)}.`,
+            details: [now.value > d.from ? 'Each click can cost more, but the ad can win more of these searches.' : 'Each click costs less, but the ad can win fewer of these searches.', `Applies to ${group}.`, `Undo puts it back to ${money(d.from)}.`],
+          }
+        : { summary: `Changes the bid for “${s.text}”.`, details: [] };
+    case 'change_budget': {
+      if (!d) return { summary: `Changes the daily budget of ${campaign}.`, details: [] };
+      const month = (now.value - d.from) * 30;
+      return {
+        summary: `Changes the daily budget of ${campaign} from ${money(d.from)} to ${money(now.value)}.`,
+        details: [`Google can spend up to ${money(now.value)} a day. That is about ${month >= 0 ? '+' : '−'}${money(Math.abs(month))} a month if it is spent fully.`, `Undo puts it back to ${money(d.from)} a day.`],
+      };
+    }
+    case 'new_ad_copy':
+      return {
+        summary: `Adds ${now.heads.length} headline${now.heads.length === 1 ? '' : 's'} and ${now.descs.length} description${now.descs.length === 1 ? '' : 's'} to the ad in ${group}.`,
+        details: ['The existing ad text stays; this is added to it.', 'Google reviews the ad again, so it may be limited for a short while.', 'Undo restores the old ad text.'],
+      };
+    default:
+      return { summary: 'Nothing will change in Google Ads.', details: ['This is advice only. “Got it” just removes this note.'] };
+  }
+}
+
+/** The highlighted box on a card: what ✅ will do, and what happens if you reject it. */
+function WillDoBox({ s, text, compact }: { s: AdsSuggestion; text: ReturnType<typeof willDo>; compact?: boolean }) {
+  const p = usePalette();
+  const advisory = s.type === 'advisory';
+  return (
+    <View style={{ backgroundColor: advisory ? p.card : p.brandSoft, borderRadius: 10, borderLeftWidth: 3, borderLeftColor: advisory ? p.border : p.brand, paddingVertical: 8, paddingHorizontal: 10, gap: 3 }}>
+      <T variant="label" color={advisory ? p.muted : p.brand}>
+        {advisory ? 'ℹ️ What happens' : '✅ If you accept'}
+      </T>
+      <T style={{ fontWeight: '700' }}>{text.summary}</T>
+      {compact ? null : text.details.map((line) => <T key={line} variant="small">{`• ${line}`}</T>)}
+      {compact || advisory ? null : <T variant="small">{'• If you reject: nothing changes and it isn’t suggested again.'}</T>}
+    </View>
+  );
+}
+
 function doneNote(action: 'accept' | 'reject' | 'undo', s: AdsSuggestion) {
   if (action === 'reject') return s.type === 'advisory' ? 'Got it' : 'Rejected';
   if (action === 'undo') return s.type === 'add_keyword' || s.type === 'add_negative' ? '↩️ Removed from Google Ads' : '↩️ Put back the way it was';
@@ -114,6 +183,8 @@ export function AdsSuggestionCard({ suggestion: initial, onChanged }: { suggesti
         ? headlinesText.trim() !== copy.headlines.join('\n') || descriptionsText.trim() !== copy.descriptions.join('\n')
         : false;
 
+  const will = willDo(s, { text, match, level, value: Number.isFinite(newValue) ? newValue : (change?.to ?? 0), heads, descs });
+
   const act = async (action: 'accept' | 'reject' | 'undo') => {
     setBusy(action);
     setNote(null);
@@ -152,17 +223,7 @@ export function AdsSuggestionCard({ suggestion: initial, onChanged }: { suggesti
               ? 'Change this daily budget in Google Ads?'
               : 'Add this text to the ad in Google Ads?';
 
-  const confirmBody = () => {
-    const where = s.campaign ? `\nCampaign: ${s.campaign}` : '';
-    if (kw) return `${s.clientName}\n“${text.trim()}” (${MATCH_LABEL[match]})${where}`;
-    if (s.type === 'pause_keyword') return `${s.clientName}\n“${s.text}” will stop showing until you turn it back on.${where}`;
-    if (s.type === 'change_bid' && change) return `${s.clientName}\n“${s.text}”: ${money(change.from)} → ${money(newValue)} per click.${where}`;
-    if (s.type === 'change_budget' && change) {
-      const extra = (newValue - change.from) * 30;
-      return `${s.clientName}\n${s.text}: ${money(change.from)} → ${money(newValue)} a day (about ${extra >= 0 ? '+' : '−'}${money(Math.abs(extra))} a month if it spends fully).`;
-    }
-    return `${s.clientName}\nAdding ${heads.length} headline${heads.length === 1 ? '' : 's'} and ${descs.length} description${descs.length === 1 ? '' : 's'}. Google reviews the ad again after this.${where}`;
-  };
+  const confirmBody = () => [s.clientName, will.summary, '', ...will.details.map((l) => `• ${l}`)].join('\n');
 
   const accept = () => {
     if (invalid) {
@@ -191,6 +252,7 @@ export function AdsSuggestionCard({ suggestion: initial, onChanged }: { suggesti
           </T>
         ) : null}
         {s.reason ? <T>{s.reason}</T> : null}
+        {pending ? <WillDoBox s={s} text={will} compact /> : null}
         <Row wrap>
           <Pill text={s.clientName} />
           {kw ? <Pill text={MATCH_LABEL[s.matchType]} tone="muted" /> : null}
@@ -227,6 +289,7 @@ export function AdsSuggestionCard({ suggestion: initial, onChanged }: { suggesti
             {evidenceLine(s) ? <T variant="small">{`Last 90 days: ${evidenceLine(s)}`}</T> : null}
           </Card>
         ) : null}
+        {pending ? <WillDoBox s={s} text={will} /> : null}
         {note ? <Note text={note} /> : null}
 
         {pending && advisory ? <Button title="Got it" onPress={() => void act('reject')} busy={busy === 'reject'} /> : null}
