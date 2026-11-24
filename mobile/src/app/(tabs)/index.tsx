@@ -1,7 +1,10 @@
 import { router } from 'expo-router';
 import { Pressable, Text, View } from 'react-native';
 
+import { DesktopHome } from '@/components/desktop-home';
 import { EmailCard } from '@/components/email-card';
+import { useWideScreen } from '@/components/pc-sidebar';
+import { isPc } from '@/lib/pc';
 import { StoppedAdsBanner } from '@/components/marketing';
 import { automationQuietFor, type ConnectionsData } from '@/lib/connections';
 import { WebsiteRow } from '@/components/rows';
@@ -25,6 +28,27 @@ export default function Home() {
   const health = useApi<ConnectionsData>('/connections');
   const quiet = automationQuietFor(health.data);
   const broken = health.data?.connections.filter((c) => !c.ok) ?? [];
+  const wide = useWideScreen();
+
+  // PC: its own layout (an Ask bar, number tiles, two columns).
+  if (isPc && wide) {
+    return (
+      <DesktopHome
+        greeting={greeting()}
+        data={data}
+        error={error}
+        loading={loading}
+        reload={reload}
+        refresh={() => {
+          refresh();
+          void health.reload();
+        }}
+        pinned={pinned}
+        health={health.data}
+        quiet={quiet}
+      />
+    );
+  }
 
   return (
     <Screen

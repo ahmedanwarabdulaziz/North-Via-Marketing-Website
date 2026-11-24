@@ -9,7 +9,7 @@ import { api, apiStream } from '@/lib/api';
 import { radius, space, usePalette } from '@/lib/theme';
 import type { Audio } from '@/lib/types';
 import { useKeyboardSpace } from '@/lib/use-keyboard-space';
-import { fileIcon, takePendingChatFiles, takePendingChatText, tooBig, type ChatFile } from '@/lib/attachments';
+import { fileIcon, takePendingChatFiles, takePendingChatSend, takePendingChatText, tooBig, type ChatFile } from '@/lib/attachments';
 import { AttachButton } from '@/components/attach-button';
 import { RichText } from '@/components/rich-text';
 import { useApi } from '@/lib/use-api';
@@ -348,6 +348,7 @@ export default function Chat() {
   const [pending, setPending] = useState<ChatMessage | null>(null); // the question while the AI thinks
   // What the AI is doing right now (its steps) and the words of its answer so far, as they stream in.
   const [live, setLive] = useState<{ steps: string[]; text: string }>({ steps: [], text: '' });
+  const [autoAsk, setAutoAsk] = useState<string | null>(null);
   const answering = live.text.length > 0;
   // Files to send with the next message (📎, or "Ask the chat" from the Share screen).
   const [files, setFiles] = useState<ChatFile[]>([]);
@@ -380,7 +381,9 @@ export default function Chat() {
       const shared = takePendingChatFiles();
       if (shared.length) setFiles((now) => [...now, ...shared].slice(0, 4));
       const sharedText = takePendingChatText();
-      if (sharedText) setText((now) => (now ? `${now}\n${sharedText}` : sharedText));
+      // From the PC home's "Ask Anwarz" bar: send it straight away; otherwise it goes in the box.
+      if (sharedText && takePendingChatSend()) setAutoAsk(sharedText);
+      else if (sharedText) setText((now) => (now ? `${now}\n${sharedText}` : sharedText));
     }, [])
   );
 
@@ -432,6 +435,16 @@ export default function Chat() {
       setLive({ steps: [], text: '' });
     }
   };
+
+  // A question handed over by the PC home's "Ask Anwarz" bar (see the focus effect above).
+  useEffect(() => {
+    if (!autoAsk || pending) return;
+    const q = autoAsk;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- a one-time hand-over, cleared before it's sent
+    setAutoAsk(null);
+    void ask({ text: q });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs when a question is handed over
+  }, [autoAsk]);
 
   const send = () => {
     const q = text.trim();

@@ -24,9 +24,17 @@ export const fileIcon = (f: { mimeType: string; name: string }) =>
 // What the Share screen hands to the Chat tab ("Ask the chat"): files, and text for the box.
 let pending: ChatFile[] = [];
 let pendingText = '';
-export const setPendingChat = (files: ChatFile[], text = '') => {
+let pendingSend = false;
+/** send: ask it at once (the PC home's "Ask Anwarz" bar) instead of putting it in the box. */
+export const setPendingChat = (files: ChatFile[], text = '', send = false) => {
   pending = files;
   pendingText = text;
+  pendingSend = send;
+};
+export const takePendingChatSend = () => {
+  const out = pendingSend;
+  pendingSend = false;
+  return out;
 };
 export const takePendingChatFiles = () => {
   const out = pending;
