@@ -10,13 +10,15 @@ type Ctx = { params: Promise<{ id: string }> };
 
 /**
  * One idea. Nothing changes in Google Ads until "accept".
- *   accept { text?, matchType?, level? }  apply it (with Ahmed's edits) to the real account
+ *   accept { text?, matchType?, level?, value?, headlines?, descriptions? }  apply it (with Ahmed's edits) to the real account
+ *                                          (an advisory has nothing to apply: accept just dismisses it)
  *   reject                                 not now, and it won't be proposed again
  *   undo                                   remove what an accepted change created
  */
 export const POST = appRoute<Ctx>(async (request, _device, { params }) => {
   const { id } = await params;
-  const body = await jsonBody<{ action?: unknown; text?: unknown; matchType?: unknown; level?: unknown }>(request);
+  const body = await jsonBody<{ action?: unknown; text?: unknown; matchType?: unknown; level?: unknown; value?: unknown; headlines?: unknown; descriptions?: unknown }>(request);
+  const lines = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : undefined);
   try {
     let row;
     if (body.action === 'accept') {
@@ -25,6 +27,9 @@ export const POST = appRoute<Ctx>(async (request, _device, { params }) => {
         text: typeof body.text === 'string' ? body.text : undefined,
         matchType,
         level: body.level === 'ad_group' ? 'ad_group' : 'campaign',
+        value: typeof body.value === 'number' && Number.isFinite(body.value) ? body.value : undefined,
+        headlines: lines(body.headlines),
+        descriptions: lines(body.descriptions),
       });
     } else if (body.action === 'reject') row = await rejectSuggestion(id);
     else if (body.action === 'undo') row = await undoSuggestion(id);

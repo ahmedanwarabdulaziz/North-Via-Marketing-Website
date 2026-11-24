@@ -49,12 +49,14 @@ export async function draftClientUpdate(clientId: string, only?: string[]): Prom
   const first = client.ownerName?.trim().split(/\s+/)[0] || '';
   const negatives = changes.filter((c) => c.type === 'add_negative');
   const keywords = changes.filter((c) => c.type === 'add_keyword');
+  const others = changes.filter((c) => !['add_negative', 'add_keyword'].includes(c.type));
   const saved = Math.round(negatives.reduce((s, c) => s + (c.evidence?.cost || 0), 0));
   const currency = changes[0].evidence?.currency || '';
 
   const facts = [
     negatives.length ? `Blocked ${negatives.length} kind(s) of irrelevant searches that were costing money without bringing customers (about ${saved} ${currency} of the last 30 days' spend).` : '',
     keywords.length ? `Added ${keywords.length} new search phrase(s) that real customers already used before contacting them.` : '',
+    others.length ? `Also made ${others.length} other improvement(s): ${[...new Set(others.map((c) => ({ pause_keyword: 'paused a phrase that wasted budget', change_bid: 'put more behind a phrase that works', change_budget: 'adjusted the daily budget', new_ad_copy: 'added new ad wording' } as Record<string, string>)[c.type]).filter(Boolean))].join(', ')}.` : '',
     ...changes.map((c) => c.client_line).filter(Boolean).slice(0, 6),
   ].filter(Boolean);
 

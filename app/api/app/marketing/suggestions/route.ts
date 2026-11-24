@@ -7,6 +7,14 @@ import { unnotifiedChanges } from '@/lib/ads-client-update';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
+/** What the card shows and lets Ahmed edit, per kind (amounts in the account's currency). */
+function detail(r: SuggestionRow) {
+  const p = (r.payload || {}) as Record<string, any>;
+  if (r.type === 'change_bid' || r.type === 'change_budget') return { from: Number(p.from_micros) / 1_000_000, to: Number(p.to_micros) / 1_000_000 };
+  if (r.type === 'new_ad_copy') return { headlines: (p.add_headlines as string[]) || [], descriptions: (p.add_descriptions as string[]) || [], haveHeadlines: p.original?.headlines?.length ?? 0, haveDescriptions: p.original?.descriptions?.length ?? 0 };
+  return null;
+}
+
 export function appSuggestion(r: SuggestionRow, names: Map<string, string>) {
   return {
     id: r.id,
@@ -22,6 +30,7 @@ export function appSuggestion(r: SuggestionRow, names: Map<string, string>) {
     status: r.status,
     edited: r.edited,
     error: r.error,
+    detail: detail(r),
     told: Boolean(r.notified_at),
     createdAt: r.created_at,
     appliedAt: r.applied_at,

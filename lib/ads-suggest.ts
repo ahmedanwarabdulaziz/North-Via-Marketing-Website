@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { aiJson } from './ai-json';
 import { clientAdsAccounts, describeAdsError } from './ads-metrics';
+import { analyzeOptimizations } from './ads-optimize';
 import { getDoc } from './data/store';
 import { getAdsClient } from './google-ads';
 import { clientFileText } from './memory-files';
@@ -11,7 +12,7 @@ import { supabase } from './supabase';
 // Proposals are only saved as 'pending' rows (ads_suggestions). Nothing changes in Google Ads until
 // Ahmed accepts a card in the Anwarz app (lib/ads-apply.ts).
 
-export type SuggestionType = 'add_keyword' | 'add_negative';
+export type SuggestionType = 'add_keyword' | 'add_negative' | 'pause_keyword' | 'change_bid' | 'change_budget' | 'new_ad_copy' | 'advisory';
 export type MatchType = 'EXACT' | 'PHRASE' | 'BROAD';
 export type SuggestionStatus = 'pending' | 'applied' | 'rejected' | 'failed' | 'undone';
 
@@ -27,6 +28,7 @@ export interface SuggestionRow {
   text: string;
   match_type: MatchType;
   reason: string | null;
+  payload: Record<string, unknown> | null;
   evidence: { clicks?: number; cost?: number; conversions?: number; impressions?: number; currency?: string } | null;
   client_line: string | null;
   status: SuggestionStatus;
@@ -247,14 +249,19 @@ export async function generateSuggestions(clientId: string): Promise<{ created: 
       const { terms, existing } = await readAccount(account.customerId);
       scanned += terms.length;
       const picked = candidates(terms, existing);
-      if (!picked.length) continue;
 
       const accountDoc = await getDoc<{ aiPromptNotes?: string }>('google_ads_accounts', account.customerId).catch(() => null);
       const campaigns = [...new Set(terms.map((t) => t.campaignName).filter(Boolean))];
-      const verdicts = await askAi(clientId, brand, accountDoc?.aiPromptNotes || '', campaigns, picked, account.currency);
+      const verdicts = picked.length ? await askAi(clientId, brand, accountDoc?.aiPromptNotes || '', campaigns, picked, account.currency) : [];
 
-      const { data: prior } = await supabase.from('ads_suggestions').select('type,text,campaign_id').eq('customer_id', account.customerId).neq('status', 'failed');
-      const seen = new Set((prior || []).map((p) => `${p.type}|${p.campaign_id || ''}|${norm(String(p.text))}`));
+      const { data: prior } = await supabase.from('ads_suggestions').select('type,text,campaign_id,status,created_at').eq('customer_id', account.customerId).neq('status', 'failed');
+      // Keyword ideas are never proposed twice; the other kinds can come back after 30 days if still true.
+      const keywordKind = (t: string) => t === 'add_keyword' || t === 'add_negative';
+      const seen = new Set(
+        (prior || [])
+          .filter((p) => keywordKind(String(p.type)) || p.status === 'pending' || Date.now() - Date.parse(String(p.created_at)) < 30 * 86_400_000)
+          .map((p) => `${p.type}|${p.campaign_id || ''}|${norm(String(p.text))}`),
+      );
 
       let negatives = 0;
       let keywords = 0;
@@ -300,6 +307,24 @@ export async function generateSuggestions(clientId: string): Promise<{ created: 
         created.push(data as SuggestionRow);
         if (type === 'add_negative') negatives++;
         else keywords++;
+      }
+
+      // Pause / bid / budget / ad copy ideas and heads-ups.
+      const ideas = await analyzeOptimizations({ clientId, customerId: account.customerId, brand, currency: account.currency, notes: accountDoc?.aiPromptNotes || '', terms }).catch((error) => {
+        problems.push(`${account.name}: ${describeAdsError(error)}`);
+        return [];
+      });
+      for (const idea of ideas) {
+        const key = `${idea.type}|${idea.campaign_id || ''}|${norm(idea.text)}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const { data, error } = await supabase
+          .from('ads_suggestions')
+          .insert({ id: newId(), client_id: clientId, customer_id: account.customerId, match_type: 'EXACT', ...idea, text: idea.text.slice(0, 200) })
+          .select()
+          .single();
+        if (error) throw new Error(error.message);
+        created.push(data as SuggestionRow);
       }
     } catch (error) {
       problems.push(`${account.name}: ${describeAdsError(error)}`);

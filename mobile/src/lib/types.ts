@@ -377,7 +377,7 @@ export interface AdsSuggestion {
   id: string;
   clientId: string;
   clientName: string;
-  type: 'add_keyword' | 'add_negative';
+  type: 'add_keyword' | 'add_negative' | 'pause_keyword' | 'change_bid' | 'change_budget' | 'new_ad_copy' | 'advisory';
   text: string;
   matchType: 'EXACT' | 'PHRASE' | 'BROAD';
   campaign: string | null;
@@ -390,6 +390,11 @@ export interface AdsSuggestion {
   told: boolean;
   createdAt: string;
   appliedAt: string | null;
+  /** Bid / budget: before and after, in the account's currency. Ad copy: the lines to add and how many the ad already has. */
+  detail:
+    | { from: number; to: number }
+    | { headlines: string[]; descriptions: string[]; haveHeadlines: number; haveDescriptions: number }
+    | null;
 }
 export interface AdsSuggestionsData {
   suggestions: AdsSuggestion[];
