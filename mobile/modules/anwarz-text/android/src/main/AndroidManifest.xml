@@ -1,5 +1,31 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!-- The floating writing bubble (BubbleService): drawn over other apps, kept alive by a small notification. -->
+  <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
   <application>
+    <service
+      android:name="expo.modules.anwarztext.BubbleService"
+      android:exported="false"
+      android:foregroundServiceType="specialUse">
+      <property
+        android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+        android:value="A floating writing shortcut the user turned on: tap it to write and rephrase a reply over any app." />
+    </service>
+
+    <!-- "Anwarz ✍️" in the quick-settings panel: opens the writing panel over any app. -->
+    <service
+      android:name="expo.modules.anwarztext.ComposeTileService"
+      android:exported="true"
+      android:icon="@android:drawable/ic_menu_edit"
+      android:label="Anwarz ✍️"
+      android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+      <intent-filter>
+        <action android:name="android.service.quicksettings.action.QS_TILE" />
+      </intent-filter>
+    </service>
+
     <!-- A see-through panel over the app where text was selected (JS component "ProcessText"). -->
     <activity
       android:name="expo.modules.anwarztext.ProcessTextActivity"

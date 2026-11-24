@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { Alert, Platform, Switch } from 'react-native';
 
 import { AlertSwitches } from '@/components/alert-switches';
+import { BubbleCard } from '@/components/bubble-card';
 import { PcNotificationsCard } from '@/components/pc-notifications';
 import { UpdateCard } from '@/components/update-bar';
 import { Button, Card, Row, Screen, Section, T } from '@/components/ui';
@@ -115,6 +116,7 @@ export default function More() {
           </Row>
           <T variant="small">Select text in any app → “Anwarz ✓ Correct” or “Anwarz ✨ Rephrase”. Add your own rephrase modes here.</T>
         </Card>
+        <BubbleCard />
       </Section>
 
       <Section title={Platform.OS === 'web' ? 'This PC' : 'This phone'}>
