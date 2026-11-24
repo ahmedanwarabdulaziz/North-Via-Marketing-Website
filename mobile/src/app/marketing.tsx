@@ -11,16 +11,17 @@ import {
   StoppedAdsBanner,
 } from '@/components/marketing';
 import { CommentCard } from '@/components/comment-card';
+import { AdsSuggestionCard, TellClientSheet } from '@/components/ads-suggestion-card';
 import { Button, Chip, ChipRow, Empty, ErrorBox, Loading, Row, Screen, Section, Segmented, T } from '@/components/ui';
 import { api } from '@/lib/api';
 import { ago } from '@/lib/format';
-import type { AdsOverview, AppComment, CompetitorFinding, CompetitorRow, SocialClient } from '@/lib/types';
+import type { AdsOverview, AdsSuggestionsData, AppComment, CompetitorFinding, CompetitorRow, SocialClient } from '@/lib/types';
 import { useApi } from '@/lib/use-api';
 
 // 📈 Marketing: Google & Meta ads with a running / limited / stopped flag per client (hourly watch),
 // Facebook & Instagram followers, and competitors with their latest moves. Same data as the website.
 
-type Tab = 'ads' | 'social' | 'competitors';
+type Tab = 'ads' | 'ideas' | 'social' | 'competitors';
 
 interface CompetitorsData {
   clients: { id: string; name: string; count: number }[];
@@ -40,8 +41,34 @@ export default function Marketing() {
   const ads = useApi<AdsOverview>(tab === 'ads' ? `/marketing/ads?days=${days}` : null);
   const social = useApi<{ clients: SocialClient[] }>(tab === 'social' ? '/marketing/social' : null);
   const comments = useApi<{ comments: AppComment[] }>(tab === 'social' ? '/marketing/comments' : null);
+  const [ideasClient, setIdeasClient] = useState<string | null>(null);
+  const [ideasView, setIdeasView] = useState<'pending' | 'applied'>('pending');
+  const [scanning, setScanning] = useState(false);
+  const [tellClient, setTellClient] = useState<{ id: string; name: string } | null>(null);
+  const ideas = useApi<AdsSuggestionsData>(tab === 'ideas' ? `/marketing/suggestions?status=${ideasView}${ideasClient ? `&client=${encodeURIComponent(ideasClient)}` : ''}` : null);
   const comp = useApi<CompetitorsData>(tab === 'competitors' ? `/marketing/competitors${compClient ? `?client=${encodeURIComponent(compClient)}` : ''}` : null);
-  const current = tab === 'ads' ? ads : tab === 'social' ? social : comp;
+  const current = tab === 'ads' ? ads : tab === 'ideas' ? ideas : tab === 'social' ? social : comp;
+
+  const checkIdeas = async () => {
+    if (!ideasClient) return;
+    setScanning(true);
+    try {
+      const r = await api<{ created: unknown[]; scanned: number; problems: string[] }>('/marketing/suggestions', {
+        body: { action: 'generate', clientId: ideasClient },
+        timeoutMs: 120_000,
+      });
+      const found = r.created.length;
+      Alert.alert(
+        'Account checked',
+        r.problems.length ? r.problems.join('\n') : found ? `${found} new idea${found === 1 ? '' : 's'} found (looked at ${r.scanned} searches).` : `Nothing new to suggest (looked at ${r.scanned} searches).`,
+      );
+      void ideas.reload();
+    } catch (e) {
+      Alert.alert('Not checked', e instanceof Error ? e.message : String(e));
+    } finally {
+      setScanning(false);
+    }
+  };
 
   const checkAds = async () => {
     setChecking(true);
@@ -64,6 +91,7 @@ export default function Marketing() {
           onChange={setTab}
           options={[
             { key: 'ads', label: 'Ads', count: ads.data?.stopped.length || null, alert: Boolean(ads.data?.stopped.length) },
+            { key: 'ideas', label: '💡 Ideas', count: tab === 'ideas' && ideasView === 'pending' ? ideas.data?.suggestions.length || null : null },
             { key: 'social', label: 'Social' },
             { key: 'competitors', label: 'Competitors' },
           ]}
@@ -85,6 +113,32 @@ export default function Marketing() {
               ads.data.clients.map((c) => <AdsClientCard key={c.clientId} c={c} onOpen={() => setOpenClient({ id: c.clientId, name: c.clientName, text: adsWhatsAppText(c, days) })} />)
             ) : (
               <Empty text="No clients with Google or Meta ads linked." />
+            )}
+          </>
+        ) : null}
+
+        {tab === 'ideas' && ideas.data ? (
+          <>
+            <T variant="small">Google Ads improvements found from real searches. Nothing changes in the account until you press ✅.</T>
+            <ChipRow>
+              <Chip text="All clients" selected={!ideasClient} onPress={() => setIdeasClient(null)} />
+              {ideas.data.clients.map((c) => (
+                <Chip key={c.id} text={c.name} selected={ideasClient === c.id} onPress={() => setIdeasClient(c.id)} />
+              ))}
+            </ChipRow>
+            <Row>
+              <Chip text="Waiting" selected={ideasView === 'pending'} onPress={() => setIdeasView('pending')} />
+              <Chip text="Applied" selected={ideasView === 'applied'} onPress={() => setIdeasView('applied')} />
+              <Button title="🔍 Check now" small kind="soft" busy={scanning} disabled={!ideasClient} style={{ marginLeft: 'auto' }} onPress={checkIdeas} />
+            </Row>
+            {!ideasClient ? <T variant="small">Pick a client, then 🔍 Check now to look at their account.</T> : null}
+            {ideas.data.toTell.map((t) => (
+              <Button key={t.id} title={`📲 Tell ${t.name} (${t.count} change${t.count === 1 ? '' : 's'} made)`} kind="outline" onPress={() => setTellClient({ id: t.id, name: t.name })} />
+            ))}
+            {ideas.data.suggestions.length ? (
+              ideas.data.suggestions.map((s) => <AdsSuggestionCard key={s.id} suggestion={s} onChanged={() => void ideas.reload()} />)
+            ) : (
+              <Empty text={ideasView === 'pending' ? 'No ideas waiting. ✅ Pick a client and check now.' : 'Nothing applied yet.'} />
             )}
           </>
         ) : null}
@@ -135,6 +189,7 @@ export default function Marketing() {
         ) : null}
       </Screen>
 
+      {tellClient ? <TellClientSheet clientId={tellClient.id} clientName={tellClient.name} onClose={() => setTellClient(null)} onDone={() => void ideas.reload()} /> : null}
       {openClient ? <AdsClientSheet clientId={openClient.id} clientName={openClient.name} days={days} shareText={openClient.text} onClose={() => setOpenClient(null)} /> : null}
     </>
   );

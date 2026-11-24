@@ -371,3 +371,38 @@ export interface AppComment {
   draftError: string | null;
   postedReply: string | null;
 }
+
+// Google Ads improvement ideas (new keywords, negative keywords) waiting for Ahmed's OK.
+export interface AdsSuggestion {
+  id: string;
+  clientId: string;
+  clientName: string;
+  type: 'add_keyword' | 'add_negative';
+  text: string;
+  matchType: 'EXACT' | 'PHRASE' | 'BROAD';
+  campaign: string | null;
+  adGroup: string | null;
+  reason: string | null;
+  evidence: { clicks?: number; cost?: number; conversions?: number; impressions?: number; currency?: string } | null;
+  status: 'pending' | 'applied' | 'rejected' | 'failed' | 'undone';
+  edited: boolean;
+  error: string | null;
+  told: boolean;
+  createdAt: string;
+  appliedAt: string | null;
+}
+export interface AdsSuggestionsData {
+  suggestions: AdsSuggestion[];
+  clients: { id: string; name: string }[];
+  toTell: { id: string; name: string; count: number }[];
+}
+export interface AdsClientUpdate {
+  clientId: string;
+  clientName: string;
+  count: number;
+  ids: string[];
+  text: string;
+  subject: string;
+  phone: string | null;
+  email: string | null;
+}
