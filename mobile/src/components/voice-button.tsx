@@ -1,7 +1,7 @@
 import { AudioModule, RecordingPresets, setAudioModeAsync, useAudioRecorder, useAudioRecorderState } from 'expo-audio';
 import { File } from 'expo-file-system';
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Platform } from 'react-native';
+import { Alert, Linking, Platform } from 'react-native';
 
 import type { Audio } from '@/lib/types';
 
@@ -33,7 +33,10 @@ export function VoiceButton({
   const start = async () => {
     const permission = await AudioModule.requestRecordingPermissionsAsync();
     if (!permission.granted) {
-      Alert.alert('Microphone', 'Allow the microphone in the phone settings to record voice notes.');
+      Alert.alert('Microphone is off', 'Allow the microphone for Anwarz to record voice notes.', [
+        { text: 'Not now', style: 'cancel' },
+        { text: 'Open settings', onPress: () => void Linking.openSettings() },
+      ]);
       return;
     }
     await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: true });

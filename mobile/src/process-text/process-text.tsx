@@ -1,5 +1,5 @@
 import * as Clipboard from 'expo-clipboard';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
 import { ActivityIndicator, Linking, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -9,6 +9,7 @@ import { VoiceButton } from '@/components/voice-button';
 import { api, apiStream, ensureSession } from '@/lib/api';
 import { radius, space, usePalette, type Palette } from '@/lib/theme';
 import type { Audio } from '@/lib/types';
+import { useKeyboardSpace } from '@/lib/use-keyboard-space';
 import { loadWriter, rememberCopy, rememberMode, type Recent } from './writer-store';
 
 // "Improve with Anwarz": the panel Android opens over any app.
@@ -79,8 +80,12 @@ function BigButton({ title, onPress, outline, p }: { title: string; onPress: () 
 function Sheet({ title, children }: { title: string; children: React.ReactNode }) {
   const p = usePalette();
   const insets = useSafeAreaInsets();
+  // The panel's window is edge-to-edge, so Android doesn't shrink it when the keyboard opens: lift the
+  // sheet by the keyboard's height ourselves, or the text box ends up behind the keyboard.
+  const outer = useRef<ComponentRef<typeof View>>(null);
+  const keyboardSpace = useKeyboardSpace(outer);
   return (
-    <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+    <View ref={outer} style={{ flex: 1, justifyContent: 'flex-end', paddingBottom: keyboardSpace }}>
       <Pressable onPress={close} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(8,12,24,0.45)' }} />
       <View style={{ backgroundColor: p.card, borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: space.lg, paddingBottom: insets.bottom + space.lg, gap: space.md, maxHeight: '90%' }}>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>

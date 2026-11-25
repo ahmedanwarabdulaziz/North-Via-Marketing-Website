@@ -1,4 +1,4 @@
-import { router } from 'expo-router';
+import { router, type Href } from 'expo-router';
 import { Pressable, Text, View } from 'react-native';
 
 import { DesktopHome } from '@/components/desktop-home';
@@ -66,6 +66,7 @@ export default function Home() {
         <Shortcut icon="📈" label="Marketing" onPress={() => router.push('/marketing')} />
         <Shortcut icon="🛋" label="JL Comfort" onPress={() => router.push('/jl')} />
         <Shortcut icon="👥" label="Clients" onPress={() => router.push('/clients')} />
+        <Shortcut icon="🧾" label="Quotes" onPress={() => router.push('/quotes' as Href)} />
         <Shortcut icon="🔗" label="Links" onPress={() => router.push('/links')} />
         <Shortcut icon="⚙️" label="More" onPress={() => router.push('/more')} />
       </Row>

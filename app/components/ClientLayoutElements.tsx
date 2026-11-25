@@ -6,7 +6,7 @@ import Footer from './Footer';
 import Chatbot from '@/components/Chatbot';
 
 // Admin pages and shared client reports (/r/…) show no site chrome.
-const bare = (pathname: string | null) => Boolean(pathname?.startsWith('/admin') || pathname?.startsWith('/r/'));
+const bare = (pathname: string | null) => Boolean(pathname?.startsWith('/admin') || pathname?.startsWith('/r/') || pathname?.startsWith('/doc/'));
 
 export function ConditionalHeader() {
   const pathname = usePathname();
@@ -22,6 +22,6 @@ export function ConditionalFooter() {
 
 export function ConditionalChatbot() {
   const pathname = usePathname();
-  if (pathname?.startsWith('/r/')) return null;
+  if (pathname?.startsWith('/r/') || pathname?.startsWith('/doc/')) return null;
   return <Chatbot />;
 }

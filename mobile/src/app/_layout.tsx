@@ -94,6 +94,8 @@ function RootStack() {
             <Stack.Screen name="client/[id]" options={{ title: 'Client' }} />
             <Stack.Screen name="more" options={{ title: 'More' }} />
             <Stack.Screen name="clients" options={{ title: 'Clients' }} />
+            <Stack.Screen name="quotes" options={{ title: 'Quotes & invoices' }} />
+            <Stack.Screen name="quote/[id]" options={{ title: 'Quote / invoice' }} />
             <Stack.Screen name="share" options={{ title: 'Shared to Anwarz' }} />
             <Stack.Screen name="links" options={{ title: 'Quick links' }} />
             <Stack.Screen name="jl" options={{ title: 'JL Comfort' }} />

@@ -1,11 +1,12 @@
 import Constants from 'expo-constants';
-import { router } from 'expo-router';
+import { router, type Href } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { useEffect, useState } from 'react';
 import { Alert, Platform, Switch } from 'react-native';
 
 import { AlertSwitches } from '@/components/alert-switches';
 import { BubbleCard } from '@/components/bubble-card';
+import { MicrophoneCard } from '@/components/microphone-card';
 import { PcNotificationsCard } from '@/components/pc-notifications';
 import { UpdateCard } from '@/components/update-bar';
 import { Button, Card, Row, Screen, Section, T } from '@/components/ui';
@@ -87,6 +88,10 @@ export default function More() {
         ))}
       </Section>
 
+      <Section title="Quotes & invoices">
+        <Button title="🧾 Quotes & invoices (Sanad)" kind="soft" onPress={() => router.push('/quotes' as Href)} />
+      </Section>
+
       <Section title="Connections">
         <Button title="📧 Mail connections: inboxes" kind="soft" onPress={() => router.push('/connections')} />
         <Button title="📱 Social media: Facebook & Instagram Pages" kind="soft" onPress={() => router.push('/social')} />
@@ -117,6 +122,7 @@ export default function More() {
           <T variant="small">Select text in any app → “Anwarz ✓ Correct” or “Anwarz ✨ Rephrase”. Add your own rephrase modes here.</T>
         </Card>
         <BubbleCard />
+        <MicrophoneCard />
       </Section>
 
       <Section title={Platform.OS === 'web' ? 'This PC' : 'This phone'}>

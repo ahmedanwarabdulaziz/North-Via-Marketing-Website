@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { logoutAdmin } from '@/app/actions/auth';
-import { Users, LayoutDashboard, Settings, LogOut, BarChart3, FileText, Star, CheckSquare, BookOpen, Mail, Brain, Eye, Share2, Link2 } from 'lucide-react';
+import { Users, LayoutDashboard, Settings, LogOut, BarChart3, FileText, Star, CheckSquare, BookOpen, Mail, Brain, Eye, Share2, Link2, Receipt } from 'lucide-react';
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname() ?? '';
@@ -16,7 +16,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   return (
     <div className="min-h-screen bg-zinc-50 flex">
       {/* Sidebar */}
-      <aside className="w-64 bg-white border-r border-zinc-200 flex flex-col hidden md:flex">
+      <aside className="w-64 bg-white border-r border-zinc-200 flex flex-col hidden md:flex print:!hidden">
         <div className="p-6 border-b border-zinc-100">
           <h2 className="text-xl font-bold text-zinc-900 tracking-tight">Admin<span className="text-blue-600">OS</span></h2>
         </div>
@@ -30,6 +30,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             { href: '/admin/reviews', label: 'Google Reviews', icon: Star },
             { href: '/admin/library', label: 'Library', icon: BookOpen },
             { href: '/admin/invoices', label: 'Invoices', icon: FileText },
+            { href: '/admin/quotes', label: 'Quotes (Sanad)', icon: Receipt },
             { href: '/admin/memory', label: 'Memory', icon: Brain },
             { href: '/admin/competitors', label: 'Competitors', icon: Eye },
             // Every login the automation uses, grouped under one heading.
@@ -81,7 +82,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col min-w-0 h-screen overflow-y-auto">
+      <main className="flex-1 flex flex-col min-w-0 h-screen overflow-y-auto print:h-auto print:overflow-visible">
         {children}
       </main>
     </div>

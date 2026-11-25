@@ -22,6 +22,7 @@ const MAIN: { icon: string; label: string; href: string }[] = [
   { icon: '📈', label: 'Marketing', href: '/marketing' },
   { icon: '🛋', label: 'JL Comfort', href: '/jl' },
   { icon: '👥', label: 'Clients', href: '/clients' },
+  { icon: '🧾', label: 'Quotes', href: '/quotes' },
   { icon: '🔗', label: 'Quick links', href: '/links' },
 ];
 
@@ -41,7 +42,7 @@ const SETTINGS: { icon: string; label: string; href: string }[] = [
 export function PcSidebar() {
   const p = usePalette();
   const path = usePathname();
-  const active = (href: string) => (href === '/' ? path === '/' : path === href || path.startsWith(`${href}/`)) || (href === '/clients' && path.startsWith('/client/'));
+  const active = (href: string) => (href === '/' ? path === '/' : path === href || path.startsWith(`${href}/`)) || (href === '/clients' && path.startsWith('/client/')) || (href === '/quotes' && path.startsWith('/quote/'));
 
   const item = (x: { icon: string; label: string; href: string }) => {
     const on = active(x.href);

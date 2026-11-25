@@ -38,7 +38,7 @@
         {
           "photosPermission": "Anwarz attaches the photos you pick to the chat.",
           "cameraPermission": "Anwarz uses the camera to take a picture for the chat.",
-          "microphonePermission": false
+          "microphonePermission": "Anwarz uses the microphone for voice notes and the Speak button."
         }
       ],
       "expo-router",
